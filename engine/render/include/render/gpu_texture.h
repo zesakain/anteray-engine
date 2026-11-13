@@ -21,6 +21,7 @@
 
 #include "core/error.h"
 #include "core/result.h"
+#include "render/environment_map.h"
 #include "render/image.h"
 #include "rhi/rhi_device.h"
 #include "rhi/sampler.h"
@@ -45,6 +46,24 @@ public:
     [[nodiscard]] static Result<std::unique_ptr<GpuTexture>>
     create(rhi::RhiDevice& device, const ImageData& imageData, bool generateMips = true,
            const rhi::SamplerDesc* customSamplerDesc = nullptr);
+
+    /// @brief Creates GPU cubemap texture (6 faces) from CubemapData across all mip levels.
+    ///
+    /// @param device The RHI device used to allocate resources and record upload commands.
+    /// @param cubemapData Validated cubemap with 6 faces per mip level in RGBA16_FLOAT.
+    /// @param customSamplerDesc Optional custom sampler configuration; defaults to linear clamp.
+    /// @return Unique pointer to allocated GpuTexture or Error on failure.
+    [[nodiscard]] static Result<std::unique_ptr<GpuTexture>>
+    createCubemap(rhi::RhiDevice& device, const CubemapData& cubemapData,
+                  const rhi::SamplerDesc* customSamplerDesc = nullptr);
+
+    /// @brief Creates GPU 2D texture and clamp sampler from BrdfLutData.
+    ///
+    /// @param device The RHI device used to allocate resources and record upload commands.
+    /// @param brdfLutData Validated 2D BRDF integration lookup table data in RGBA16_FLOAT.
+    /// @return Unique pointer to allocated GpuTexture or Error on failure.
+    [[nodiscard]] static Result<std::unique_ptr<GpuTexture>>
+    createBrdfLut(rhi::RhiDevice& device, const BrdfLutData& brdfLutData);
 
     ~GpuTexture() noexcept;
 

@@ -7,6 +7,7 @@ add_library(engine_render STATIC
     src/environment_map.cpp
     src/gltf_importer.cpp
     src/gltf_scene_importer.cpp
+    src/gpu_environment_map.cpp
     src/gpu_material.cpp
     src/gpu_mesh.cpp
     src/gpu_texture.cpp
