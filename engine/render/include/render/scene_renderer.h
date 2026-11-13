@@ -27,6 +27,7 @@
 #include "core/math.h"
 #include "core/result.h"
 #include "render/asset_manager.h"
+#include "render/gpu_environment_map.h"
 #include "render/graphics_settings.h"
 #include "render/light_components.h"
 #include "render/lighting_data.h"
@@ -208,6 +209,19 @@ public:
         buildRenderGraph();
     }
 
+    [[nodiscard]] const GpuEnvironmentMap& getEnvironmentMap() const noexcept { return envMap_; }
+    void setEnvironmentMap(GpuEnvironmentMap&& envMap);
+    [[nodiscard]] Result<void> loadEnvironmentMap(const HdrImage& hdr);
+    [[nodiscard]] Result<void> loadEnvironmentMapFromFile(std::string_view filePath);
+    [[nodiscard]] bool isIblEnabled() const noexcept { return settings_.lighting.iblEnabled; }
+    void setIblEnabled(bool enabled) noexcept { settings_.lighting.iblEnabled = enabled; }
+    [[nodiscard]] float getIblIntensity() const noexcept {
+        return settings_.lighting.environmentIntensity;
+    }
+    void setIblIntensity(float intensity) noexcept {
+        settings_.lighting.environmentIntensity = intensity;
+    }
+
     [[nodiscard]] rhi::PipelineHandle getPipeline() const noexcept { return pipeline_; }
     [[nodiscard]] rhi::PipelineLayoutHandle getPipelineLayout() const noexcept {
         return pipelineLayout_;
@@ -294,6 +308,9 @@ private:
     rhi::PipelineHandle pipelineDepthPrepassOpaque_{};
     rhi::PipelineHandle hdrPipelineDepthPrepass_{};
     rhi::PipelineHandle hdrPipelineDepthPrepassOpaque_{};
+
+    // IBL Environment Resources
+    GpuEnvironmentMap envMap_{};
 
     // HDR and Post-Processing Resources
     rhi::TextureHandle hdrTarget_{};

@@ -336,39 +336,6 @@ static int testSceneRendererHdrLifecycle() {
 // -----------------------------------------------------------------------------
 // Test 4: Genuine GPU Floating-Point HDR Radiance Readback
 // -----------------------------------------------------------------------------
-static float halfToFloat(uint16_t h) noexcept {
-    uint32_t sign = (static_cast<uint32_t>(h) & 0x8000u) << 16;
-    uint32_t exp = (static_cast<uint32_t>(h) & 0x7C00u) >> 10;
-    uint32_t mant = (static_cast<uint32_t>(h) & 0x03FFu);
-
-    if (exp == 0) {
-        if (mant == 0) {
-            uint32_t val = sign;
-            float f = 0.0F;
-            std::memcpy(&f, &val, sizeof(float));
-            return f;
-        }
-        while ((mant & 0x0400u) == 0) {
-            mant <<= 1;
-            exp--;
-        }
-        exp++;
-        mant &= ~0x0400u;
-    } else if (exp == 31) {
-        uint32_t val = sign | 0x7F800000u | (mant << 13);
-        float f = 0.0F;
-        std::memcpy(&f, &val, sizeof(float));
-        return f;
-    }
-
-    exp = exp + (127 - 15);
-    mant = mant << 13;
-    uint32_t val = sign | (exp << 23) | mant;
-    float f = 0.0F;
-    std::memcpy(&f, &val, sizeof(float));
-    return f;
-}
-
 static int testGpuHdrRadianceReadback() {
     std::cout << "[Test 4] Verifying GPU offscreen HDR target readback (radiance > 1.0)...\n";
 

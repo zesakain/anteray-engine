@@ -423,7 +423,7 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         .poolSizes =
             {
                 {.type = rhi::DescriptorType::UniformBuffer, .count = 1},
-                {.type = rhi::DescriptorType::CombinedImageSampler, .count = 1},
+                {.type = rhi::DescriptorType::CombinedImageSampler, .count = 4},
             },
         .debugName = "SceneLightingDescriptorPool",
     };
@@ -441,10 +441,34 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
     }
     sceneDescriptorSet_ = setRes.value();
 
-    std::array<rhi::DescriptorWrite, 2> sceneWrites{
+    // Initialize default procedural environment map
+    auto envRes = GpuEnvironmentMap::createDefault(*device_);
+    if (envRes.hasValue()) {
+        envMap_ = std::move(envRes.value());
+    } else {
+        ENG_LOG_WARN("SceneRenderer", "Failed to create default procedural sky environment map");
+    }
+
+    const rhi::TextureHandle irrTex =
+        envMap_.irradianceMap ? envMap_.irradianceMap->getTexture() : rhi::TextureHandle{};
+    const rhi::SamplerHandle irrSamp =
+        envMap_.irradianceMap ? envMap_.irradianceMap->getSampler() : rhi::SamplerHandle{};
+    const rhi::TextureHandle prefTex =
+        envMap_.prefilteredMap ? envMap_.prefilteredMap->getTexture() : rhi::TextureHandle{};
+    const rhi::SamplerHandle prefSamp =
+        envMap_.prefilteredMap ? envMap_.prefilteredMap->getSampler() : rhi::SamplerHandle{};
+    const rhi::TextureHandle lutTex =
+        envMap_.brdfLut ? envMap_.brdfLut->getTexture() : rhi::TextureHandle{};
+    const rhi::SamplerHandle lutSamp =
+        envMap_.brdfLut ? envMap_.brdfLut->getSampler() : rhi::SamplerHandle{};
+
+    std::array<rhi::DescriptorWrite, 5> sceneWrites{
         rhi::DescriptorWrite::makeBuffer(0, rhi::DescriptorType::UniformBuffer,
                                          lightingUniformBuffer_, 0, sizeof(GpuLightingData)),
         rhi::DescriptorWrite::makeCombinedImageSampler(1, shadowDepthTarget_, shadowSampler_),
+        rhi::DescriptorWrite::makeCombinedImageSampler(2, irrTex, irrSamp),
+        rhi::DescriptorWrite::makeCombinedImageSampler(3, prefTex, prefSamp),
+        rhi::DescriptorWrite::makeCombinedImageSampler(4, lutTex, lutSamp),
     };
     std::ignore = device_->updateDescriptorSet(sceneDescriptorSet_, sceneWrites);
 
@@ -792,6 +816,7 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
 
 void SceneRenderer::shutdown() {
     if (device_ != nullptr) {
+        envMap_ = {};
         destroyPostProcessTargets();
 
         if (toneMappingPipeline_.isValid()) {
@@ -1131,6 +1156,44 @@ Result<void> SceneRenderer::applyGraphicsSettings(const GraphicsSettings& newSet
     buildRenderGraph();
     buildPostProcessGraph();
     return Result<void>::success();
+}
+
+void SceneRenderer::setEnvironmentMap(GpuEnvironmentMap&& envMap) {
+    if (!envMap.isValid()) {
+        return;
+    }
+    envMap_ = std::move(envMap);
+    if (device_ != nullptr && sceneDescriptorSet_.isValid() && envMap_.isValid()) {
+        std::array<rhi::DescriptorWrite, 3> iblWrites{
+            rhi::DescriptorWrite::makeCombinedImageSampler(2, envMap_.irradianceMap->getTexture(),
+                                                           envMap_.irradianceMap->getSampler()),
+            rhi::DescriptorWrite::makeCombinedImageSampler(3, envMap_.prefilteredMap->getTexture(),
+                                                           envMap_.prefilteredMap->getSampler()),
+            rhi::DescriptorWrite::makeCombinedImageSampler(4, envMap_.brdfLut->getTexture(),
+                                                           envMap_.brdfLut->getSampler()),
+        };
+        std::ignore = device_->updateDescriptorSet(sceneDescriptorSet_, iblWrites);
+    }
+}
+
+Result<void> SceneRenderer::loadEnvironmentMap(const HdrImage& hdr) {
+    if (device_ == nullptr) {
+        return Error{.code = ErrorCode::InvalidState, .message = "Device not initialized"};
+    }
+    auto envRes = GpuEnvironmentMap::createFromHdr(*device_, hdr);
+    if (!envRes.hasValue()) {
+        return envRes.error();
+    }
+    setEnvironmentMap(std::move(envRes.value()));
+    return Result<void>::success();
+}
+
+Result<void> SceneRenderer::loadEnvironmentMapFromFile(std::string_view filePath) {
+    auto hdrRes = IblProcessor::loadHdrFromFile(filePath);
+    if (!hdrRes.hasValue()) {
+        return hdrRes.error();
+    }
+    return loadEnvironmentMap(hdrRes.value());
 }
 
 void SceneRenderer::buildRenderGraph() {
@@ -1972,6 +2035,11 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     lightingData.numSpotLights = spotCount;
     const uint32_t pcfQuality = static_cast<uint32_t>(settings_.shadows.pcfQuality);
     lightingData.shadowPackedParams = (shadowResolution_ & 0xFFFFU) | ((pcfQuality & 0xFFU) << 16U);
+
+    const bool isIblActive = settings_.lighting.iblEnabled && envMap_.isValid();
+    lightingData.iblParams =
+        Vec4(isIblActive ? 1.0F : 0.0F, settings_.lighting.environmentIntensity,
+             envMap_.maxPrefilterMipLevel, 0.0F);
 
     // Compute Directional Light-Space View-Projection Matrix
     Vec3 dir = Vec3(lightingData.dirLight.directionAndCastShadow.x,
