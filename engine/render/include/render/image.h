@@ -44,8 +44,24 @@ struct ImageData {
     [[nodiscard]] size_t sizeInBytes() const noexcept { return pixels.size(); }
 };
 
+/// @struct HdrImageData
+/// @brief Decoded CPU HDR bitmap containing 32-bit floating-point linear pixels.
+struct HdrImageData {
+    uint32_t width{0};
+    uint32_t height{0};
+    uint32_t channels{4};
+    rhi::TextureFormat format{rhi::TextureFormat::RGBA32_FLOAT};
+    std::vector<float> pixels;
+
+    [[nodiscard]] constexpr bool isValid() const noexcept {
+        return width > 0 && height > 0 && channels >= 3 && !pixels.empty();
+    }
+
+    [[nodiscard]] size_t sizeInBytes() const noexcept { return pixels.size() * sizeof(float); }
+};
+
 /// @class ImageDecoder
-/// @brief Hardware-independent image decoding interface for PNG, JPEG, and BMP files.
+/// @brief Hardware-independent image decoding interface for PNG, JPEG, BMP, and HDR files.
 class ImageDecoder {
 public:
     /// @brief Decodes an image file from disk.
@@ -65,6 +81,22 @@ public:
     /// @return The decoded ImageData or an error code.
     [[nodiscard]] static Result<ImageData>
     decodeFromMemory(std::span<const uint8_t> buffer, int desiredChannels = 4, bool srgb = false);
+
+    /// @brief Decodes a Radiance RGBE (.hdr) floating point image file from disk.
+    ///
+    /// @param filePath Path to the .hdr file on disk.
+    /// @param desiredChannels Number of channels to output (default: 4 for RGBA).
+    /// @return The decoded HdrImageData or an error code.
+    [[nodiscard]] static Result<HdrImageData> decodeHdrFromFile(std::string_view filePath,
+                                                                int desiredChannels = 4);
+
+    /// @brief Decodes an encoded HDR image buffer from memory.
+    ///
+    /// @param buffer Encoded HDR image bytes in memory.
+    /// @param desiredChannels Number of channels to output (default: 4 for RGBA).
+    /// @return The decoded HdrImageData or an error code.
+    [[nodiscard]] static Result<HdrImageData> decodeHdrFromMemory(std::span<const uint8_t> buffer,
+                                                                  int desiredChannels = 4);
 };
 
 } // namespace eng::render

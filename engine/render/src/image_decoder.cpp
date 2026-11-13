@@ -131,4 +131,93 @@ Result<ImageData> ImageDecoder::decodeFromMemory(std::span<const uint8_t> buffer
     return Result<ImageData>::success(std::move(image));
 }
 
+Result<HdrImageData> ImageDecoder::decodeHdrFromFile(std::string_view filePath,
+                                                     int desiredChannels) {
+    if (filePath.empty()) {
+        return Error{.code = ErrorCode::InvalidArgument,
+                     .message = "HDR image file path cannot be empty"};
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::exists(filePath, ec)) {
+        return Error{.code = ErrorCode::EntityNotFound, .message = "HDR image file does not exist"};
+    }
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+
+    const std::string pathStr(filePath);
+    float* data = stbi_loadf(pathStr.c_str(), &width, &height, &channels, desiredChannels);
+    if (data == nullptr) {
+        const char* failureReason = stbi_failure_reason();
+        return Error{.code = ErrorCode::ResourceCreationFailed,
+                     .message = failureReason ? failureReason : "Failed to decode HDR file"};
+    }
+
+    if (width <= 0 || height <= 0) {
+        stbi_image_free(data);
+        return Error{.code = ErrorCode::InvalidArgument,
+                     .message = "Decoded HDR image has invalid dimensions"};
+    }
+
+    const int finalChannels = (desiredChannels > 0) ? desiredChannels : channels;
+    const size_t totalFloats = static_cast<size_t>(width) * static_cast<size_t>(height) *
+                               static_cast<size_t>(finalChannels);
+
+    HdrImageData image{};
+    image.width = static_cast<uint32_t>(width);
+    image.height = static_cast<uint32_t>(height);
+    image.channels = static_cast<uint32_t>(finalChannels);
+    image.format = rhi::TextureFormat::RGBA32_FLOAT;
+
+    image.pixels.resize(totalFloats);
+    std::memcpy(image.pixels.data(), data, totalFloats * sizeof(float));
+
+    stbi_image_free(data);
+    return Result<HdrImageData>::success(std::move(image));
+}
+
+Result<HdrImageData> ImageDecoder::decodeHdrFromMemory(std::span<const uint8_t> buffer,
+                                                       int desiredChannels) {
+    if (buffer.empty()) {
+        return Error{.code = ErrorCode::InvalidArgument,
+                     .message = "Encoded HDR buffer cannot be empty"};
+    }
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+
+    float* data = stbi_loadf_from_memory(buffer.data(), static_cast<int>(buffer.size()), &width,
+                                         &height, &channels, desiredChannels);
+    if (data == nullptr) {
+        const char* failureReason = stbi_failure_reason();
+        return Error{.code = ErrorCode::ResourceCreationFailed,
+                     .message = failureReason ? failureReason : "Failed to decode HDR from memory"};
+    }
+
+    if (width <= 0 || height <= 0) {
+        stbi_image_free(data);
+        return Error{.code = ErrorCode::InvalidArgument,
+                     .message = "Decoded HDR image has invalid dimensions"};
+    }
+
+    const int finalChannels = (desiredChannels > 0) ? desiredChannels : channels;
+    const size_t totalFloats = static_cast<size_t>(width) * static_cast<size_t>(height) *
+                               static_cast<size_t>(finalChannels);
+
+    HdrImageData image{};
+    image.width = static_cast<uint32_t>(width);
+    image.height = static_cast<uint32_t>(height);
+    image.channels = static_cast<uint32_t>(finalChannels);
+    image.format = rhi::TextureFormat::RGBA32_FLOAT;
+
+    image.pixels.resize(totalFloats);
+    std::memcpy(image.pixels.data(), data, totalFloats * sizeof(float));
+
+    stbi_image_free(data);
+    return Result<HdrImageData>::success(std::move(image));
+}
+
 } // namespace eng::render

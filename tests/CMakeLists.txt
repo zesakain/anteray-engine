@@ -133,6 +133,10 @@ add_executable(image_decoder_test unit/render/image_decoder_test.cpp)
 target_link_libraries(image_decoder_test PRIVATE hikari::engine_render)
 add_test(NAME image_decoder_test COMMAND image_decoder_test)
 
+add_executable(environment_map_test unit/render/environment_map_test.cpp)
+target_link_libraries(environment_map_test PRIVATE hikari::engine_render)
+add_test(NAME environment_map_test COMMAND environment_map_test)
+
 # Mesh Unit Tests
 add_executable(mesh_test unit/render/mesh_test.cpp)
 target_link_libraries(mesh_test PRIVATE hikari::engine_render hikari::engine_rhi)

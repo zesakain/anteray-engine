@@ -4,6 +4,7 @@
 
 add_library(engine_render STATIC
     src/asset_manager.cpp
+    src/environment_map.cpp
     src/gltf_importer.cpp
     src/gltf_scene_importer.cpp
     src/gpu_material.cpp
