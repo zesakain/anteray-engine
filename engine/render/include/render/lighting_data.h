@@ -98,15 +98,21 @@ struct alignas(16) GpuLightingData {
 
     /// Packed shadow parameters: lower 16 bits = resolution, upper 16 bits = PCF quality.
     uint32_t shadowPackedParams{0};
+
+    /// x: hasIbl (1.0 = true, 0.0 = false), y: intensity, z: maxPrefilterMipLevel, w: unused pad
+    Vec4 iblParams{0.0F, 1.0F, 4.0F, 0.0F};
 };
 
-static_assert(sizeof(GpuLightingData) == 1680,
-              "GpuLightingData must strictly match std140 layout (1680 bytes)");
+static_assert(sizeof(GpuLightingData) == 1696,
+              "GpuLightingData must strictly match std140 layout (1696 bytes)");
 
 /// @brief Generates descriptor set layout descriptor for Scene/Lighting/Shadows (Set 1).
 ///
 /// Binding 0: UniformBuffer (LightingData) in Vertex | Fragment stages.
 /// Binding 1: CombinedImageSampler (Directional Shadow Map) in Fragment stage.
+/// Binding 2: CombinedImageSampler (Diffuse Irradiance Cubemap) in Fragment stage.
+/// Binding 3: CombinedImageSampler (Specular Prefiltered Cubemap) in Fragment stage.
+/// Binding 4: CombinedImageSampler (Split-Sum BRDF 2D LUT) in Fragment stage.
 [[nodiscard]] inline rhi::DescriptorSetLayoutDesc createSceneDescriptorSetLayoutDesc() {
     return rhi::DescriptorSetLayoutDesc{
         .bindings =
@@ -119,6 +125,24 @@ static_assert(sizeof(GpuLightingData) == 1680,
                 },
                 {
                     .binding = 1,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 2,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 3,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 4,
                     .descriptorType = rhi::DescriptorType::CombinedImageSampler,
                     .descriptorCount = 1,
                     .stageFlags = rhi::ShaderStageFlags::Fragment,

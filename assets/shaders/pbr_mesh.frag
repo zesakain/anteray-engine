@@ -62,9 +62,13 @@ layout(std140, set = 1, binding = 0) uniform LightingData {
     uint numSpotLights;
     uint dirLightActive;
     uint shadowPackedParams;
+    vec4 iblParams; // x: hasIbl (1.0 = true, 0.0 = false), y: intensity, z: maxPrefilterMipLevel, w: unused
 } uLighting;
 
 layout(set = 1, binding = 1) uniform sampler2DShadow uShadowMap;
+layout(set = 1, binding = 2) uniform samplerCube uIrradianceMap;
+layout(set = 1, binding = 3) uniform samplerCube uPrefilteredEnvMap;
+layout(set = 1, binding = 4) uniform sampler2D uBrdfLut;
 
 const float PI = 3.141592653589793;
 const float INV_PI = 0.31830988618379067;
@@ -75,6 +79,13 @@ vec3 fresnelSchlick(float VdotH, vec3 F0) {
     float fc2 = fc * fc;
     float fc5 = fc2 * fc2 * fc;
     return F0 + (vec3(1.0) - F0) * fc5;
+}
+
+vec3 fresnelSchlickRoughness(float NdotV, vec3 F0, float roughness) {
+    float fc = clamp(1.0 - NdotV, 0.0, 1.0);
+    float fc2 = fc * fc;
+    float fc5 = fc2 * fc2 * fc;
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * fc5;
 }
 
 // Fused Cook-Torrance BRDF (Single-Division Karis Smith-GGX + GGX NDF)
@@ -264,12 +275,32 @@ void main() {
         occlusion = mix(1.0, texture(uOcclusionMap, inUV).r, material.occlusionStrength);
     }
 
-    // 7. Ambient Term (environment fallback scaled by ambient parameters)
-    float ambIntensity = uLighting.cameraPosAndAmbientIntensity.w;
-    vec3 ambLight = (ambIntensity * occlusion) * uLighting.ambientColorAndShadowBias.rgb;
-    vec3 ambientDiffuse = baseColor.rgb * (1.0 - metallic) * ambLight;
-    vec3 ambientSpecular = mix(F0, baseColor.rgb, metallic) * (1.0 - roughness) * ambLight;
-    vec3 ambient = ambientDiffuse + ambientSpecular;
+    // 7. Ambient / Image-Based Lighting (IBL) Term
+    vec3 ambient = vec3(0.0);
+    if (uLighting.iblParams.x > 0.5) {
+        float NdotV = max(dot(N, V), 0.0);
+        vec3 F_ibl = fresnelSchlickRoughness(NdotV, F0, roughness);
+        vec3 kD_ibl = (vec3(1.0) - F_ibl) * (1.0 - metallic);
+
+        // Diffuse IBL
+        vec3 irradiance = texture(uIrradianceMap, N).rgb;
+        vec3 diffuseIBL = kD_ibl * irradiance * baseColor.rgb;
+
+        // Specular IBL
+        vec3 R = reflect(-V, N);
+        float maxMip = uLighting.iblParams.z;
+        vec3 prefilteredColor = textureLod(uPrefilteredEnvMap, R, roughness * maxMip).rgb;
+        vec2 envBRDF = texture(uBrdfLut, vec2(NdotV, roughness)).rg;
+        vec3 specularIBL = prefilteredColor * (F_ibl * envBRDF.x + envBRDF.y);
+
+        ambient = (diffuseIBL + specularIBL) * (occlusion * uLighting.iblParams.y);
+    } else {
+        float ambIntensity = uLighting.cameraPosAndAmbientIntensity.w;
+        vec3 ambLight = (ambIntensity * occlusion) * uLighting.ambientColorAndShadowBias.rgb;
+        vec3 ambientDiffuse = baseColor.rgb * (1.0 - metallic) * ambLight;
+        vec3 ambientSpecular = mix(F0, baseColor.rgb, metallic) * (1.0 - roughness) * ambLight;
+        ambient = ambientDiffuse + ambientSpecular;
+    }
 
     // 8. Emissive Term
     vec3 emissive = vec3(0.0);
