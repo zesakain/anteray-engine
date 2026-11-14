@@ -256,9 +256,9 @@ static bool generateBistro(const std::filesystem::path& outDir) {
     render::DirectionalLightComponent dl{};
     dl.direction = Vec3(0.5F, 0.75F, -0.4F).normalized();
     dl.color = Vec3(1.0F, 0.95F, 0.88F);
-    dl.intensity = 4.0F;
+    dl.intensity = 3.2F;
     dl.castShadows = true;
-    dl.shadowBias = 0.0025F;
+    dl.shadowBias = 0.0020F;
     dl.enabled = true;
     world.setComponent(sun, dl);
 
