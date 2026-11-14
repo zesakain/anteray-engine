@@ -173,71 +173,34 @@ parseTextureInfo(const cgltf_data* data, const cgltf_texture_view& view, std::st
         mat.metallicRoughnessTexture = parseTextureInfo(
             data, sg.specular_glossiness_texture, baseDir, TextureColorSpace::Linear, sourcePath);
 
-        // Check material classification: metallic surface vs dielectric architectural surface
-        std::string lowerName = mat.name;
-        for (char& c : lowerName) {
-            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        }
-
-        const bool hasMetalName = (lowerName.find("metal") != std::string::npos ||
-                                   lowerName.find("chrome") != std::string::npos ||
-                                   lowerName.find("brass") != std::string::npos ||
-                                   lowerName.find("iron") != std::string::npos ||
-                                   lowerName.find("steel") != std::string::npos ||
-                                   lowerName.find("gold") != std::string::npos ||
-                                   lowerName.find("copper") != std::string::npos ||
-                                   lowerName.find("bronze") != std::string::npos ||
-                                   lowerName.find("vespa") != std::string::npos ||
-                                   lowerName.find("cutlery") != std::string::npos);
-
+        // Standard analytical conversion from KHR_materials_pbrSpecularGlossiness
+        // to PBR Metallic-Roughness (per Khronos specification):
         const float maxSpec =
             std::max(sg.specular_factor[0], std::max(sg.specular_factor[1], sg.specular_factor[2]));
 
-        if (hasMetalName) {
-            mat.metallic = std::clamp((maxSpec - 0.04F) / 0.96F, 0.4F, 1.0F);
-            mat.roughness = std::clamp(1.0F - sg.glossiness_factor, 0.05F, 1.0F);
+        if (mat.metallicRoughnessTexture.isPresent) {
+            // Specular-glossiness texture is converted to glTF metallic-roughness layout
+            // (roughness in Green, metallic in Blue). Identity multipliers allow texture to govern.
+            mat.roughness = (sg.glossiness_factor > 0.0F) ? sg.glossiness_factor : 1.0F;
+            mat.metallic = 1.0F;
         } else {
-            // Dielectric architectural surface (plaster, stone, concrete, brick, wood, cloth,
-            // foliage, glass)
-            mat.metallic = 0.0F;
-
-            // If specular_glossiness_texture was defined in glTF, glossiness_factor defaults to 1.0
-            // (identity texture multiplier). If the texture file is missing from disk, falling back
-            // to 1.0 - 1.0 = 0.0 makes walls and concrete hyper-reflective chrome mirrors. Use
-            // authentic physical roughness:
-            if (sg.specular_glossiness_texture.texture != nullptr &&
-                sg.glossiness_factor >= 0.99F) {
-                if (lowerName.find("plaster") != std::string::npos ||
-                    lowerName.find("concrete") != std::string::npos ||
-                    lowerName.find("brick") != std::string::npos ||
-                    lowerName.find("cobble") != std::string::npos ||
-                    lowerName.find("street") != std::string::npos ||
-                    lowerName.find("pavement") != std::string::npos ||
-                    lowerName.find("curb") != std::string::npos ||
-                    lowerName.find("ground") != std::string::npos ||
-                    lowerName.find("roof") != std::string::npos ||
-                    lowerName.find("shingle") != std::string::npos) {
-                    mat.roughness = 0.78F;
-                } else if (lowerName.find("fabric") != std::string::npos ||
-                           lowerName.find("awning") != std::string::npos ||
-                           lowerName.find("cloth") != std::string::npos) {
-                    mat.roughness = 0.85F;
-                } else if (lowerName.find("wood") != std::string::npos ||
-                           lowerName.find("door") != std::string::npos ||
-                           lowerName.find("table") != std::string::npos ||
-                           lowerName.find("chair") != std::string::npos) {
-                    mat.roughness = 0.60F;
-                } else if (lowerName.find("leaf") != std::string::npos ||
-                           lowerName.find("leaves") != std::string::npos ||
-                           lowerName.find("foliage") != std::string::npos ||
-                           lowerName.find("flower") != std::string::npos ||
-                           lowerName.find("plant") != std::string::npos) {
-                    mat.roughness = 0.50F;
-                } else {
-                    mat.roughness = 0.70F;
-                }
+            // Uniform analytical conversion without textures:
+            // Standard physical dielectric reflectance F0 is approx. 0.04 (4% at normal incidence).
+            if (maxSpec <= 0.05F) {
+                mat.metallic = 0.0F;
             } else {
-                mat.roughness = std::clamp(1.0F - sg.glossiness_factor, 0.05F, 1.0F);
+                mat.metallic = std::clamp((maxSpec - 0.04F) / 0.96F, 0.0F, 1.0F);
+            }
+            mat.roughness = std::clamp(1.0F - sg.glossiness_factor, 0.045F, 1.0F);
+
+            // Metals reflect incoming light through specular color rather than diffuse
+            if (mat.metallic > 0.0F && !mat.baseColorTexture.isPresent) {
+                mat.baseColor.x =
+                    std::lerp(sg.diffuse_factor[0], sg.specular_factor[0], mat.metallic);
+                mat.baseColor.y =
+                    std::lerp(sg.diffuse_factor[1], sg.specular_factor[1], mat.metallic);
+                mat.baseColor.z =
+                    std::lerp(sg.diffuse_factor[2], sg.specular_factor[2], mat.metallic);
             }
         }
     } else {
