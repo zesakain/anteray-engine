@@ -189,6 +189,17 @@ public:
         p.children([&fn](flecs::entity child) { fn(EntityHandle(child.id())); });
     }
 
+    /// Checks whether the entity has any immediate children without allocating dynamic memory.
+    [[nodiscard]] bool hasChildren(EntityHandle parent) const {
+        if (!isAlive(parent)) {
+            return false;
+        }
+        flecs::entity p = ecs_.entity(parent.id);
+        bool hasAny = false;
+        p.children([&hasAny](flecs::entity) { hasAny = true; });
+        return hasAny;
+    }
+
     /// Checks if 'descendant' is an ancestor-descendant child of 'ancestor'.
     [[nodiscard]] bool isDescendantOf(EntityHandle descendant, EntityHandle ancestor) const;
 
