@@ -59,7 +59,7 @@ int s_viewMode = 0;      // 0 = Lit, 1 = Wireframe, 2 = Normals
 int s_transformMode = 0; // 0 = Translate, 1 = Rotate, 2 = Scale
 int s_snappingMode = 2;  // 0 = Off, 1 = 0.1m, 2 = 0.5m, 3 = 1.0m
 int s_coordSpace = 0;    // 0 = World, 1 = Local
-bool s_showGrid = true;
+bool s_showGrid = false;
 bool s_showStats = true;
 bool s_useGpuRenderer =
     true; // True = GPU Viewport (SceneRenderer), False = CPU Software Rasterizer
