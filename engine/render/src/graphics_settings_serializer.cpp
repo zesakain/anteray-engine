@@ -237,6 +237,15 @@ Result<std::string> GraphicsSettingsSerializer::serializeToString(const Graphics
     lightingObj.set("environmentIntensity",
                     JsonValue(static_cast<double>(settings.lighting.environmentIntensity)));
     lightingObj.set("indirectLighting", JsonValue(settings.lighting.indirectLighting));
+    lightingObj.set("gtaoEnabled", JsonValue(settings.lighting.gtaoEnabled));
+    lightingObj.set("gtaoRadius", JsonValue(static_cast<double>(settings.lighting.gtaoRadius)));
+    lightingObj.set("gtaoIntensity",
+                    JsonValue(static_cast<double>(settings.lighting.gtaoIntensity)));
+    lightingObj.set("ssgiEnabled", JsonValue(settings.lighting.ssgiEnabled));
+    lightingObj.set("ssgiRadius", JsonValue(static_cast<double>(settings.lighting.ssgiRadius)));
+    lightingObj.set("giIntensity", JsonValue(static_cast<double>(settings.lighting.giIntensity)));
+    lightingObj.set("temporalDenoise", JsonValue(settings.lighting.temporalDenoise));
+    lightingObj.set("probesEnabled", JsonValue(settings.lighting.probesEnabled));
     lightingObj.set("exposure", JsonValue(static_cast<double>(settings.lighting.exposure)));
     lightingObj.set("whiteBalance", JsonValue(static_cast<double>(settings.lighting.whiteBalance)));
     lightingObj.set("timeOfDay", JsonValue(timeOfDayToString(settings.lighting.timeOfDay)));
@@ -400,6 +409,17 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
             l->getFloat("environmentIntensity", settings.lighting.environmentIntensity);
         settings.lighting.indirectLighting =
             l->getBool("indirectLighting", settings.lighting.indirectLighting);
+        settings.lighting.gtaoEnabled = l->getBool("gtaoEnabled", settings.lighting.gtaoEnabled);
+        settings.lighting.gtaoRadius = l->getFloat("gtaoRadius", settings.lighting.gtaoRadius);
+        settings.lighting.gtaoIntensity =
+            l->getFloat("gtaoIntensity", settings.lighting.gtaoIntensity);
+        settings.lighting.ssgiEnabled = l->getBool("ssgiEnabled", settings.lighting.ssgiEnabled);
+        settings.lighting.ssgiRadius = l->getFloat("ssgiRadius", settings.lighting.ssgiRadius);
+        settings.lighting.giIntensity = l->getFloat("giIntensity", settings.lighting.giIntensity);
+        settings.lighting.temporalDenoise =
+            l->getBool("temporalDenoise", settings.lighting.temporalDenoise);
+        settings.lighting.probesEnabled =
+            l->getBool("probesEnabled", settings.lighting.probesEnabled);
         settings.lighting.exposure = l->getFloat("exposure", settings.lighting.exposure);
         settings.lighting.whiteBalance =
             l->getFloat("whiteBalance", settings.lighting.whiteBalance);

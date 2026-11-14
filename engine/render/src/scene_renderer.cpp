@@ -7,6 +7,7 @@
 #include "core/log.h"
 #include "physics/physics_components.h"
 #include "render/gpu_material.h"
+#include "render/image.h"
 #include "render/mesh_shader_spirv.h"
 #include "world/components.h"
 
@@ -117,6 +118,40 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
         other.bloomUpSets_[i] = {};
     }
 
+    gtaoRawTarget_ = other.gtaoRawTarget_;
+    gtaoFilteredTarget_ = other.gtaoFilteredTarget_;
+    ssgiRawTarget_ = other.ssgiRawTarget_;
+    ssgiFilteredTarget_ = other.ssgiFilteredTarget_;
+    ssgiHistoryTarget_[0] = other.ssgiHistoryTarget_[0];
+    ssgiHistoryTarget_[1] = other.ssgiHistoryTarget_[1];
+    hdrHistoryTarget_[0] = other.hdrHistoryTarget_[0];
+    hdrHistoryTarget_[1] = other.hdrHistoryTarget_[1];
+    defaultAoTexture_ = std::move(other.defaultAoTexture_);
+    defaultIndirectTexture_ = std::move(other.defaultIndirectTexture_);
+    linearClampSampler_ = other.linearClampSampler_;
+    pointClampSampler_ = other.pointClampSampler_;
+    gtaoFragmentShader_ = other.gtaoFragmentShader_;
+    bilateralBlurFragmentShader_ = other.bilateralBlurFragmentShader_;
+    ssgiFragmentShader_ = other.ssgiFragmentShader_;
+    temporalFilterFragmentShader_ = other.temporalFilterFragmentShader_;
+    tripleTextureSetLayout_ = other.tripleTextureSetLayout_;
+    giDescriptorPool_ = other.giDescriptorPool_;
+    gtaoDescriptorSet_ = other.gtaoDescriptorSet_;
+    gtaoBlurDescriptorSet_ = other.gtaoBlurDescriptorSet_;
+    ssgiDescriptorSet_ = other.ssgiDescriptorSet_;
+    temporalFilterDescriptorSet_ = other.temporalFilterDescriptorSet_;
+    gtaoPipelineLayout_ = other.gtaoPipelineLayout_;
+    gtaoBlurPipelineLayout_ = other.gtaoBlurPipelineLayout_;
+    ssgiPipelineLayout_ = other.ssgiPipelineLayout_;
+    temporalFilterPipelineLayout_ = other.temporalFilterPipelineLayout_;
+    gtaoPipeline_ = other.gtaoPipeline_;
+    gtaoBlurPipeline_ = other.gtaoBlurPipeline_;
+    ssgiPipeline_ = other.ssgiPipeline_;
+    temporalFilterPipeline_ = other.temporalFilterPipeline_;
+    prevViewProj_ = other.prevViewProj_;
+    isHistoryValid_ = other.isHistoryValid_;
+    giFrameIndex_ = other.giFrameIndex_;
+
     other.device_ = nullptr;
     other.colorTarget_ = {};
     other.depthTarget_ = {};
@@ -167,6 +202,36 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
     other.hdrPipelineTransparentDoubleSided_ = {};
     other.wireframePipeline_ = {};
     other.wireframeLdrPipeline_ = {};
+    other.gtaoRawTarget_ = {};
+    other.gtaoFilteredTarget_ = {};
+    other.ssgiRawTarget_ = {};
+    other.ssgiFilteredTarget_ = {};
+    other.ssgiHistoryTarget_[0] = {};
+    other.ssgiHistoryTarget_[1] = {};
+    other.hdrHistoryTarget_[0] = {};
+    other.hdrHistoryTarget_[1] = {};
+    other.linearClampSampler_ = {};
+    other.pointClampSampler_ = {};
+    other.gtaoFragmentShader_ = {};
+    other.bilateralBlurFragmentShader_ = {};
+    other.ssgiFragmentShader_ = {};
+    other.temporalFilterFragmentShader_ = {};
+    other.tripleTextureSetLayout_ = {};
+    other.giDescriptorPool_ = {};
+    other.gtaoDescriptorSet_ = {};
+    other.gtaoBlurDescriptorSet_ = {};
+    other.ssgiDescriptorSet_ = {};
+    other.temporalFilterDescriptorSet_ = {};
+    other.gtaoPipelineLayout_ = {};
+    other.gtaoBlurPipelineLayout_ = {};
+    other.ssgiPipelineLayout_ = {};
+    other.temporalFilterPipelineLayout_ = {};
+    other.gtaoPipeline_ = {};
+    other.gtaoBlurPipeline_ = {};
+    other.ssgiPipeline_ = {};
+    other.temporalFilterPipeline_ = {};
+    other.isHistoryValid_ = false;
+    other.giFrameIndex_ = 0;
     other.width_ = 0;
     other.height_ = 0;
     other.shadowResolution_ = 2048;
@@ -245,6 +310,40 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         renderGraph_ = std::move(other.renderGraph_);
         postProcessGraph_ = std::move(other.postProcessGraph_);
 
+        gtaoRawTarget_ = other.gtaoRawTarget_;
+        gtaoFilteredTarget_ = other.gtaoFilteredTarget_;
+        ssgiRawTarget_ = other.ssgiRawTarget_;
+        ssgiFilteredTarget_ = other.ssgiFilteredTarget_;
+        ssgiHistoryTarget_[0] = other.ssgiHistoryTarget_[0];
+        ssgiHistoryTarget_[1] = other.ssgiHistoryTarget_[1];
+        hdrHistoryTarget_[0] = other.hdrHistoryTarget_[0];
+        hdrHistoryTarget_[1] = other.hdrHistoryTarget_[1];
+        defaultAoTexture_ = std::move(other.defaultAoTexture_);
+        defaultIndirectTexture_ = std::move(other.defaultIndirectTexture_);
+        linearClampSampler_ = other.linearClampSampler_;
+        pointClampSampler_ = other.pointClampSampler_;
+        gtaoFragmentShader_ = other.gtaoFragmentShader_;
+        bilateralBlurFragmentShader_ = other.bilateralBlurFragmentShader_;
+        ssgiFragmentShader_ = other.ssgiFragmentShader_;
+        temporalFilterFragmentShader_ = other.temporalFilterFragmentShader_;
+        tripleTextureSetLayout_ = other.tripleTextureSetLayout_;
+        giDescriptorPool_ = other.giDescriptorPool_;
+        gtaoDescriptorSet_ = other.gtaoDescriptorSet_;
+        gtaoBlurDescriptorSet_ = other.gtaoBlurDescriptorSet_;
+        ssgiDescriptorSet_ = other.ssgiDescriptorSet_;
+        temporalFilterDescriptorSet_ = other.temporalFilterDescriptorSet_;
+        gtaoPipelineLayout_ = other.gtaoPipelineLayout_;
+        gtaoBlurPipelineLayout_ = other.gtaoBlurPipelineLayout_;
+        ssgiPipelineLayout_ = other.ssgiPipelineLayout_;
+        temporalFilterPipelineLayout_ = other.temporalFilterPipelineLayout_;
+        gtaoPipeline_ = other.gtaoPipeline_;
+        gtaoBlurPipeline_ = other.gtaoBlurPipeline_;
+        ssgiPipeline_ = other.ssgiPipeline_;
+        temporalFilterPipeline_ = other.temporalFilterPipeline_;
+        prevViewProj_ = other.prevViewProj_;
+        isHistoryValid_ = other.isHistoryValid_;
+        giFrameIndex_ = other.giFrameIndex_;
+
         width_ = other.width_;
         height_ = other.height_;
         shadowResolution_ = other.shadowResolution_;
@@ -301,6 +400,36 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         other.hdrPipelineTransparentDoubleSided_ = {};
         other.wireframePipeline_ = {};
         other.wireframeLdrPipeline_ = {};
+        other.gtaoRawTarget_ = {};
+        other.gtaoFilteredTarget_ = {};
+        other.ssgiRawTarget_ = {};
+        other.ssgiFilteredTarget_ = {};
+        other.ssgiHistoryTarget_[0] = {};
+        other.ssgiHistoryTarget_[1] = {};
+        other.hdrHistoryTarget_[0] = {};
+        other.hdrHistoryTarget_[1] = {};
+        other.linearClampSampler_ = {};
+        other.pointClampSampler_ = {};
+        other.gtaoFragmentShader_ = {};
+        other.bilateralBlurFragmentShader_ = {};
+        other.ssgiFragmentShader_ = {};
+        other.temporalFilterFragmentShader_ = {};
+        other.tripleTextureSetLayout_ = {};
+        other.giDescriptorPool_ = {};
+        other.gtaoDescriptorSet_ = {};
+        other.gtaoBlurDescriptorSet_ = {};
+        other.ssgiDescriptorSet_ = {};
+        other.temporalFilterDescriptorSet_ = {};
+        other.gtaoPipelineLayout_ = {};
+        other.gtaoBlurPipelineLayout_ = {};
+        other.ssgiPipelineLayout_ = {};
+        other.temporalFilterPipelineLayout_ = {};
+        other.gtaoPipeline_ = {};
+        other.gtaoBlurPipeline_ = {};
+        other.ssgiPipeline_ = {};
+        other.temporalFilterPipeline_ = {};
+        other.isHistoryValid_ = false;
+        other.giFrameIndex_ = 0;
         other.width_ = 0;
         other.height_ = 0;
         other.shadowResolution_ = 2048;
@@ -353,7 +482,8 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         .depth = 1,
         .mipLevels = 1,
         .arrayLayers = 1,
-        .usage = rhi::TextureUsageFlags::DepthStencilAttachment,
+        .usage = rhi::TextureUsageFlags::DepthStencilAttachment | rhi::TextureUsageFlags::Sampled |
+                 rhi::TextureUsageFlags::TransferSrc,
         .debugName = "SceneRendererDepthTarget",
     };
     auto depthRes = device_->createTexture(depthDesc);
@@ -443,7 +573,7 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         .poolSizes =
             {
                 {.type = rhi::DescriptorType::UniformBuffer, .count = 1},
-                {.type = rhi::DescriptorType::CombinedImageSampler, .count = 4},
+                {.type = rhi::DescriptorType::CombinedImageSampler, .count = 8},
             },
         .debugName = "SceneLightingDescriptorPool",
     };
@@ -469,6 +599,29 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         ENG_LOG_WARN("SceneRenderer", "Failed to create default procedural sky environment map");
     }
 
+    // Initialize fallback 1x1 AO (white) and indirect GI (black) textures
+    ImageData whiteImg{};
+    whiteImg.width = 1;
+    whiteImg.height = 1;
+    whiteImg.channels = 4;
+    whiteImg.format = rhi::TextureFormat::RGBA8_UNORM;
+    whiteImg.pixels = {255, 255, 255, 255};
+    auto aoTexRes = GpuTexture::create(*device_, whiteImg, false);
+    if (aoTexRes.hasValue()) {
+        defaultAoTexture_ = std::move(aoTexRes.value());
+    }
+
+    ImageData blackImg{};
+    blackImg.width = 1;
+    blackImg.height = 1;
+    blackImg.channels = 4;
+    blackImg.format = rhi::TextureFormat::RGBA8_UNORM;
+    blackImg.pixels = {0, 0, 0, 255};
+    auto indTexRes = GpuTexture::create(*device_, blackImg, false);
+    if (indTexRes.hasValue()) {
+        defaultIndirectTexture_ = std::move(indTexRes.value());
+    }
+
     const rhi::TextureHandle irrTex =
         envMap_.irradianceMap ? envMap_.irradianceMap->getTexture() : rhi::TextureHandle{};
     const rhi::SamplerHandle irrSamp =
@@ -481,14 +634,24 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         envMap_.brdfLut ? envMap_.brdfLut->getTexture() : rhi::TextureHandle{};
     const rhi::SamplerHandle lutSamp =
         envMap_.brdfLut ? envMap_.brdfLut->getSampler() : rhi::SamplerHandle{};
+    const rhi::TextureHandle defAoTex =
+        defaultAoTexture_ ? defaultAoTexture_->getTexture() : rhi::TextureHandle{};
+    const rhi::SamplerHandle defAoSamp =
+        defaultAoTexture_ ? defaultAoTexture_->getSampler() : rhi::SamplerHandle{};
+    const rhi::TextureHandle defIndTex =
+        defaultIndirectTexture_ ? defaultIndirectTexture_->getTexture() : rhi::TextureHandle{};
+    const rhi::SamplerHandle defIndSamp =
+        defaultIndirectTexture_ ? defaultIndirectTexture_->getSampler() : rhi::SamplerHandle{};
 
-    std::array<rhi::DescriptorWrite, 5> sceneWrites{
+    std::array<rhi::DescriptorWrite, 7> sceneWrites{
         rhi::DescriptorWrite::makeBuffer(0, rhi::DescriptorType::UniformBuffer,
                                          lightingUniformBuffer_, 0, sizeof(GpuLightingData)),
         rhi::DescriptorWrite::makeCombinedImageSampler(1, shadowDepthTarget_, shadowSampler_),
         rhi::DescriptorWrite::makeCombinedImageSampler(2, irrTex, irrSamp),
         rhi::DescriptorWrite::makeCombinedImageSampler(3, prefTex, prefSamp),
         rhi::DescriptorWrite::makeCombinedImageSampler(4, lutTex, lutSamp),
+        rhi::DescriptorWrite::makeCombinedImageSampler(5, defAoTex, defAoSamp),
+        rhi::DescriptorWrite::makeCombinedImageSampler(6, defIndTex, defIndSamp),
     };
     std::ignore = device_->updateDescriptorSet(sceneDescriptorSet_, sceneWrites);
 
@@ -606,7 +769,7 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
             {
                 .depthTestEnable = true,
                 .depthWriteEnable = true,
-                .depthCompareOp = rhi::CompareOp::Less,
+                .depthCompareOp = rhi::CompareOp::LessOrEqual,
             },
         .colorBlendAttachments = {{
             .blendEnable = false,
@@ -832,7 +995,7 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
             {
                 .depthTestEnable = true,
                 .depthWriteEnable = true,
-                .depthCompareOp = rhi::CompareOp::Less,
+                .depthCompareOp = rhi::CompareOp::LessOrEqual,
             },
         .colorBlendAttachments = {},
         .layout = shadowPipelineLayout_,
@@ -850,6 +1013,7 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
     // 7b. Create Depth Prepass Pipeline (vertex-only writing to scene depthTarget_)
     rhi::GraphicsPipelineDesc depthPrepassDesc = shadowPipeDesc;
     depthPrepassDesc.depthAttachmentFormat = depthFormat_;
+    depthPrepassDesc.rasterization.cullMode = rhi::CullMode::None;
     depthPrepassDesc.debugName = "DepthPrepassPipeline";
     auto depthPrepassRes = device_->createGraphicsPipeline(depthPrepassDesc);
     if (depthPrepassRes.hasValue()) {
@@ -913,6 +1077,19 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         return ppTargetsRes.error();
     }
 
+    // 9. Initialize Global Illumination (Milestone 11D) Resources
+    auto giRes = initGiResources();
+    if (!giRes.hasValue()) {
+        shutdown();
+        return giRes.error();
+    }
+
+    auto giTargetsRes = createGiTargets(width_, height_);
+    if (!giTargetsRes.hasValue()) {
+        shutdown();
+        return giTargetsRes.error();
+    }
+
     settings_ = GraphicsSettings::createPreset(GraphicsQualityPreset::High);
     settings_ = settings_.validateAgainstCaps(device_->getCaps());
 
@@ -926,6 +1103,7 @@ void SceneRenderer::shutdown() {
     if (device_ != nullptr) {
         envMap_ = {};
         destroyPostProcessTargets();
+        destroyGiResources();
 
         if (toneMappingPipeline_.isValid()) {
             device_->destroyGraphicsPipeline(toneMappingPipeline_);
@@ -1173,6 +1351,7 @@ Result<void> SceneRenderer::resize(uint32_t width, uint32_t height) {
     }
 
     destroyPostProcessTargets();
+    destroyGiTargets();
 
     width_ = width;
     height_ = height;
@@ -1204,7 +1383,8 @@ Result<void> SceneRenderer::resize(uint32_t width, uint32_t height) {
         .depth = 1,
         .mipLevels = 1,
         .arrayLayers = 1,
-        .usage = rhi::TextureUsageFlags::DepthStencilAttachment,
+        .usage = rhi::TextureUsageFlags::DepthStencilAttachment | rhi::TextureUsageFlags::Sampled |
+                 rhi::TextureUsageFlags::TransferSrc,
         .debugName = "SceneRendererDepthTarget",
     };
     auto depthRes = device_->createTexture(depthDesc);
@@ -1217,6 +1397,12 @@ Result<void> SceneRenderer::resize(uint32_t width, uint32_t height) {
     if (!ppRes.hasValue()) {
         return ppRes.error();
     }
+
+    auto giTargetsRes = createGiTargets(width_, height_);
+    if (!giTargetsRes.hasValue()) {
+        return giTargetsRes.error();
+    }
+    isHistoryValid_ = false;
 
     buildRenderGraph();
     buildPostProcessGraph();
@@ -1433,6 +1619,26 @@ void SceneRenderer::buildRenderGraph() {
         lightBufId = renderGraph_.importBuffer("LightingBuffer", lightingUniformBuffer_);
     }
 
+    const bool hasGtao = settings_.lighting.gtaoEnabled && gtaoPipeline_.isValid() &&
+                         gtaoBlurPipeline_.isValid() && gtaoRawTarget_.isValid() &&
+                         gtaoFilteredTarget_.isValid();
+    const bool hasSsgi = settings_.lighting.ssgiEnabled && ssgiPipeline_.isValid() &&
+                         ssgiRawTarget_.isValid() && ssgiFilteredTarget_.isValid();
+
+    GraphTextureId gtaoRawId{};
+    GraphTextureId gtaoFilteredId{};
+    if (hasGtao) {
+        gtaoRawId = renderGraph_.importTexture("GtaoRawTarget", gtaoRawTarget_);
+        gtaoFilteredId = renderGraph_.importTexture("GtaoFilteredTarget", gtaoFilteredTarget_);
+    }
+
+    GraphTextureId ssgiRawId{};
+    GraphTextureId ssgiFilteredId{};
+    if (hasSsgi) {
+        ssgiRawId = renderGraph_.importTexture("SsgiRawTarget", ssgiRawTarget_);
+        ssgiFilteredId = renderGraph_.importTexture("SsgiFilteredTarget", ssgiFilteredTarget_);
+    }
+
     // 1. Directional Shadow Pass
     if (hasShadowPass) {
         renderGraph_.addPass(
@@ -1443,8 +1649,8 @@ void SceneRenderer::buildRenderGraph() {
             [this](rhi::RhiCommandList& cmdList) { recordShadowPass(cmdList); });
     }
 
-    // 2. Early Depth Prepass
-    const bool hasDepthPrepass = settings_.performance.depthPrepass &&
+    // 2. Early Depth Prepass (required for depth prepass setting OR GTAO/SSGI)
+    const bool hasDepthPrepass = (settings_.performance.depthPrepass || hasGtao || hasSsgi) &&
                                  depthPrepassPipeline_.isValid() && depthTarget_.isValid();
     if (hasDepthPrepass) {
         renderGraph_.addPass(
@@ -1457,16 +1663,65 @@ void SceneRenderer::buildRenderGraph() {
             [this](rhi::RhiCommandList& cmdList) { recordDepthPrepass(cmdList); });
     }
 
-    // 3. Main PBR Scene Pass
+    // 3. Ground-Truth Ambient Occlusion (GTAO) Pass
+    if (hasGtao && depthId.isValid() && gtaoRawId.isValid() && gtaoFilteredId.isValid()) {
+        renderGraph_.addPass(
+            "GtaoPass",
+            [depthId, gtaoRawId](RenderPassBuilder& builder) {
+                builder.readTexture(depthId, rhi::TextureUsageFlags::Sampled);
+                builder.writeTexture(gtaoRawId, rhi::TextureUsageFlags::ColorAttachment);
+            },
+            [this](rhi::RhiCommandList& cmdList) { recordGtaoPass(cmdList); });
+
+        renderGraph_.addPass(
+            "GtaoBilateralBlurPass",
+            [gtaoRawId, depthId, gtaoFilteredId](RenderPassBuilder& builder) {
+                builder.readTexture(gtaoRawId, rhi::TextureUsageFlags::Sampled);
+                builder.readTexture(depthId, rhi::TextureUsageFlags::Sampled);
+                builder.writeTexture(gtaoFilteredId, rhi::TextureUsageFlags::ColorAttachment);
+            },
+            [this](rhi::RhiCommandList& cmdList) { recordGtaoBlurPass(cmdList); });
+    }
+
+    // 4. Screen-Space Global Illumination (SSGI) & Temporal Denoising Pass
+    if (hasSsgi && depthId.isValid() && ssgiRawId.isValid() && ssgiFilteredId.isValid()) {
+        renderGraph_.addPass(
+            "SsgiPass",
+            [depthId, colorId, ssgiRawId](RenderPassBuilder& builder) {
+                builder.readTexture(depthId, rhi::TextureUsageFlags::Sampled);
+                if (colorId.isValid()) {
+                    builder.readTexture(colorId, rhi::TextureUsageFlags::Sampled);
+                }
+                builder.writeTexture(ssgiRawId, rhi::TextureUsageFlags::ColorAttachment);
+            },
+            [this](rhi::RhiCommandList& cmdList) { recordSsgiPass(cmdList); });
+
+        renderGraph_.addPass(
+            "TemporalFilterPass",
+            [ssgiRawId, depthId, ssgiFilteredId](RenderPassBuilder& builder) {
+                builder.readTexture(ssgiRawId, rhi::TextureUsageFlags::Sampled);
+                builder.readTexture(depthId, rhi::TextureUsageFlags::Sampled);
+                builder.writeTexture(ssgiFilteredId, rhi::TextureUsageFlags::ColorAttachment);
+            },
+            [this](rhi::RhiCommandList& cmdList) { recordTemporalFilterPass(cmdList); });
+    }
+
+    // 5. Main PBR Scene Pass
     renderGraph_.addPass(
         "MainPbrPass",
-        [hasShadowPass, shadowId, lightBufId, colorId, depthId,
-         hasDepthPrepass](RenderPassBuilder& builder) {
+        [hasShadowPass, shadowId, lightBufId, colorId, depthId, hasDepthPrepass, hasGtao,
+         gtaoFilteredId, hasSsgi, ssgiFilteredId](RenderPassBuilder& builder) {
             if (hasShadowPass && shadowId.isValid()) {
                 builder.readTexture(shadowId, rhi::TextureUsageFlags::Sampled);
             }
             if (lightBufId.isValid()) {
                 builder.readBuffer(lightBufId, rhi::BufferUsageFlags::Uniform);
+            }
+            if (hasGtao && gtaoFilteredId.isValid()) {
+                builder.readTexture(gtaoFilteredId, rhi::TextureUsageFlags::Sampled);
+            }
+            if (hasSsgi && ssgiFilteredId.isValid()) {
+                builder.readTexture(ssgiFilteredId, rhi::TextureUsageFlags::Sampled);
             }
             if (colorId.isValid()) {
                 builder.writeTexture(colorId, rhi::TextureUsageFlags::ColorAttachment);
@@ -1718,6 +1973,12 @@ void SceneRenderer::recordDepthPrepass(rhi::RhiCommandList& cmdList) {
         }
 
         GpuMesh* gpuMesh = currentAssetManager_->getGpuMesh(meshId);
+        if (gpuMesh == nullptr && currentDevice_ != nullptr) {
+            auto uploadRes = currentAssetManager_->uploadMesh(meshId, *currentDevice_);
+            if (uploadRes.hasValue()) {
+                gpuMesh = uploadRes.value();
+            }
+        }
         if (gpuMesh == nullptr || !gpuMesh->isValid()) {
             return;
         }
@@ -1814,7 +2075,9 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
 
     const bool useHdr = postProcessSettings_.enabled && hdrTarget_.isValid();
     const bool useDepthPrepass =
-        settings_.performance.depthPrepass && depthPrepassPipeline_.isValid();
+        (settings_.performance.depthPrepass || settings_.lighting.gtaoEnabled ||
+         settings_.lighting.ssgiEnabled) &&
+        depthPrepassPipeline_.isValid();
     const rhi::TextureHandle sceneColorTarget = useHdr ? hdrTarget_ : colorTarget_;
     rhi::PipelineHandle scenePipeline =
         (useHdr && hdrPipeline_.isValid()) ? hdrPipeline_ : pipeline_;
@@ -2151,9 +2414,9 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     auto& ecs = world.getRawWorld();
 
     currentHasTimestamps_ = device.getCaps().features.timestampQueries;
-    currentBaseQuery_ = (frameSlotIndex_ % 2) * 16;
+    currentBaseQuery_ = (frameSlotIndex_ % 2) * 32;
     if (currentHasTimestamps_) {
-        cmdList.resetQueryPool(currentBaseQuery_, 16);
+        cmdList.resetQueryPool(currentBaseQuery_, 32);
         cmdList.writeTimestamp(currentBaseQuery_ + 0, rhi::GpuTimestampStage::TopOfPipe);
     }
 
@@ -2307,12 +2570,6 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     Mat4 lightSpaceMatrix = lightProj * lightView;
     lightingData.lightSpaceMatrix = lightSpaceMatrix;
 
-    // Upload lighting data to GPU uniform buffer
-    if (lightingUniformBuffer_.isValid()) {
-        std::ignore =
-            device.writeBuffer(lightingUniformBuffer_, 0, &lightingData, sizeof(GpuLightingData));
-    }
-
     currentWorld_ = &world;
     currentAssetManager_ = &assetManager;
     currentDevice_ = &device;
@@ -2322,6 +2579,69 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
                              lightingData.cameraPosAndAmbientIntensity.z);
     currentLightSpaceMatrix_ = lightSpaceMatrix;
     currentLightDir_ = dir;
+
+    // Global Illumination (Milestone 11D)
+    lightingData.giParams =
+        Vec4(settings_.lighting.ssgiEnabled ? 1.0F : 0.0F, settings_.lighting.giIntensity,
+             settings_.lighting.ssgiRadius,
+             settings_.lighting.gtaoEnabled ? settings_.lighting.gtaoIntensity : 0.0F);
+    lightingData.prevViewProj = prevViewProj_;
+    lightingData.invViewProj = invVPOpt.value_or(Mat4::identity());
+
+    // Blended Irradiance Probes
+    if (settings_.lighting.probesEnabled) {
+        SphericalHarmonicsL2 blendedSh{};
+        float totalProbeWeight = 0.0F;
+        auto probeQuery = ecs.query<const IrradianceProbeComponent>();
+        probeQuery.each([&](flecs::entity e, const IrradianceProbeComponent& probe) {
+            if (!probe.enabled) {
+                return;
+            }
+            Vec3 probePos = probe.position;
+            if (e.has<world::WorldTransformComponent>()) {
+                const auto* wt = e.get<world::WorldTransformComponent>();
+                if (wt != nullptr) {
+                    probePos =
+                        Vec3(wt->worldMatrix.m[12], wt->worldMatrix.m[13], wt->worldMatrix.m[14]);
+                }
+            } else if (e.has<world::TransformComponent>()) {
+                const auto* tc = e.get<world::TransformComponent>();
+                if (tc != nullptr) {
+                    probePos = tc->transform.position;
+                }
+            }
+            IrradianceProbeComponent probeCopy = probe;
+            probeCopy.position = probePos;
+            const float weight = probeCopy.computeWeight(currentCameraPos_);
+            if (weight > 1e-4F) {
+                SphericalHarmonicsL2 probeSh = probe.sh;
+                probeSh *= weight;
+                blendedSh += probeSh;
+                totalProbeWeight += weight;
+            }
+        });
+
+        if (totalProbeWeight > 1e-4F) {
+            blendedSh *= (1.0F / totalProbeWeight);
+            for (size_t i = 0; i < 9; ++i) {
+                lightingData.probeSh[i] =
+                    Vec4(blendedSh.coefficients[i].x, blendedSh.coefficients[i].y,
+                         blendedSh.coefficients[i].z, 0.0F);
+            }
+            lightingData.probeParams =
+                Vec4(1.0F, settings_.lighting.giIntensity, totalProbeWeight, 0.0F);
+        } else {
+            lightingData.probeParams = Vec4(0.0F, 0.0F, 0.0F, 0.0F);
+        }
+    } else {
+        lightingData.probeParams = Vec4(0.0F, 0.0F, 0.0F, 0.0F);
+    }
+
+    // Upload lighting data to GPU uniform buffer
+    if (lightingUniformBuffer_.isValid()) {
+        std::ignore =
+            device.writeBuffer(lightingUniformBuffer_, 0, &lightingData, sizeof(GpuLightingData));
+    }
     uint64_t currentCasterChecksum = 0;
     uint32_t casterCount = 0;
     if (settings_.shadows.enabled) {
@@ -2400,6 +2720,31 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     if (!renderGraph_.isCompiled()) {
         buildRenderGraph();
     }
+    updateGiDescriptors();
+
+    // Update Set 1 bindings 5 & 6 for Main PBR Pass
+    const rhi::TextureHandle aoTex =
+        (settings_.lighting.gtaoEnabled && gtaoFilteredTarget_.isValid())
+            ? gtaoFilteredTarget_
+            : (defaultAoTexture_ ? defaultAoTexture_->getTexture() : rhi::TextureHandle{});
+    const rhi::SamplerHandle aoSamp =
+        linearClampSampler_.isValid() ? linearClampSampler_ : shadowSampler_;
+    const rhi::TextureHandle indTex =
+        (settings_.lighting.ssgiEnabled && ssgiFilteredTarget_.isValid())
+            ? ssgiFilteredTarget_
+            : (defaultIndirectTexture_ ? defaultIndirectTexture_->getTexture()
+                                       : rhi::TextureHandle{});
+    const rhi::SamplerHandle indSamp =
+        linearClampSampler_.isValid() ? linearClampSampler_ : shadowSampler_;
+
+    if (sceneDescriptorSet_.isValid()) {
+        std::array<rhi::DescriptorWrite, 2> giWrites{
+            rhi::DescriptorWrite::makeCombinedImageSampler(5, aoTex, aoSamp),
+            rhi::DescriptorWrite::makeCombinedImageSampler(6, indTex, indSamp),
+        };
+        std::ignore = device.updateDescriptorSet(sceneDescriptorSet_, giWrites);
+    }
+
     if (renderGraph_.isCompiled()) {
         auto execRes = renderGraph_.execute(device, cmdList);
         if (!execRes.hasValue()) {
@@ -2407,11 +2752,724 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         }
     }
 
+    prevViewProj_ = viewProjection;
+    isHistoryValid_ = true;
+    giFrameIndex_++;
+
     currentWorld_ = nullptr;
     currentAssetManager_ = nullptr;
     currentDevice_ = nullptr;
     return lastRenderStats_;
 }
+
+Result<void> SceneRenderer::initGiResources() {
+    if (device_ == nullptr) {
+        return Error{.code = ErrorCode::InvalidState, .message = "Device not initialized"};
+    }
+
+    // 1. Samplers
+    rhi::SamplerDesc pointDesc{
+        .minFilter = rhi::Filter::Nearest,
+        .magFilter = rhi::Filter::Nearest,
+        .mipmapMode = rhi::Filter::Nearest,
+        .addressU = rhi::SamplerAddressMode::ClampToEdge,
+        .addressV = rhi::SamplerAddressMode::ClampToEdge,
+        .addressW = rhi::SamplerAddressMode::ClampToEdge,
+        .debugName = "GiPointClampSampler",
+    };
+    auto ptRes = device_->createSampler(pointDesc);
+    if (!ptRes.hasValue()) {
+        return ptRes.error();
+    }
+    pointClampSampler_ = ptRes.value();
+
+    rhi::SamplerDesc linDesc{
+        .minFilter = rhi::Filter::Linear,
+        .magFilter = rhi::Filter::Linear,
+        .mipmapMode = rhi::Filter::Linear,
+        .addressU = rhi::SamplerAddressMode::ClampToEdge,
+        .addressV = rhi::SamplerAddressMode::ClampToEdge,
+        .addressW = rhi::SamplerAddressMode::ClampToEdge,
+        .debugName = "GiLinearClampSampler",
+    };
+    auto linRes = device_->createSampler(linDesc);
+    if (!linRes.hasValue()) {
+        return linRes.error();
+    }
+    linearClampSampler_ = linRes.value();
+
+    // 2. Triple texture descriptor set layout (for temporal filter)
+    rhi::DescriptorSetLayoutDesc tripleDesc{
+        .bindings =
+            {
+                {
+                    .binding = 0,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 1,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 2,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+            },
+        .debugName = "GiTripleTextureLayout",
+    };
+    auto tripleRes = device_->createDescriptorSetLayout(tripleDesc);
+    if (!tripleRes.hasValue()) {
+        return tripleRes.error();
+    }
+    tripleTextureSetLayout_ = tripleRes.value();
+
+    // 3. GI Descriptor Pool (max 8 sets, 16 image samplers)
+    rhi::DescriptorPoolDesc poolDesc{
+        .maxSets = 8,
+        .poolSizes =
+            {
+                {.type = rhi::DescriptorType::CombinedImageSampler, .count = 16},
+            },
+        .debugName = "GiDescriptorPool",
+    };
+    auto poolRes = device_->createDescriptorPool(poolDesc);
+    if (!poolRes.hasValue()) {
+        return poolRes.error();
+    }
+    giDescriptorPool_ = poolRes.value();
+
+    auto gtaoSetRes = device_->allocateDescriptorSet(giDescriptorPool_, singleTextureSetLayout_);
+    if (!gtaoSetRes.hasValue()) {
+        return gtaoSetRes.error();
+    }
+    gtaoDescriptorSet_ = gtaoSetRes.value();
+
+    auto gtaoBlurSetRes = device_->allocateDescriptorSet(giDescriptorPool_, dualTextureSetLayout_);
+    if (!gtaoBlurSetRes.hasValue()) {
+        return gtaoBlurSetRes.error();
+    }
+    gtaoBlurDescriptorSet_ = gtaoBlurSetRes.value();
+
+    auto ssgiSetRes = device_->allocateDescriptorSet(giDescriptorPool_, dualTextureSetLayout_);
+    if (!ssgiSetRes.hasValue()) {
+        return ssgiSetRes.error();
+    }
+    ssgiDescriptorSet_ = ssgiSetRes.value();
+
+    auto tfSetRes = device_->allocateDescriptorSet(giDescriptorPool_, tripleTextureSetLayout_);
+    if (!tfSetRes.hasValue()) {
+        return tfSetRes.error();
+    }
+    temporalFilterDescriptorSet_ = tfSetRes.value();
+
+    // 4. Shaders
+    rhi::ShaderDesc gtaoDesc{
+        .stage = rhi::ShaderStageFlags::Fragment,
+        .spirvCode = kGtaoFragmentShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "GtaoFragmentShader",
+    };
+    auto gtaoShaderRes = device_->createShader(gtaoDesc);
+    if (!gtaoShaderRes.hasValue()) {
+        return gtaoShaderRes.error();
+    }
+    gtaoFragmentShader_ = gtaoShaderRes.value();
+
+    rhi::ShaderDesc blurDesc{
+        .stage = rhi::ShaderStageFlags::Fragment,
+        .spirvCode = kBilateralBlurFragmentShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "BilateralBlurFragmentShader",
+    };
+    auto blurShaderRes = device_->createShader(blurDesc);
+    if (!blurShaderRes.hasValue()) {
+        return blurShaderRes.error();
+    }
+    bilateralBlurFragmentShader_ = blurShaderRes.value();
+
+    rhi::ShaderDesc ssgiDesc{
+        .stage = rhi::ShaderStageFlags::Fragment,
+        .spirvCode = kSsgiFragmentShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "SsgiFragmentShader",
+    };
+    auto ssgiShaderRes = device_->createShader(ssgiDesc);
+    if (!ssgiShaderRes.hasValue()) {
+        return ssgiShaderRes.error();
+    }
+    ssgiFragmentShader_ = ssgiShaderRes.value();
+
+    rhi::ShaderDesc tfDesc{
+        .stage = rhi::ShaderStageFlags::Fragment,
+        .spirvCode = kTemporalFilterFragmentShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "TemporalFilterFragmentShader",
+    };
+    auto tfShaderRes = device_->createShader(tfDesc);
+    if (!tfShaderRes.hasValue()) {
+        return tfShaderRes.error();
+    }
+    temporalFilterFragmentShader_ = tfShaderRes.value();
+
+    // 5. Pipeline Layouts
+    rhi::PipelineLayoutDesc gtaoLayoutDesc{
+        .pushConstants = {{
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+            .offset = 0,
+            .size = sizeof(GtaoPushConstants),
+        }},
+        .descriptorSetLayoutHandles = {singleTextureSetLayout_},
+        .descriptorSetLayouts = {},
+        .debugName = "GtaoPipelineLayout",
+    };
+    auto gtaoLayRes = device_->createPipelineLayout(gtaoLayoutDesc);
+    if (!gtaoLayRes.hasValue()) {
+        return gtaoLayRes.error();
+    }
+    gtaoPipelineLayout_ = gtaoLayRes.value();
+
+    rhi::PipelineLayoutDesc blurLayoutDesc{
+        .pushConstants = {{
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+            .offset = 0,
+            .size = sizeof(BilateralBlurPushConstants),
+        }},
+        .descriptorSetLayoutHandles = {dualTextureSetLayout_},
+        .descriptorSetLayouts = {},
+        .debugName = "GtaoBlurPipelineLayout",
+    };
+    auto blurLayRes = device_->createPipelineLayout(blurLayoutDesc);
+    if (!blurLayRes.hasValue()) {
+        return blurLayRes.error();
+    }
+    gtaoBlurPipelineLayout_ = blurLayRes.value();
+
+    rhi::PipelineLayoutDesc ssgiLayoutDesc{
+        .pushConstants = {{
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+            .offset = 0,
+            .size = sizeof(SsgiPushConstants),
+        }},
+        .descriptorSetLayoutHandles = {dualTextureSetLayout_},
+        .descriptorSetLayouts = {},
+        .debugName = "SsgiPipelineLayout",
+    };
+    auto ssgiLayRes = device_->createPipelineLayout(ssgiLayoutDesc);
+    if (!ssgiLayRes.hasValue()) {
+        return ssgiLayRes.error();
+    }
+    ssgiPipelineLayout_ = ssgiLayRes.value();
+
+    rhi::PipelineLayoutDesc tfLayoutDesc{
+        .pushConstants = {{
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+            .offset = 0,
+            .size = sizeof(TemporalFilterPushConstants),
+        }},
+        .descriptorSetLayoutHandles = {tripleTextureSetLayout_},
+        .descriptorSetLayouts = {},
+        .debugName = "TemporalFilterPipelineLayout",
+    };
+    auto tfLayRes = device_->createPipelineLayout(tfLayoutDesc);
+    if (!tfLayRes.hasValue()) {
+        return tfLayRes.error();
+    }
+    temporalFilterPipelineLayout_ = tfLayRes.value();
+
+    // 6. Graphics Pipelines
+    rhi::GraphicsPipelineDesc gtaoPipeDesc{
+        .vertexShader = fullscreenVertexShader_,
+        .fragmentShader = gtaoFragmentShader_,
+        .vertexInput = {},
+        .topology = rhi::PrimitiveTopology::TriangleList,
+        .rasterization =
+            {
+                .polygonMode = rhi::PolygonMode::Fill,
+                .cullMode = rhi::CullMode::None,
+                .frontFace = rhi::FrontFace::CounterClockwise,
+            },
+        .depthStencil =
+            {
+                .depthTestEnable = false,
+                .depthWriteEnable = false,
+                .depthCompareOp = rhi::CompareOp::Always,
+            },
+        .colorBlendAttachments = {{
+            .blendEnable = false,
+            .colorWriteMask = rhi::ColorComponentFlags::All,
+        }},
+        .layout = gtaoPipelineLayout_,
+        .colorAttachmentFormats = {rhi::TextureFormat::R8_UNORM},
+        .debugName = "GtaoGraphicsPipeline",
+    };
+    auto gtaoPipeRes = device_->createGraphicsPipeline(gtaoPipeDesc);
+    if (!gtaoPipeRes.hasValue()) {
+        return gtaoPipeRes.error();
+    }
+    gtaoPipeline_ = gtaoPipeRes.value();
+
+    auto blurPipeDesc = gtaoPipeDesc;
+    blurPipeDesc.fragmentShader = bilateralBlurFragmentShader_;
+    blurPipeDesc.layout = gtaoBlurPipelineLayout_;
+    blurPipeDesc.debugName = "GtaoBlurGraphicsPipeline";
+    auto blurPipeRes = device_->createGraphicsPipeline(blurPipeDesc);
+    if (!blurPipeRes.hasValue()) {
+        return blurPipeRes.error();
+    }
+    gtaoBlurPipeline_ = blurPipeRes.value();
+
+    auto ssgiPipeDesc = gtaoPipeDesc;
+    ssgiPipeDesc.fragmentShader = ssgiFragmentShader_;
+    ssgiPipeDesc.layout = ssgiPipelineLayout_;
+    ssgiPipeDesc.colorAttachmentFormats = {hdrFormat_};
+    ssgiPipeDesc.debugName = "SsgiGraphicsPipeline";
+    auto ssgiPipeRes = device_->createGraphicsPipeline(ssgiPipeDesc);
+    if (!ssgiPipeRes.hasValue()) {
+        return ssgiPipeRes.error();
+    }
+    ssgiPipeline_ = ssgiPipeRes.value();
+
+    auto tfPipeDesc = gtaoPipeDesc;
+    tfPipeDesc.fragmentShader = temporalFilterFragmentShader_;
+    tfPipeDesc.layout = temporalFilterPipelineLayout_;
+    tfPipeDesc.colorAttachmentFormats = {hdrFormat_};
+    tfPipeDesc.debugName = "TemporalFilterGraphicsPipeline";
+    auto tfPipeRes = device_->createGraphicsPipeline(tfPipeDesc);
+    if (!tfPipeRes.hasValue()) {
+        return tfPipeRes.error();
+    }
+    temporalFilterPipeline_ = tfPipeRes.value();
+
+    return Result<void>::success();
+}
+
+void SceneRenderer::destroyGiResources() {
+    if (device_ != nullptr) {
+        destroyGiTargets();
+
+        if (temporalFilterPipeline_.isValid()) {
+            device_->destroyGraphicsPipeline(temporalFilterPipeline_);
+            temporalFilterPipeline_ = {};
+        }
+        if (ssgiPipeline_.isValid()) {
+            device_->destroyGraphicsPipeline(ssgiPipeline_);
+            ssgiPipeline_ = {};
+        }
+        if (gtaoBlurPipeline_.isValid()) {
+            device_->destroyGraphicsPipeline(gtaoBlurPipeline_);
+            gtaoBlurPipeline_ = {};
+        }
+        if (gtaoPipeline_.isValid()) {
+            device_->destroyGraphicsPipeline(gtaoPipeline_);
+            gtaoPipeline_ = {};
+        }
+
+        if (temporalFilterPipelineLayout_.isValid()) {
+            device_->destroyPipelineLayout(temporalFilterPipelineLayout_);
+            temporalFilterPipelineLayout_ = {};
+        }
+        if (ssgiPipelineLayout_.isValid()) {
+            device_->destroyPipelineLayout(ssgiPipelineLayout_);
+            ssgiPipelineLayout_ = {};
+        }
+        if (gtaoBlurPipelineLayout_.isValid()) {
+            device_->destroyPipelineLayout(gtaoBlurPipelineLayout_);
+            gtaoBlurPipelineLayout_ = {};
+        }
+        if (gtaoPipelineLayout_.isValid()) {
+            device_->destroyPipelineLayout(gtaoPipelineLayout_);
+            gtaoPipelineLayout_ = {};
+        }
+
+        if (giDescriptorPool_.isValid()) {
+            device_->destroyDescriptorPool(giDescriptorPool_);
+            giDescriptorPool_ = {};
+            gtaoDescriptorSet_ = {};
+            gtaoBlurDescriptorSet_ = {};
+            ssgiDescriptorSet_ = {};
+            temporalFilterDescriptorSet_ = {};
+        }
+
+        if (tripleTextureSetLayout_.isValid()) {
+            device_->destroyDescriptorSetLayout(tripleTextureSetLayout_);
+            tripleTextureSetLayout_ = {};
+        }
+
+        if (temporalFilterFragmentShader_.isValid()) {
+            device_->destroyShader(temporalFilterFragmentShader_);
+            temporalFilterFragmentShader_ = {};
+        }
+        if (ssgiFragmentShader_.isValid()) {
+            device_->destroyShader(ssgiFragmentShader_);
+            ssgiFragmentShader_ = {};
+        }
+        if (bilateralBlurFragmentShader_.isValid()) {
+            device_->destroyShader(bilateralBlurFragmentShader_);
+            bilateralBlurFragmentShader_ = {};
+        }
+        if (gtaoFragmentShader_.isValid()) {
+            device_->destroyShader(gtaoFragmentShader_);
+            gtaoFragmentShader_ = {};
+        }
+
+        if (linearClampSampler_.isValid()) {
+            device_->destroySampler(linearClampSampler_);
+            linearClampSampler_ = {};
+        }
+        if (pointClampSampler_.isValid()) {
+            device_->destroySampler(pointClampSampler_);
+            pointClampSampler_ = {};
+        }
+
+        defaultAoTexture_.reset();
+        defaultIndirectTexture_.reset();
+    }
+}
+
+Result<void> SceneRenderer::createGiTargets(uint32_t width, uint32_t height) {
+    if (device_ == nullptr || width == 0 || height == 0) {
+        return Result<void>::success();
+    }
+
+    // 1. Full-resolution GTAO Targets (R8_UNORM)
+    rhi::TextureDesc gtaoRawDesc{
+        .type = rhi::TextureType::Texture2D,
+        .format = rhi::TextureFormat::R8_UNORM,
+        .width = width,
+        .height = height,
+        .depth = 1,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .usage = rhi::TextureUsageFlags::ColorAttachment | rhi::TextureUsageFlags::Sampled |
+                 rhi::TextureUsageFlags::TransferSrc,
+        .debugName = "GtaoRawTarget",
+    };
+    auto gtaoRawRes = device_->createTexture(gtaoRawDesc);
+    if (!gtaoRawRes.hasValue()) {
+        return gtaoRawRes.error();
+    }
+    gtaoRawTarget_ = gtaoRawRes.value();
+
+    auto gtaoFiltDesc = gtaoRawDesc;
+    gtaoFiltDesc.debugName = "GtaoFilteredTarget";
+    auto gtaoFiltRes = device_->createTexture(gtaoFiltDesc);
+    if (!gtaoFiltRes.hasValue()) {
+        return gtaoFiltRes.error();
+    }
+    gtaoFilteredTarget_ = gtaoFiltRes.value();
+
+    // 2. Half-resolution SSGI & Temporal Denoise Targets
+    const uint32_t halfW = std::max(1u, width / 2);
+    const uint32_t halfH = std::max(1u, height / 2);
+
+    rhi::TextureDesc ssgiDesc{
+        .type = rhi::TextureType::Texture2D,
+        .format = hdrFormat_,
+        .width = halfW,
+        .height = halfH,
+        .depth = 1,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .usage = rhi::TextureUsageFlags::ColorAttachment | rhi::TextureUsageFlags::Sampled |
+                 rhi::TextureUsageFlags::TransferSrc,
+        .debugName = "SsgiRawTarget",
+    };
+    auto ssgiRawRes = device_->createTexture(ssgiDesc);
+    if (!ssgiRawRes.hasValue()) {
+        return ssgiRawRes.error();
+    }
+    ssgiRawTarget_ = ssgiRawRes.value();
+
+    auto ssgiFiltDesc = ssgiDesc;
+    ssgiFiltDesc.debugName = "SsgiFilteredTarget";
+    auto ssgiFiltRes = device_->createTexture(ssgiFiltDesc);
+    if (!ssgiFiltRes.hasValue()) {
+        return ssgiFiltRes.error();
+    }
+    ssgiFilteredTarget_ = ssgiFiltRes.value();
+
+    for (size_t i = 0; i < 2; ++i) {
+        auto histDesc = ssgiDesc;
+        histDesc.debugName = (i == 0) ? "SsgiHistoryTarget0" : "SsgiHistoryTarget1";
+        auto histRes = device_->createTexture(histDesc);
+        if (!histRes.hasValue()) {
+            return histRes.error();
+        }
+        ssgiHistoryTarget_[i] = histRes.value();
+    }
+
+    updateGiDescriptors();
+
+    return Result<void>::success();
+}
+
+void SceneRenderer::destroyGiTargets() {
+    if (device_ != nullptr) {
+        if (gtaoRawTarget_.isValid()) {
+            device_->destroyTexture(gtaoRawTarget_);
+            gtaoRawTarget_ = {};
+        }
+        if (gtaoFilteredTarget_.isValid()) {
+            device_->destroyTexture(gtaoFilteredTarget_);
+            gtaoFilteredTarget_ = {};
+        }
+        if (ssgiRawTarget_.isValid()) {
+            device_->destroyTexture(ssgiRawTarget_);
+            ssgiRawTarget_ = {};
+        }
+        if (ssgiFilteredTarget_.isValid()) {
+            device_->destroyTexture(ssgiFilteredTarget_);
+            ssgiFilteredTarget_ = {};
+        }
+        for (size_t i = 0; i < 2; ++i) {
+            if (ssgiHistoryTarget_[i].isValid()) {
+                device_->destroyTexture(ssgiHistoryTarget_[i]);
+                ssgiHistoryTarget_[i] = {};
+            }
+        }
+    }
+}
+
+void SceneRenderer::updateGiDescriptors() {
+    if (device_ == nullptr || !pointClampSampler_.isValid() || !linearClampSampler_.isValid()) {
+        return;
+    }
+
+    // 1. GTAO Descriptor Set: Binding 0 = DepthTarget with PointSampler
+    if (gtaoDescriptorSet_.isValid() && depthTarget_.isValid()) {
+        std::array<rhi::DescriptorWrite, 1> writes{
+            rhi::DescriptorWrite::makeCombinedImageSampler(0, depthTarget_, pointClampSampler_),
+        };
+        std::ignore = device_->updateDescriptorSet(gtaoDescriptorSet_, writes);
+    }
+
+    // 2. GTAO Bilateral Blur Descriptor Set: Binding 0 = GtaoRawTarget, Binding 1 = DepthTarget
+    if (gtaoBlurDescriptorSet_.isValid() && gtaoRawTarget_.isValid() && depthTarget_.isValid()) {
+        std::array<rhi::DescriptorWrite, 2> writes{
+            rhi::DescriptorWrite::makeCombinedImageSampler(0, gtaoRawTarget_, linearClampSampler_),
+            rhi::DescriptorWrite::makeCombinedImageSampler(1, depthTarget_, pointClampSampler_),
+        };
+        std::ignore = device_->updateDescriptorSet(gtaoBlurDescriptorSet_, writes);
+    }
+
+    // 3. SSGI Descriptor Set: Binding 0 = DepthTarget, Binding 1 = HdrTarget (scene radiance)
+    if (ssgiDescriptorSet_.isValid() && depthTarget_.isValid() && hdrTarget_.isValid()) {
+        std::array<rhi::DescriptorWrite, 2> writes{
+            rhi::DescriptorWrite::makeCombinedImageSampler(0, depthTarget_, pointClampSampler_),
+            rhi::DescriptorWrite::makeCombinedImageSampler(1, hdrTarget_, linearClampSampler_),
+        };
+        std::ignore = device_->updateDescriptorSet(ssgiDescriptorSet_, writes);
+    }
+
+    // 4. Temporal Filter Descriptor Set: Binding 0 = SsgiRawTarget, Binding 1 = HistoryTarget,
+    // Binding 2 = DepthTarget
+    const uint32_t prevSlot = (giFrameIndex_ + 1) % 2;
+    rhi::TextureHandle historyTex =
+        ssgiHistoryTarget_[prevSlot].isValid() ? ssgiHistoryTarget_[prevSlot] : ssgiRawTarget_;
+    if (temporalFilterDescriptorSet_.isValid() && ssgiRawTarget_.isValid() &&
+        historyTex.isValid() && depthTarget_.isValid()) {
+        std::array<rhi::DescriptorWrite, 3> writes{
+            rhi::DescriptorWrite::makeCombinedImageSampler(0, ssgiRawTarget_, linearClampSampler_),
+            rhi::DescriptorWrite::makeCombinedImageSampler(1, historyTex, linearClampSampler_),
+            rhi::DescriptorWrite::makeCombinedImageSampler(2, depthTarget_, pointClampSampler_),
+        };
+        std::ignore = device_->updateDescriptorSet(temporalFilterDescriptorSet_, writes);
+    }
+}
+
+void SceneRenderer::recordGtaoPass(rhi::RhiCommandList& cmdList) {
+    if (!gtaoPipeline_.isValid() || !gtaoDescriptorSet_.isValid() || !gtaoRawTarget_.isValid()) {
+        return;
+    }
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 14, rhi::GpuTimestampStage::TopOfPipe);
+    }
+
+    rhi::RenderPassBeginInfo passInfo{
+        .colorTarget = gtaoRawTarget_,
+        .depthTarget = {},
+        .clearColor = {1.0F, 1.0F, 1.0F, 1.0F},
+        .clearDepth = 1.0F,
+        .clearTarget = true,
+        .clearDepthTarget = false,
+    };
+    cmdList.beginRenderPass(passInfo);
+    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
+    cmdList.setScissor(0, 0, width_, height_);
+
+    cmdList.bindPipeline(gtaoPipeline_);
+    const std::array<rhi::DescriptorSetHandle, 1> sets{gtaoDescriptorSet_};
+    cmdList.bindDescriptorSets(gtaoPipelineLayout_, 0, sets);
+
+    GtaoPushConstants pc{};
+    pc.invViewProj = currentViewProj_.inverse().value_or(Mat4::identity());
+    pc.cameraPosAndRadius = Vec4(currentCameraPos_.x, currentCameraPos_.y, currentCameraPos_.z,
+                                 settings_.lighting.gtaoRadius);
+    pc.gtaoParams = Vec4(settings_.lighting.gtaoIntensity, 0.05F, 1.0F, 0.0F);
+    pc.resolution = Vec2(static_cast<float>(width_), static_cast<float>(height_));
+    pc.invResolution = Vec2(1.0F / static_cast<float>(width_), 1.0F / static_cast<float>(height_));
+
+    cmdList.pushConstants(gtaoPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
+                          sizeof(GtaoPushConstants), &pc);
+    cmdList.draw(3, 1, 0, 0);
+    cmdList.endRenderPass();
+}
+
+void SceneRenderer::recordGtaoBlurPass(rhi::RhiCommandList& cmdList) {
+    if (!gtaoBlurPipeline_.isValid() || !gtaoBlurDescriptorSet_.isValid() ||
+        !gtaoFilteredTarget_.isValid()) {
+        return;
+    }
+
+    rhi::RenderPassBeginInfo passInfo{
+        .colorTarget = gtaoFilteredTarget_,
+        .depthTarget = {},
+        .clearColor = {1.0F, 1.0F, 1.0F, 1.0F},
+        .clearDepth = 1.0F,
+        .clearTarget = true,
+        .clearDepthTarget = false,
+    };
+    cmdList.beginRenderPass(passInfo);
+    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
+    cmdList.setScissor(0, 0, width_, height_);
+
+    cmdList.bindPipeline(gtaoBlurPipeline_);
+    const std::array<rhi::DescriptorSetHandle, 1> sets{gtaoBlurDescriptorSet_};
+    cmdList.bindDescriptorSets(gtaoBlurPipelineLayout_, 0, sets);
+
+    BilateralBlurPushConstants pc{};
+    pc.blurDirection = Vec2(1.0F, 0.0F);
+    pc.invResolution = Vec2(1.0F / static_cast<float>(width_), 1.0F / static_cast<float>(height_));
+    pc.depthThreshold = 0.05F;
+    pc.pad0 = 0.0F;
+
+    cmdList.pushConstants(gtaoBlurPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
+                          sizeof(BilateralBlurPushConstants), &pc);
+    cmdList.draw(3, 1, 0, 0);
+    cmdList.endRenderPass();
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 15, rhi::GpuTimestampStage::BottomOfPipe);
+    }
+}
+
+void SceneRenderer::recordSsgiPass(rhi::RhiCommandList& cmdList) {
+    if (!ssgiPipeline_.isValid() || !ssgiDescriptorSet_.isValid() || !ssgiRawTarget_.isValid()) {
+        return;
+    }
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 16, rhi::GpuTimestampStage::TopOfPipe);
+    }
+
+    const uint32_t halfW = std::max(1u, width_ / 2);
+    const uint32_t halfH = std::max(1u, height_ / 2);
+
+    rhi::RenderPassBeginInfo passInfo{
+        .colorTarget = ssgiRawTarget_,
+        .depthTarget = {},
+        .clearColor = {0.0F, 0.0F, 0.0F, 0.0F},
+        .clearDepth = 1.0F,
+        .clearTarget = true,
+        .clearDepthTarget = false,
+    };
+    cmdList.beginRenderPass(passInfo);
+    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(halfW), static_cast<float>(halfH));
+    cmdList.setScissor(0, 0, halfW, halfH);
+
+    cmdList.bindPipeline(ssgiPipeline_);
+    const std::array<rhi::DescriptorSetHandle, 1> sets{ssgiDescriptorSet_};
+    cmdList.bindDescriptorSets(ssgiPipelineLayout_, 0, sets);
+
+    const float aspect = static_cast<float>(width_) / static_cast<float>(height_ > 0 ? height_ : 1);
+    const float fovY = 1.04719755F;
+    const float tanHalfFov = std::tan(fovY * 0.5F);
+    const float f = (tanHalfFov > 1e-6F) ? (1.0F / tanHalfFov) : 1.0F;
+    const float zNear = 0.1F;
+    const float zFar = 1000.0F;
+    const float P00 = f / (aspect > 1e-6F ? aspect : 1.0F);
+    const float P11 = f;
+    const float P22 = zFar / (zNear - zFar);
+    const float P23 = (zNear * zFar) / (zNear - zFar);
+
+    SsgiPushConstants pc{};
+    pc.projParams = Vec4(P00, P11, P22, P23);
+    pc.ssgiParams = Vec4(settings_.lighting.giIntensity, 8.0F, 0.2F, settings_.lighting.ssgiRadius);
+    pc.resolution = Vec2(static_cast<float>(halfW), static_cast<float>(halfH));
+    pc.invResolution = Vec2(1.0F / static_cast<float>(halfW), 1.0F / static_cast<float>(halfH));
+    pc.frameIndex = giFrameIndex_;
+    pc.pad0 = 0.0F;
+
+    cmdList.pushConstants(ssgiPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
+                          sizeof(SsgiPushConstants), &pc);
+    cmdList.draw(3, 1, 0, 0);
+    cmdList.endRenderPass();
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 17, rhi::GpuTimestampStage::BottomOfPipe);
+    }
+}
+
+void SceneRenderer::recordTemporalFilterPass(rhi::RhiCommandList& cmdList) {
+    if (!temporalFilterPipeline_.isValid() || !temporalFilterDescriptorSet_.isValid() ||
+        !ssgiFilteredTarget_.isValid()) {
+        return;
+    }
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 18, rhi::GpuTimestampStage::TopOfPipe);
+    }
+
+    const uint32_t halfW = std::max(1u, width_ / 2);
+    const uint32_t halfH = std::max(1u, height_ / 2);
+    const uint32_t currentSlot = giFrameIndex_ % 2;
+    rhi::TextureHandle outTarget = ssgiHistoryTarget_[currentSlot].isValid()
+                                       ? ssgiHistoryTarget_[currentSlot]
+                                       : ssgiFilteredTarget_;
+
+    rhi::RenderPassBeginInfo passInfo{
+        .colorTarget = outTarget,
+        .depthTarget = {},
+        .clearColor = {0.0F, 0.0F, 0.0F, 0.0F},
+        .clearDepth = 1.0F,
+        .clearTarget = true,
+        .clearDepthTarget = false,
+    };
+    cmdList.beginRenderPass(passInfo);
+    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(halfW), static_cast<float>(halfH));
+    cmdList.setScissor(0, 0, halfW, halfH);
+
+    cmdList.bindPipeline(temporalFilterPipeline_);
+    const std::array<rhi::DescriptorSetHandle, 1> sets{temporalFilterDescriptorSet_};
+    cmdList.bindDescriptorSets(temporalFilterPipelineLayout_, 0, sets);
+
+    TemporalFilterPushConstants pc{};
+    auto invOpt = currentViewProj_.inverse();
+    pc.reprojectMat = prevViewProj_ * invOpt.value_or(Mat4::identity());
+    pc.filterParams = Vec4(settings_.lighting.temporalDenoise ? 0.1F : 1.0F, 0.05F, 0.0F, 0.0F);
+    pc.resolution = Vec2(static_cast<float>(halfW), static_cast<float>(halfH));
+    pc.invResolution = Vec2(1.0F / static_cast<float>(halfW), 1.0F / static_cast<float>(halfH));
+    pc.isHistoryValid = isHistoryValid_ ? 1u : 0u;
+    pc.pad0 = 0.0F;
+
+    cmdList.pushConstants(temporalFilterPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
+                          sizeof(TemporalFilterPushConstants), &pc);
+    cmdList.draw(3, 1, 0, 0);
+    cmdList.endRenderPass();
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 19, rhi::GpuTimestampStage::BottomOfPipe);
+    }
+}
+
+void SceneRenderer::recordHistoryCopyPass(rhi::RhiCommandList& /*cmdList*/) {}
 
 Result<void> SceneRenderer::initPostProcessResources() {
     // 1. Post-process bilinear sampler with clamp-to-edge
@@ -3060,7 +4118,7 @@ void SceneRenderer::renderPostProcess(rhi::RhiCommandList& cmdList) {
     }
 
     currentHasTimestamps_ = device_->getCaps().features.timestampQueries;
-    currentBaseQuery_ = (frameSlotIndex_ % 2) * 16;
+    currentBaseQuery_ = (frameSlotIndex_ % 2) * 32;
 
     if (!postProcessGraph_.isCompiled()) {
         buildPostProcessGraph();
@@ -3080,7 +4138,7 @@ void SceneRenderer::updateGpuTimings(rhi::RhiDevice& device) {
     }
 
     // Double-buffered query retrieval: inspect query results from prior frame slot
-    const uint32_t readbackBase = (((frameSlotIndex_ + 1) % 2)) * 16;
+    const uint32_t readbackBase = (((frameSlotIndex_ + 1) % 2)) * 32;
 
     auto totalOpt = device.getQueryTimeMs(readbackBase + 0, readbackBase + 1);
     if (totalOpt.has_value()) {
@@ -3097,6 +4155,14 @@ void SceneRenderer::updateGpuTimings(rhi::RhiDevice& device) {
             device.getQueryTimeMs(readbackBase + 8, readbackBase + 9).value_or(0.0F);
         gpuPassTimings_.toneMappingMs =
             device.getQueryTimeMs(readbackBase + 10, readbackBase + 11).value_or(0.0F);
+        gpuPassTimings_.gtaoPassMs =
+            device.getQueryTimeMs(readbackBase + 14, readbackBase + 15).value_or(0.0F);
+        gpuPassTimings_.ssgiPassMs =
+            device.getQueryTimeMs(readbackBase + 16, readbackBase + 17).value_or(0.0F);
+        gpuPassTimings_.temporalDenoiseMs =
+            device.getQueryTimeMs(readbackBase + 18, readbackBase + 19).value_or(0.0F);
+        gpuPassTimings_.totalGiMs = gpuPassTimings_.gtaoPassMs + gpuPassTimings_.ssgiPassMs +
+                                    gpuPassTimings_.temporalDenoiseMs;
         gpuPassTimings_.valid = true;
     }
 

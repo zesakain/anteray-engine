@@ -122,6 +122,16 @@ struct LightingSettings {
     EnvironmentTimeOfDay timeOfDay{
         EnvironmentTimeOfDay::Daylight}; ///< Atmospheric condition (Milestone 11C+)
 
+    // Milestone 11D: Global Illumination & Ambient Occlusion controls
+    bool gtaoEnabled{false};    ///< Ground-Truth Ambient Occlusion (Milestone 11D)
+    float gtaoRadius{1.5F};     ///< GTAO world-space search radius in meters [0.2, 10.0]
+    float gtaoIntensity{1.0F};  ///< GTAO occlusion power multiplier [0.0, 5.0]
+    bool ssgiEnabled{false};    ///< Screen-Space Global Illumination (Milestone 11D)
+    float ssgiRadius{3.0F};     ///< SSGI max ray march distance in meters [0.5, 20.0]
+    float giIntensity{1.0F};    ///< Diffuse indirect bounce radiance multiplier [0.0, 5.0]
+    bool temporalDenoise{true}; ///< Multi-frame temporal accumulation and history clamping
+    bool probesEnabled{false};  ///< Scene-aware Spherical Harmonics irradiance probes
+
     bool operator==(const LightingSettings& other) const noexcept = default;
 };
 

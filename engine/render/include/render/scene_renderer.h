@@ -29,6 +29,7 @@
 #include "render/asset_manager.h"
 #include "render/gpu_environment_map.h"
 #include "render/graphics_settings.h"
+#include "render/irradiance_probe.h"
 #include "render/light_components.h"
 #include "render/lighting_data.h"
 #include "render/mesh_component.h"
@@ -79,6 +80,14 @@ struct GpuPassTimings {
     float bloomUpsampleMs{0.0F};
     /// Duration of tone mapping and presentation conversion pass (milliseconds).
     float toneMappingMs{0.0F};
+    /// Duration of Ground-Truth Ambient Occlusion (GTAO) pass (milliseconds).
+    float gtaoPassMs{0.0F};
+    /// Duration of Screen-Space Global Illumination (SSGI) pass (milliseconds).
+    float ssgiPassMs{0.0F};
+    /// Duration of temporal accumulation and denoising pass (milliseconds).
+    float temporalDenoiseMs{0.0F};
+    /// Combined total duration of all Global Illumination passes (milliseconds).
+    float totalGiMs{0.0F};
     /// Whether these timings reflect valid GPU query results from the preceding frame.
     bool valid{false};
 };
@@ -283,16 +292,64 @@ public:
         return postProcessGraph_;
     }
 
+    [[nodiscard]] rhi::TextureHandle getGtaoTarget() const noexcept { return gtaoFilteredTarget_; }
+    [[nodiscard]] rhi::TextureHandle getGtaoRawTarget() const noexcept { return gtaoRawTarget_; }
+    [[nodiscard]] rhi::TextureHandle getSsgiTarget() const noexcept { return ssgiFilteredTarget_; }
+
+    struct GtaoPushConstants {
+        Mat4 invViewProj{Mat4::identity()};
+        Vec4 cameraPosAndRadius{0.0F, 0.0F, 0.0F, 1.5F};
+        Vec4 gtaoParams{1.0F, 0.05F, 1.0F, 0.0F};
+        Vec2 resolution{1920.0F, 1080.0F};
+        Vec2 invResolution{1.0F / 1920.0F, 1.0F / 1080.0F};
+    };
+
+    struct BilateralBlurPushConstants {
+        Vec2 blurDirection{1.0F, 0.0F};
+        Vec2 invResolution{1.0F / 1920.0F, 1.0F / 1080.0F};
+        float depthThreshold{0.05F};
+        float pad0{0.0F};
+    };
+
+    struct SsgiPushConstants {
+        Vec4 projParams{1.0F, 1.0F, 0.0F, 0.0F};
+        Vec4 ssgiParams{1.0F, 8.0F, 0.2F, 3.0F};
+        Vec2 resolution{960.0F, 540.0F};
+        Vec2 invResolution{1.0F / 960.0F, 1.0F / 540.0F};
+        uint32_t frameIndex{0};
+        float pad0{0.0F};
+    };
+
+    struct TemporalFilterPushConstants {
+        Mat4 reprojectMat{Mat4::identity()};
+        Vec4 filterParams{0.1F, 0.05F, 0.0F, 0.0F};
+        Vec2 resolution{960.0F, 540.0F};
+        Vec2 invResolution{1.0F / 960.0F, 1.0F / 540.0F};
+        uint32_t isHistoryValid{0};
+        float pad0{0.0F};
+    };
+
 private:
     [[nodiscard]] Result<void> initPostProcessResources();
     [[nodiscard]] Result<void> createPostProcessTargets(uint32_t width, uint32_t height);
     void destroyPostProcessTargets();
     void updatePostProcessDescriptors();
 
+    [[nodiscard]] Result<void> initGiResources();
+    void destroyGiResources();
+    [[nodiscard]] Result<void> createGiTargets(uint32_t width, uint32_t height);
+    void destroyGiTargets();
+    void updateGiDescriptors();
+
     void buildRenderGraph();
     void buildPostProcessGraph();
     void recordShadowPass(rhi::RhiCommandList& cmdList);
     void recordDepthPrepass(rhi::RhiCommandList& cmdList);
+    void recordGtaoPass(rhi::RhiCommandList& cmdList);
+    void recordGtaoBlurPass(rhi::RhiCommandList& cmdList);
+    void recordSsgiPass(rhi::RhiCommandList& cmdList);
+    void recordTemporalFilterPass(rhi::RhiCommandList& cmdList);
+    void recordHistoryCopyPass(rhi::RhiCommandList& cmdList);
     void recordMainPbrPass(rhi::RhiCommandList& cmdList);
     void recordBloomDownsamplePass(rhi::RhiCommandList& cmdList, size_t level);
     void recordBloomUpsamplePass(rhi::RhiCommandList& cmdList, size_t step, size_t targetLevel);
@@ -357,6 +414,44 @@ private:
     rhi::PipelineHandle pipelineTransparentDoubleSided_{};
     rhi::PipelineHandle hdrPipelineTransparent_{};
     rhi::PipelineHandle hdrPipelineTransparentDoubleSided_{};
+
+    // Global Illumination (Milestone 11D) Resources
+    rhi::TextureHandle gtaoRawTarget_{};
+    rhi::TextureHandle gtaoFilteredTarget_{};
+    rhi::TextureHandle ssgiRawTarget_{};
+    rhi::TextureHandle ssgiFilteredTarget_{};
+    rhi::TextureHandle ssgiHistoryTarget_[2]{};
+    rhi::TextureHandle hdrHistoryTarget_[2]{};
+    std::unique_ptr<GpuTexture> defaultAoTexture_{};
+    std::unique_ptr<GpuTexture> defaultIndirectTexture_{};
+    rhi::SamplerHandle linearClampSampler_{};
+    rhi::SamplerHandle pointClampSampler_{};
+
+    rhi::ShaderHandle gtaoFragmentShader_{};
+    rhi::ShaderHandle bilateralBlurFragmentShader_{};
+    rhi::ShaderHandle ssgiFragmentShader_{};
+    rhi::ShaderHandle temporalFilterFragmentShader_{};
+
+    rhi::DescriptorSetLayoutHandle tripleTextureSetLayout_{};
+    rhi::DescriptorPoolHandle giDescriptorPool_{};
+    rhi::DescriptorSetHandle gtaoDescriptorSet_{};
+    rhi::DescriptorSetHandle gtaoBlurDescriptorSet_{};
+    rhi::DescriptorSetHandle ssgiDescriptorSet_{};
+    rhi::DescriptorSetHandle temporalFilterDescriptorSet_{};
+
+    rhi::PipelineLayoutHandle gtaoPipelineLayout_{};
+    rhi::PipelineLayoutHandle gtaoBlurPipelineLayout_{};
+    rhi::PipelineLayoutHandle ssgiPipelineLayout_{};
+    rhi::PipelineLayoutHandle temporalFilterPipelineLayout_{};
+
+    rhi::PipelineHandle gtaoPipeline_{};
+    rhi::PipelineHandle gtaoBlurPipeline_{};
+    rhi::PipelineHandle ssgiPipeline_{};
+    rhi::PipelineHandle temporalFilterPipeline_{};
+
+    Mat4 prevViewProj_{Mat4::identity()};
+    bool isHistoryValid_{false};
+    uint32_t giFrameIndex_{0};
 
     uint32_t width_{0};
     uint32_t height_{0};
