@@ -167527,9 +167527,9 @@
             0.95,
             0.88
           ],
-          "intensity": 4,
+          "intensity": 3.2,
           "castShadows": true,
-          "shadowBias": 0.0025,
+          "shadowBias": 0.002,
           "enabled": true
         }
       }
