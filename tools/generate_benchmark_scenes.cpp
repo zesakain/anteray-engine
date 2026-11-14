@@ -12,6 +12,7 @@
 #include "render/asset_manager.h"
 #include "render/camera_component.h"
 #include "render/gltf_scene_importer.h"
+#include "render/irradiance_probe.h"
 #include "render/light_components.h"
 #include "render/post_process_types.h"
 #include "world/hierarchy_systems.h"
@@ -57,6 +58,20 @@ static bool generateSponza(const std::filesystem::path& outDir) {
     cc.farPlane = 2000.0F;
     cc.isPrimary = true;
     world.setComponent(cam, cc);
+
+    // Localized Scene Irradiance Probes for Milestone 11D GI
+    auto probeAtrium = world.createEntity("IrradianceProbe_AtriumCenter");
+    render::IrradianceProbeComponent ipAtrium{};
+    ipAtrium.position = Vec3(0.0F, 2.0F, 0.0F);
+    ipAtrium.radius = 25.0F;
+    ipAtrium.intensity = 1.0F;
+    ipAtrium.enabled = true;
+    // Ambient diffuse bounce: warm sandstone floor + open blue skylight
+    ipAtrium.sh = render::SphericalHarmonicsL2::fromDirectional(Vec3(0.0F, -1.0F, 0.0F),
+                                                                Vec3(0.25F, 0.22F, 0.18F));
+    ipAtrium.sh += render::SphericalHarmonicsL2::fromDirectional(Vec3(0.0F, 1.0F, 0.0F),
+                                                                 Vec3(0.10F, 0.14F, 0.22F));
+    world.setComponent(probeAtrium, ipAtrium);
 
     world::updateHierarchyTransforms(world);
 
@@ -271,6 +286,43 @@ static bool generateBistro(const std::filesystem::path& outDir) {
     cc.farPlane = 2000.0F;
     cc.isPrimary = true;
     world.setComponent(cam, cc);
+
+    // Localized Scene Irradiance Probes for Milestone 11D GI
+    auto probeStreet = world.createEntity("IrradianceProbe_Street");
+    render::IrradianceProbeComponent ipStreet{};
+    ipStreet.position = Vec3(-20.0F, 2.0F, 12.0F);
+    ipStreet.radius = 35.0F;
+    ipStreet.intensity = 1.0F;
+    ipStreet.enabled = true;
+    ipStreet.sh = render::SphericalHarmonicsL2::fromDirectional(Vec3(0.0F, -1.0F, 0.0F),
+                                                                Vec3(0.18F, 0.16F, 0.14F));
+    ipStreet.sh += render::SphericalHarmonicsL2::fromDirectional(Vec3(0.0F, 1.0F, 0.0F),
+                                                                 Vec3(0.12F, 0.16F, 0.22F));
+    world.setComponent(probeStreet, ipStreet);
+
+    auto probeCafe = world.createEntity("IrradianceProbe_CafeTerrace");
+    render::IrradianceProbeComponent ipCafe{};
+    ipCafe.position = Vec3(-16.0F, 2.2F, 14.0F);
+    ipCafe.radius = 15.0F;
+    ipCafe.intensity = 1.2F;
+    ipCafe.enabled = true;
+    ipCafe.sh = render::SphericalHarmonicsL2::fromDirectional(Vec3(0.0F, 1.0F, 0.0F),
+                                                              Vec3(0.24F, 0.14F, 0.10F));
+    ipCafe.sh += render::SphericalHarmonicsL2::fromDirectional(Vec3(0.0F, -1.0F, 0.0F),
+                                                               Vec3(0.15F, 0.14F, 0.12F));
+    world.setComponent(probeCafe, ipCafe);
+
+    auto probeCourtyard = world.createEntity("IrradianceProbe_Courtyard");
+    render::IrradianceProbeComponent ipCourt{};
+    ipCourt.position = Vec3(4.0F, 2.5F, 0.0F);
+    ipCourt.radius = 28.0F;
+    ipCourt.intensity = 1.0F;
+    ipCourt.enabled = true;
+    ipCourt.sh = render::SphericalHarmonicsL2::fromDirectional(Vec3(0.0F, -1.0F, 0.0F),
+                                                               Vec3(0.16F, 0.16F, 0.15F));
+    ipCourt.sh += render::SphericalHarmonicsL2::fromDirectional(Vec3(0.0F, 1.0F, 0.0F),
+                                                                Vec3(0.10F, 0.14F, 0.20F));
+    world.setComponent(probeCourtyard, ipCourt);
 
     world::updateHierarchyTransforms(world);
 

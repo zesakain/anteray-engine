@@ -8,6 +8,7 @@
 #include "core/log.h"
 #include "physics/physics_components.h"
 #include "render/camera_component.h"
+#include "render/irradiance_probe.h"
 #include "render/light_components.h"
 #include "render/mesh_component.h"
 #include "render/post_process_types.h"
@@ -83,6 +84,11 @@ struct StagedPostProcess {
     bool present{false};
 };
 
+struct StagedIrradianceProbe {
+    render::IrradianceProbeComponent probe{};
+    bool present{false};
+};
+
 struct StagedEntity {
     uint64_t stableId{0};
     uint64_t parentStableId{0};
@@ -97,6 +103,7 @@ struct StagedEntity {
     StagedSpotLight spotLight{};
     StagedCamera camera{};
     StagedPostProcess postProcess{};
+    StagedIrradianceProbe irradianceProbe{};
 };
 
 const char* motionTypeToString(physics::MotionType type) noexcept {
@@ -426,6 +433,24 @@ Result<std::string> SceneSerializer::serializeToString(
         // 10. PostProcessSettings
         if (const auto* pp = world.getComponent<render::PostProcessSettings>(h)) {
             compsObj.set("PostProcess", postProcessToJson(*pp));
+        }
+
+        // 11. IrradianceProbeComponent
+        if (const auto* ip = world.getComponent<render::IrradianceProbeComponent>(h)) {
+            JsonValue ipObj = JsonValue::makeObject();
+            ipObj.set("position", vec3ToJson(ip->position));
+            ipObj.set("radius", ip->radius);
+            ipObj.set("boxMin", vec3ToJson(ip->boxMin));
+            ipObj.set("boxMax", vec3ToJson(ip->boxMax));
+            ipObj.set("intensity", ip->intensity);
+            ipObj.set("enabled", ip->enabled);
+            ipObj.set("useBoxBounds", ip->useBoxBounds);
+            JsonValue shArr = JsonValue::makeArray();
+            for (size_t i = 0; i < 9; ++i) {
+                shArr.pushBack(vec3ToJson(ip->sh.coefficients[i]));
+            }
+            ipObj.set("sh", std::move(shArr));
+            compsObj.set("IrradianceProbe", std::move(ipObj));
         }
 
         entObj.set("components", std::move(compsObj));
@@ -762,6 +787,30 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                 } else if (compName == "PostProcess") {
                     staged.postProcess.present = true;
                     staged.postProcess.settings = jsonToPostProcess(compData);
+                } else if (compName == "IrradianceProbe") {
+                    staged.irradianceProbe.present = true;
+                    if (auto pos = jsonToVec3(*compData.find("position"))) {
+                        staged.irradianceProbe.probe.position = *pos;
+                    }
+                    staged.irradianceProbe.probe.radius = compData.getFloat("radius", 10.0F);
+                    if (auto bMin = jsonToVec3(*compData.find("boxMin"))) {
+                        staged.irradianceProbe.probe.boxMin = *bMin;
+                    }
+                    if (auto bMax = jsonToVec3(*compData.find("boxMax"))) {
+                        staged.irradianceProbe.probe.boxMax = *bMax;
+                    }
+                    staged.irradianceProbe.probe.intensity = compData.getFloat("intensity", 1.0F);
+                    staged.irradianceProbe.probe.enabled = compData.getBool("enabled", true);
+                    staged.irradianceProbe.probe.useBoxBounds =
+                        compData.getBool("useBoxBounds", false);
+                    if (const auto* shNode = compData.find("sh");
+                        shNode != nullptr && shNode->isArray()) {
+                        for (size_t shIdx = 0; shIdx < 9 && shIdx < shNode->size(); ++shIdx) {
+                            if (auto coef = jsonToVec3((*shNode)[shIdx])) {
+                                staged.irradianceProbe.probe.sh.coefficients[shIdx] = *coef;
+                            }
+                        }
+                    }
                 } else {
                     warnings.push_back("Unknown component '" + compName + "' skipped on entity " +
                                        std::to_string(stableId));
@@ -858,6 +907,10 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
             if (!scenePostProcess.has_value()) {
                 scenePostProcess = staged.postProcess.settings;
             }
+        }
+
+        if (staged.irradianceProbe.present) {
+            world.setComponent(h, staged.irradianceProbe.probe);
         }
     }
 
