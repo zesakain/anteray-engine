@@ -729,7 +729,6 @@ void EditorEngine::renderScene(rhi::RhiCommandList& cmdList) {
     if (targetWorld == nullptr) {
         return;
     }
-    world::updateHierarchyTransforms(*targetWorld);
 
     const render::RenderStats stats =
         impl_->sceneRenderer.renderScene(*targetWorld, impl_->assetManager, *impl_->rhiDevice,

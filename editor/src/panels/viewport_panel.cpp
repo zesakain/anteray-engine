@@ -676,12 +676,34 @@ void ViewportPanel::draw(EditorContext& ctx) {
 
         if (ctx.world != nullptr) {
             flecs::world& ecs = ctx.world->getRawWorld();
-            auto aliveHandles = ctx.world->getAllEntities();
+
+            // In GPU mode, the GPU renders all scene meshes; CPU only renders overlays
+            // for selected entities and physics colliders. In software rasterizer fallback mode,
+            // all entities are evaluated.
+            std::vector<world::EntityHandle> activeHandles;
+            if (isGpuAvailable && s_useGpuRenderer) {
+                if (ctx.selection != nullptr && !ctx.selection->empty()) {
+                    auto selected = ctx.selection->getSelectedEntities();
+                    activeHandles.insert(activeHandles.end(), selected.begin(), selected.end());
+                }
+                if (ecs.count<physics::ColliderComponent>() > 0) {
+                    auto colliderQuery = ecs.query<const physics::ColliderComponent>();
+                    colliderQuery.each(
+                        [&](flecs::entity e, const physics::ColliderComponent& /*cc*/) {
+                            world::EntityHandle h{static_cast<uint64_t>(e.id())};
+                            if (ctx.selection == nullptr || !ctx.selection->isSelected(h)) {
+                                activeHandles.push_back(h);
+                            }
+                        });
+                }
+            } else {
+                activeHandles = ctx.world->getAllEntities();
+            }
 
             // Directional key light vector (normalized from top-right-front)
             const Vec3 lightDir = Vec3{0.577F, 0.707F, 0.408F}.normalized();
 
-            for (auto h : aliveHandles) {
+            for (auto h : activeHandles) {
                 auto e = ecs.entity(h.id);
                 Transform tr{};
                 if (!getEntityWorldTransform(e, tr)) {
