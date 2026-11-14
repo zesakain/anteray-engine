@@ -159,6 +159,8 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
     other.toneMappingPipeline_ = {};
     other.hdrPipeline_ = {};
     other.hdrPipelineOpaque_ = {};
+    other.pipelineDoubleSided_ = {};
+    other.hdrPipelineDoubleSided_ = {};
     other.wireframePipeline_ = {};
     other.wireframeLdrPipeline_ = {};
     other.width_ = 0;
@@ -227,6 +229,8 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         toneMappingPipeline_ = other.toneMappingPipeline_;
         hdrPipeline_ = other.hdrPipeline_;
         hdrPipelineOpaque_ = other.hdrPipelineOpaque_;
+        pipelineDoubleSided_ = other.pipelineDoubleSided_;
+        hdrPipelineDoubleSided_ = other.hdrPipelineDoubleSided_;
         settings_ = other.settings_;
         wireframePipeline_ = other.wireframePipeline_;
         wireframeLdrPipeline_ = other.wireframeLdrPipeline_;
@@ -281,6 +285,8 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         other.toneMappingPipeline_ = {};
         other.hdrPipeline_ = {};
         other.hdrPipelineOpaque_ = {};
+        other.pipelineDoubleSided_ = {};
+        other.hdrPipelineDoubleSided_ = {};
         other.wireframePipeline_ = {};
         other.wireframeLdrPipeline_ = {};
         other.width_ = 0;
@@ -644,6 +650,31 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         hdrPipelineOpaque_ = pipelineOpaque_;
     }
 
+    // 6c. Build Double-Sided Pipelines (CullMode::None for leaves, vegetation, foliage, cards)
+    auto pipeDoubleDesc = pipeDesc;
+    pipeDoubleDesc.rasterization.cullMode = rhi::CullMode::None;
+    pipeDoubleDesc.colorAttachmentFormats = {colorFormat_};
+    pipeDoubleDesc.debugName = "MeshGraphicsPipelineDoubleSided";
+    auto pipeDoubleRes = device_->createGraphicsPipeline(pipeDoubleDesc);
+    if (!pipeDoubleRes.hasValue()) {
+        shutdown();
+        return pipeDoubleRes.error();
+    }
+    pipelineDoubleSided_ = pipeDoubleRes.value();
+
+    if (hdrFormat_ != colorFormat_) {
+        pipeDoubleDesc.colorAttachmentFormats = {hdrFormat_};
+        pipeDoubleDesc.debugName = "MeshHdrGraphicsPipelineDoubleSided";
+        auto hdrPipeDoubleRes = device_->createGraphicsPipeline(pipeDoubleDesc);
+        if (!hdrPipeDoubleRes.hasValue()) {
+            shutdown();
+            return hdrPipeDoubleRes.error();
+        }
+        hdrPipelineDoubleSided_ = hdrPipeDoubleRes.value();
+    } else {
+        hdrPipelineDoubleSided_ = pipelineDoubleSided_;
+    }
+
     // Optional wireframe rasterization pipelines (requires fillModeNonSolid GPU feature)
     if (device_->getCaps().features.fillModeNonSolid) {
         auto wireDesc = pipeDesc;
@@ -897,6 +928,16 @@ void SceneRenderer::shutdown() {
         if (pipelineOpaque_.isValid()) {
             device_->destroyGraphicsPipeline(pipelineOpaque_);
             pipelineOpaque_ = {};
+        }
+
+        if (hdrPipelineDoubleSided_.isValid() && hdrPipelineDoubleSided_ != pipelineDoubleSided_) {
+            device_->destroyGraphicsPipeline(hdrPipelineDoubleSided_);
+        }
+        hdrPipelineDoubleSided_ = {};
+
+        if (pipelineDoubleSided_.isValid()) {
+            device_->destroyGraphicsPipeline(pipelineDoubleSided_);
+            pipelineDoubleSided_ = {};
         }
 
         if (wireframePipeline_.isValid()) {
@@ -1798,7 +1839,8 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                                 std::clamp(currentCameraPos_.z, minZ, maxZ)};
         const float depthSq = (closestPoint - currentCameraPos_).lengthSq();
 
-        auto resolveMaterial = [&](uint32_t matIndex) -> std::pair<rhi::DescriptorSetHandle, bool> {
+        auto resolveMaterial =
+            [&](uint32_t matIndex) -> std::tuple<rhi::DescriptorSetHandle, bool, bool> {
             if (pipelineLayout_.isValid() && materialDescriptorSetLayout_.isValid()) {
                 GpuMaterial* mat = currentAssetManager_->getGpuMaterial(meshId, matIndex);
                 if (mat == nullptr) {
@@ -1816,15 +1858,16 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                 }
                 if (mat != nullptr && mat->isValid()) {
                     const bool isMasked = (mat->getUniformData().alphaMode != 0);
-                    return {mat->getDescriptorSet(), isMasked};
+                    const bool isDoubleSided = (mat->getUniformData().doubleSided != 0);
+                    return {mat->getDescriptorSet(), isMasked, isDoubleSided};
                 }
             }
-            return {{}, false};
+            return {{}, false, false};
         };
 
         const auto& submeshes = gpuMesh->getSubmeshes();
         if (meshComp.submeshIndex < submeshes.size()) {
-            const auto [matSet, isMasked] =
+            const auto [matSet, isMasked, isDoubleSided] =
                 resolveMaterial(submeshes[meshComp.submeshIndex].materialIndex);
             visibleItems_.push_back({
                 .gpuMesh = gpuMesh,
@@ -1833,9 +1876,10 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                 .submeshIndex = meshComp.submeshIndex,
                 .depthSq = depthSq,
                 .isAlphaMasked = isMasked,
+                .isDoubleSided = isDoubleSided,
             });
         } else if (submeshes.empty()) {
-            const auto [matSet, isMasked] = resolveMaterial(0);
+            const auto [matSet, isMasked, isDoubleSided] = resolveMaterial(0);
             visibleItems_.push_back({
                 .gpuMesh = gpuMesh,
                 .materialSet = matSet,
@@ -1843,10 +1887,12 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                 .submeshIndex = 0,
                 .depthSq = depthSq,
                 .isAlphaMasked = isMasked,
+                .isDoubleSided = isDoubleSided,
             });
         } else {
             for (uint32_t sIdx = 0; sIdx < submeshes.size(); ++sIdx) {
-                const auto [matSet, isMasked] = resolveMaterial(submeshes[sIdx].materialIndex);
+                const auto [matSet, isMasked, isDoubleSided] =
+                    resolveMaterial(submeshes[sIdx].materialIndex);
                 visibleItems_.push_back({
                     .gpuMesh = gpuMesh,
                     .materialSet = matSet,
@@ -1854,6 +1900,7 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                     .submeshIndex = sIdx,
                     .depthSq = depthSq,
                     .isAlphaMasked = isMasked,
+                    .isDoubleSided = isDoubleSided,
                 });
             }
         }
@@ -1884,7 +1931,9 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
         // Bind pipeline based on opaque vs alpha-masked
         rhi::PipelineHandle targetPipeline = scenePipeline;
         if (!isWireframe) {
-            if (useDepthPrepass) {
+            if (item.isDoubleSided) {
+                targetPipeline = useHdr ? hdrPipelineDoubleSided_ : pipelineDoubleSided_;
+            } else if (useDepthPrepass) {
                 targetPipeline =
                     item.isAlphaMasked
                         ? (useHdr ? hdrPipelineDepthPrepass_ : pipelineDepthPrepass_)
