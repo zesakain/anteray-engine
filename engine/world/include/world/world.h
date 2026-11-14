@@ -79,6 +79,7 @@ public:
         } else {
             ecs_.entity(entity.id).set<T>(std::move(component));
             if constexpr (std::is_same_v<T, TransformComponent>) {
+                isTransformDirty_ = true;
                 if (!ecs_.entity(entity.id).template has<WorldTransformComponent>()) {
                     ecs_.entity(entity.id).template set<WorldTransformComponent>({});
                 }
@@ -112,6 +113,9 @@ public:
         } else {
             if (!isAlive(entity)) {
                 return nullptr;
+            }
+            if constexpr (std::is_same_v<T, TransformComponent>) {
+                isTransformDirty_ = true;
             }
             return ecs_.entity(entity.id).template get_mut<T>();
         }
@@ -193,8 +197,8 @@ public:
 
     /// Iterates all root entities without allocating dynamic memory.
     template <typename Fn> void forEachRootEntity(Fn&& fn) const {
-        for (EntityHandle h : activeEntities_) {
-            if (isAlive(h) && !getParent(h).isValid()) {
+        for (EntityHandle h : rootEntities_) {
+            if (isAlive(h)) {
                 fn(h);
             }
         }
@@ -202,6 +206,12 @@ public:
 
     /// Registers a validation callback invoked by setParent() before establishing relationships.
     void addHierarchyValidator(HierarchyValidator validator);
+
+    /// Evaluates whether any transform in the world hierarchy has been modified since last sync.
+    [[nodiscard]] bool isTransformDirty() const noexcept { return isTransformDirty_; }
+
+    /// Sets or clears the transform hierarchy dirty flag.
+    void setTransformDirty(bool dirty) noexcept { isTransformDirty_ = dirty; }
 
     /// Direct access to underlying Flecs world instance.
     [[nodiscard]] flecs::world& getRawWorld() noexcept { return ecs_; }
@@ -212,9 +222,11 @@ public:
 private:
     flecs::world ecs_{};
     std::vector<EntityHandle> activeEntities_{};
+    std::vector<EntityHandle> rootEntities_{};
     std::array<bool, static_cast<size_t>(SystemGroup::Count)> groupActive_{};
     std::array<std::vector<flecs::system>, static_cast<size_t>(SystemGroup::Count)> groupSystems_{};
     std::vector<HierarchyValidator> hierarchyValidators_{};
+    bool isTransformDirty_{true};
 };
 
 } // namespace eng::world

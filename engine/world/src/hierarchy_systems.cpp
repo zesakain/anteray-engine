@@ -22,6 +22,10 @@ struct QueueItem {
 } // namespace
 
 void updateHierarchyTransforms(World& world) {
+    if (!world.isTransformDirty()) {
+        return;
+    }
+
     // Reusable BFS queue to guarantee zero hot-path heap allocations once warm.
     // Invariant: Simulation progress and continuous systems execute on the main thread.
     static thread_local std::vector<QueueItem> queue;
@@ -102,12 +106,11 @@ void updateHierarchyTransforms(World& world) {
                 branchDirty = true;
             }
 
-            const Mat4 localMat = tc->transform.toMatrix();
-            const Mat4 worldMat = item.parentMatrix * localMat;
-            const Transform worldTr = item.parentTransform.combine(tc->transform);
-
             if (wt == nullptr) {
                 // Newly attached child without WorldTransformComponent
+                const Mat4 localMat = tc->transform.toMatrix();
+                const Mat4 worldMat = item.parentMatrix * localMat;
+                const Transform worldTr = item.parentTransform.combine(tc->transform);
                 world.setComponent(item.handle, WorldTransformComponent{worldMat, worldTr});
                 wt = world.getMutableComponent<WorldTransformComponent>(item.handle);
                 tc = world.getMutableComponent<TransformComponent>(item.handle);
@@ -115,15 +118,22 @@ void updateHierarchyTransforms(World& world) {
                     tc->isDirty = false;
                 }
                 branchDirty = true;
+                currentWorldMatrix = worldMat;
+                currentWorldTransform = worldTr;
             } else if (branchDirty) {
                 // Invariant: M_world = M_parent * M_local preserves full matrices including shear
+                const Mat4 localMat = tc->transform.toMatrix();
+                const Mat4 worldMat = item.parentMatrix * localMat;
+                const Transform worldTr = item.parentTransform.combine(tc->transform);
                 wt->worldMatrix = worldMat;
                 wt->worldTransform = worldTr;
                 tc->isDirty = false;
+                currentWorldMatrix = worldMat;
+                currentWorldTransform = worldTr;
+            } else {
+                currentWorldMatrix = wt->worldMatrix;
+                currentWorldTransform = wt->worldTransform;
             }
-
-            currentWorldMatrix = wt ? wt->worldMatrix : worldMat;
-            currentWorldTransform = wt ? wt->worldTransform : worldTr;
         }
 
         // Enqueue direct children of this entity
@@ -136,6 +146,8 @@ void updateHierarchyTransforms(World& world) {
             });
         });
     }
+
+    world.setTransformDirty(false);
 }
 
 void registerHierarchySystems(World& world) {

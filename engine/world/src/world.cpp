@@ -25,16 +25,20 @@ World::~World() = default;
 
 World::World(World&& other) noexcept
     : ecs_(std::move(other.ecs_)), activeEntities_(std::move(other.activeEntities_)),
-      groupActive_(other.groupActive_), groupSystems_(std::move(other.groupSystems_)),
-      hierarchyValidators_(std::move(other.hierarchyValidators_)) {}
+      rootEntities_(std::move(other.rootEntities_)), groupActive_(other.groupActive_),
+      groupSystems_(std::move(other.groupSystems_)),
+      hierarchyValidators_(std::move(other.hierarchyValidators_)),
+      isTransformDirty_(other.isTransformDirty_) {}
 
 World& World::operator=(World&& other) noexcept {
     if (this != &other) {
         ecs_ = std::move(other.ecs_);
         activeEntities_ = std::move(other.activeEntities_);
+        rootEntities_ = std::move(other.rootEntities_);
         groupActive_ = other.groupActive_;
         groupSystems_ = std::move(other.groupSystems_);
         hierarchyValidators_ = std::move(other.hierarchyValidators_);
+        isTransformDirty_ = other.isTransformDirty_;
     }
     return *this;
 }
@@ -43,6 +47,8 @@ EntityHandle World::createEntity() {
     const flecs::entity e = ecs_.entity();
     EntityHandle handle(e.id());
     activeEntities_.push_back(handle);
+    rootEntities_.push_back(handle);
+    isTransformDirty_ = true;
     return handle;
 }
 
@@ -50,9 +56,11 @@ EntityHandle World::createEntity(std::string_view name) {
     const flecs::entity e = ecs_.entity();
     EntityHandle handle(e.id());
     activeEntities_.push_back(handle);
+    rootEntities_.push_back(handle);
     if (!name.empty()) {
         setEntityName(handle, name);
     }
+    isTransformDirty_ = true;
     return handle;
 }
 
@@ -60,6 +68,7 @@ void World::destroyEntity(EntityHandle entity) {
     if (!isAlive(entity)) {
         return;
     }
+    isTransformDirty_ = true;
 
     // Collect all descendants recursively before destruction to ensure activeEntities_ consistency
     std::vector<EntityHandle> toClean;
@@ -84,6 +93,10 @@ void World::destroyEntity(EntityHandle entity) {
         if (it != activeEntities_.end()) {
             activeEntities_.erase(it);
         }
+        auto rit = std::find(rootEntities_.begin(), rootEntities_.end(), h);
+        if (rit != rootEntities_.end()) {
+            rootEntities_.erase(rit);
+        }
     }
 }
 
@@ -94,6 +107,8 @@ void World::clearUserEntities() {
         }
     }
     activeEntities_.clear();
+    rootEntities_.clear();
+    isTransformDirty_ = true;
 }
 
 std::vector<EntityHandle> World::getAllEntities() const {
@@ -272,13 +287,21 @@ bool World::setParent(EntityHandle child, EntityHandle parent, bool preserveWorl
     if (parent.isValid()) {
         auto parentEntity = ecs_.entity(parent.id);
         childEntity.child_of(parentEntity);
+        auto rit = std::find(rootEntities_.begin(), rootEntities_.end(), child);
+        if (rit != rootEntities_.end()) {
+            rootEntities_.erase(rit);
+        }
     } else {
         childEntity.remove(flecs::ChildOf, flecs::Wildcard);
+        if (std::find(rootEntities_.begin(), rootEntities_.end(), child) == rootEntities_.end()) {
+            rootEntities_.push_back(child);
+        }
     }
 
     if (auto* tc = getMutableComponent<TransformComponent>(child)) {
         tc->isDirty = true;
     }
+    isTransformDirty_ = true;
 
     return true;
 }
