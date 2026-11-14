@@ -135,8 +135,9 @@ PhysicsPipelinePhases registerPhysicsSystems(world::World& world, PhysicsWorld& 
     auto postSync =
         ecs.system<PhysicsTransformComponent, const RigidBodyComponent>("PhysicsPostSync")
             .kind(postSyncPhase)
-            .each([&physicsWorld](flecs::iter& it, size_t index, PhysicsTransformComponent& t,
-                                  const RigidBodyComponent& rb) {
+            .each([&physicsWorld, &world](flecs::iter& it, size_t index,
+                                          PhysicsTransformComponent& t,
+                                          const RigidBodyComponent& rb) {
                 if (rb.motionType == MotionType::Dynamic && rb.bodyHandle.isValid()) {
                     auto res = physicsWorld.getTransform(rb.bodyHandle);
                     if (res.hasValue()) {
@@ -146,6 +147,7 @@ PhysicsPipelinePhases registerPhysicsSystems(world::World& world, PhysicsWorld& 
                             tc->transform = res.value();
                             tc->isDirty = true;
                         }
+                        world.setTransformDirty(true);
                     }
                 }
             });
