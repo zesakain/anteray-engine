@@ -73,9 +73,28 @@ GpuEnvironmentMap::createFromHdr(rhi::RhiDevice& device, const HdrImage& hdr, ui
     return Result<GpuEnvironmentMap>::success(std::move(envMap));
 }
 
+Result<GpuEnvironmentMap>
+GpuEnvironmentMap::createAtmosphere(rhi::RhiDevice& device, const AtmosphereParameters& params,
+                                    uint32_t envRes, uint32_t irradianceRes, uint32_t prefilterRes,
+                                    uint32_t mipCount) {
+    const HdrImage sky = IblProcessor::generateAtmosphere(params, envRes * 2U, envRes);
+    return createFromHdr(device, sky, envRes, irradianceRes, prefilterRes, mipCount);
+}
+
+Result<GpuEnvironmentMap> GpuEnvironmentMap::createDaylight(rhi::RhiDevice& device) {
+    return createAtmosphere(device, AtmosphereParameters::createDaylight(), 64, 16, 32, 4);
+}
+
+Result<GpuEnvironmentMap> GpuEnvironmentMap::createSunset(rhi::RhiDevice& device) {
+    return createAtmosphere(device, AtmosphereParameters::createSunset(), 64, 16, 32, 4);
+}
+
+Result<GpuEnvironmentMap> GpuEnvironmentMap::createNight(rhi::RhiDevice& device) {
+    return createAtmosphere(device, AtmosphereParameters::createNight(), 64, 16, 32, 4);
+}
+
 Result<GpuEnvironmentMap> GpuEnvironmentMap::createDefault(rhi::RhiDevice& device) {
-    const HdrImage sky = IblProcessor::generateProceduralSky(64, 32, Vec3(0.4F, 0.7F, 0.5F), 10.0F);
-    return createFromHdr(device, sky, 32, 16, 32, 4);
+    return createAtmosphere(device, AtmosphereParameters::createDaylight(), 32, 16, 32, 4);
 }
 
 } // namespace eng::render

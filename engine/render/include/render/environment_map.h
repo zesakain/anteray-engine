@@ -150,6 +150,82 @@ struct BrdfLutData {
     }
 };
 
+/// @enum EnvironmentTimeOfDay
+/// @brief Primary lighting condition and atmospheric state for Hikari Engine scenes.
+enum class EnvironmentTimeOfDay : uint8_t {
+    /// Crisp, natural daylight with rich Rayleigh blue sky, balanced sunlight, and cool skylight
+    /// fill.
+    Daylight = 0,
+
+    /// Majestic sunset with golden/amber/crimson horizon extinction, long warm directional rays,
+    /// and indigo zenith.
+    Sunset = 1,
+
+    /// Atmospheric night with dark midnight sky, subtle starlight, and cool silver-blue moonlight.
+    Night = 2,
+
+    /// User-defined custom atmospheric and celestial lighting parameters.
+    Custom = 3,
+};
+
+/// @struct AtmosphereParameters
+/// @brief Physically motivated atmospheric scattering and celestial illumination configuration.
+struct AtmosphereParameters {
+    EnvironmentTimeOfDay timeOfDay{EnvironmentTimeOfDay::Daylight};
+
+    /// Direction vector pointing toward the celestial illumination source (sun or moon).
+    Vec3 sunDirection{0.4F, 0.7F, 0.5F};
+
+    /// Emitted radiant illuminance / intensity of the direct celestial source.
+    float sunIntensity{15.0F};
+
+    /// Spectral radiance color of the celestial disk.
+    Vec3 sunColor{1.0F, 0.98F, 0.92F};
+
+    /// Sky radiance at the zenith (directly overhead).
+    Vec3 zenithColor{0.18F, 0.42F, 0.85F};
+
+    /// Sky radiance at the atmospheric horizon.
+    Vec3 horizonColor{0.75F, 0.85F, 0.95F};
+
+    /// Earth/terrain ground bounce radiance.
+    Vec3 groundColor{0.20F, 0.18F, 0.16F};
+
+    /// Atmospheric turbidity / aerosol density factor (higher = more haze and extinction).
+    float turbidity{2.2F};
+
+    /// Forward Mie scattering intensity factor for celestial aureole.
+    float mieGlow{0.45F};
+
+    /// Photometric linear camera exposure.
+    float exposure{1.0F};
+
+    /// Correlated color temperature in Kelvin for Planckian chromatic adaptation.
+    float whiteBalance{6500.0F};
+
+    /// Midtone contrast adjustment factor around 18% gray.
+    float contrast{1.02F};
+
+    /// Color saturation multiplier.
+    float saturation{1.05F};
+
+    /// @brief Creates standardized, physically balanced Daylight atmospheric configuration.
+    [[nodiscard]] static AtmosphereParameters
+    createDaylight(const Vec3& sunDir = Vec3(0.4F, 0.7F, 0.5F), float intensity = 15.0F) noexcept;
+
+    /// @brief Creates standardized Majestic Sunset atmospheric configuration with rich
+    /// golden/crimson horizon.
+    [[nodiscard]] static AtmosphereParameters
+    createSunset(const Vec3& sunDir = Vec3(0.85F, 0.12F, 0.35F), float intensity = 20.0F) noexcept;
+
+    /// @brief Creates standardized Atmospheric Night configuration with deep midnight sky and
+    /// moonlight.
+    [[nodiscard]] static AtmosphereParameters
+    createNight(const Vec3& moonDir = Vec3(-0.4F, 0.65F, -0.5F), float intensity = 0.85F) noexcept;
+
+    bool operator==(const AtmosphereParameters& other) const noexcept = default;
+};
+
 /// @class IblProcessor
 /// @brief Mathematical generator and processor for Image-Based Lighting assets.
 class IblProcessor {
@@ -163,7 +239,13 @@ public:
     /// @brief Decodes an HDR file from memory bytes.
     [[nodiscard]] static Result<HdrImage> loadHdrFromMemory(std::span<const uint8_t> buffer);
 
-    /// @brief Generates a procedural high dynamic range physical sky environment.
+    /// @brief Generates high dynamic range procedural physical atmosphere conforming to specified
+    /// parameters.
+    [[nodiscard]] static HdrImage generateAtmosphere(const AtmosphereParameters& params,
+                                                     uint32_t width = 1024, uint32_t height = 512);
+
+    /// @brief Generates a procedural high dynamic range physical sky environment (legacy
+    /// compatibility wrapper).
     ///
     /// @param width Width of equirectangular map.
     /// @param height Height of equirectangular map.

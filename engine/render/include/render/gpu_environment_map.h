@@ -50,6 +50,29 @@ struct GpuEnvironmentMap {
     createFromHdr(rhi::RhiDevice& device, const HdrImage& hdr, uint32_t envRes = 256,
                   uint32_t irradianceRes = 32, uint32_t prefilterRes = 128, uint32_t mipCount = 5);
 
+    /// @brief Creates GPU environment map for specified atmospheric condition.
+    ///
+    /// @param device The RHI device used to allocate GPU textures and upload pixels.
+    /// @param params Atmospheric scattering and celestial illumination configuration.
+    /// @param envRes Resolution per face of environment cubemap.
+    /// @param irradianceRes Resolution per face of convolved irradiance cubemap.
+    /// @param prefilterRes Base resolution per face of specular prefiltered cubemap.
+    /// @param mipCount Number of GGX prefilter mip levels.
+    /// @return Allocated GpuEnvironmentMap or error.
+    [[nodiscard]] static Result<GpuEnvironmentMap>
+    createAtmosphere(rhi::RhiDevice& device, const AtmosphereParameters& params,
+                     uint32_t envRes = 128, uint32_t irradianceRes = 32, uint32_t prefilterRes = 64,
+                     uint32_t mipCount = 5);
+
+    /// @brief Creates GPU environment map configured for natural Daylight.
+    [[nodiscard]] static Result<GpuEnvironmentMap> createDaylight(rhi::RhiDevice& device);
+
+    /// @brief Creates GPU environment map configured for Majestic Sunset.
+    [[nodiscard]] static Result<GpuEnvironmentMap> createSunset(rhi::RhiDevice& device);
+
+    /// @brief Creates GPU environment map configured for Atmospheric Night.
+    [[nodiscard]] static Result<GpuEnvironmentMap> createNight(rhi::RhiDevice& device);
+
     /// @brief Creates default fallback procedural physical sky environment map.
     ///
     /// @param device The RHI device used to allocate GPU resources.

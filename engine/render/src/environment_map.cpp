@@ -165,24 +165,77 @@ Result<HdrImage> IblProcessor::loadHdrFromMemory(std::span<const uint8_t> buffer
     return Result<HdrImage>::success(HdrImage(std::move(res.value())));
 }
 
-HdrImage IblProcessor::generateProceduralSky(uint32_t width, uint32_t height, const Vec3& sunDir,
-                                             float sunIntensity) {
+AtmosphereParameters AtmosphereParameters::createDaylight(const Vec3& sunDir,
+                                                          float intensity) noexcept {
+    AtmosphereParameters p{};
+    p.timeOfDay = EnvironmentTimeOfDay::Daylight;
+    p.sunDirection =
+        (sunDir.lengthSq() > 1e-4F) ? sunDir.normalized() : Vec3(0.4F, 0.7F, 0.5F).normalized();
+    p.sunIntensity = intensity;
+    p.sunColor = Vec3(1.0F, 0.98F, 0.92F);
+    p.zenithColor = Vec3(0.18F, 0.42F, 0.85F);
+    p.horizonColor = Vec3(0.75F, 0.85F, 0.95F);
+    p.groundColor = Vec3(0.20F, 0.18F, 0.16F);
+    p.turbidity = 2.2F;
+    p.mieGlow = 0.45F;
+    p.exposure = 1.0F;
+    p.whiteBalance = 6500.0F;
+    p.contrast = 1.02F;
+    p.saturation = 1.05F;
+    return p;
+}
+
+AtmosphereParameters AtmosphereParameters::createSunset(const Vec3& sunDir,
+                                                        float intensity) noexcept {
+    AtmosphereParameters p{};
+    p.timeOfDay = EnvironmentTimeOfDay::Sunset;
+    p.sunDirection =
+        (sunDir.lengthSq() > 1e-4F) ? sunDir.normalized() : Vec3(0.85F, 0.12F, 0.35F).normalized();
+    p.sunIntensity = intensity;
+    p.sunColor = Vec3(1.0F, 0.45F, 0.12F);
+    p.zenithColor = Vec3(0.12F, 0.15F, 0.45F);
+    p.horizonColor = Vec3(0.95F, 0.48F, 0.16F);
+    p.groundColor = Vec3(0.16F, 0.09F, 0.05F);
+    p.turbidity = 4.5F;
+    p.mieGlow = 1.5F;
+    p.exposure = 1.15F;
+    p.whiteBalance = 5200.0F;
+    p.contrast = 1.08F;
+    p.saturation = 1.15F;
+    return p;
+}
+
+AtmosphereParameters AtmosphereParameters::createNight(const Vec3& moonDir,
+                                                       float intensity) noexcept {
+    AtmosphereParameters p{};
+    p.timeOfDay = EnvironmentTimeOfDay::Night;
+    p.sunDirection = (moonDir.lengthSq() > 1e-4F) ? moonDir.normalized()
+                                                  : Vec3(-0.4F, 0.65F, -0.5F).normalized();
+    p.sunIntensity = intensity;
+    p.sunColor = Vec3(0.65F, 0.78F, 0.95F);
+    p.zenithColor = Vec3(0.012F, 0.018F, 0.045F);
+    p.horizonColor = Vec3(0.028F, 0.038F, 0.075F);
+    p.groundColor = Vec3(0.008F, 0.010F, 0.014F);
+    p.turbidity = 1.5F;
+    p.mieGlow = 0.20F;
+    p.exposure = 0.90F;
+    p.whiteBalance = 7500.0F;
+    p.contrast = 1.12F;
+    p.saturation = 0.88F;
+    return p;
+}
+
+HdrImage IblProcessor::generateAtmosphere(const AtmosphereParameters& params, uint32_t width,
+                                          uint32_t height) {
     HdrImage image{};
     image.width = width;
     image.height = height;
     image.channels = 4;
     image.pixels.resize(static_cast<size_t>(width) * height * 4U);
 
-    const Vec3 normalizedSun = normalize(sunDir);
-
-    // Physically motivated sky palette:
-    // Zenith: deep Rayleigh scattering blue
-    // Horizon: warm scattering white-orange
-    // Ground: subtle earthy bounce
-    const Vec3 zenithColor(0.18F, 0.42F, 0.85F);
-    const Vec3 horizonColor(0.75F, 0.85F, 0.95F);
-    const Vec3 groundColor(0.20F, 0.18F, 0.16F);
-    const Vec3 sunDiscColor(1.0F, 0.96F, 0.88F);
+    const Vec3 normalizedSun = normalize(params.sunDirection);
+    const bool isNight = (params.timeOfDay == EnvironmentTimeOfDay::Night);
+    const bool isSunset = (params.timeOfDay == EnvironmentTimeOfDay::Sunset);
 
     for (uint32_t y = 0; y < height; ++y) {
         const float v = (static_cast<float>(y) + 0.5F) / static_cast<float>(height);
@@ -199,19 +252,63 @@ HdrImage IblProcessor::generateProceduralSky(uint32_t width, uint32_t height, co
             Vec3 pixelColor;
             if (dir.y >= 0.0F) {
                 // Sky hemisphere
-                const float horizonFactor = std::pow(1.0F - dir.y, 4.0F);
-                pixelColor = zenithColor * (1.0F - horizonFactor) + horizonColor * horizonFactor;
+                const float horizonFactor = std::pow(1.0F - dir.y, params.turbidity);
+                pixelColor = params.zenithColor * (1.0F - horizonFactor) +
+                             params.horizonColor * horizonFactor;
 
-                // Sun disc & forward Mie scattering
-                const float sunDot = std::max(dot(dir, normalizedSun), 0.0F);
-                const float mieGlow = std::pow(sunDot, 16.0F) * 0.4F;
-                const float sunDisc = std::pow(sunDot, 1024.0F) * sunIntensity;
+                // Celestial alignment (sun or moon)
+                const float celestialDot = std::max(dot(dir, normalizedSun), 0.0F);
 
-                pixelColor += (sunDiscColor * sunDisc) + (horizonColor * mieGlow);
+                if (isSunset) {
+                    // Sunset special: Azimuthal twilight belt and Rayleigh crimson extinction
+                    const float horizDirLen = std::sqrt(dir.x * dir.x + dir.z * dir.z);
+                    const float horizSunLen = std::sqrt(normalizedSun.x * normalizedSun.x +
+                                                        normalizedSun.z * normalizedSun.z);
+                    if (horizDirLen > 1e-4F && horizSunLen > 1e-4F) {
+                        const float sunAzimuthDot =
+                            std::max((dir.x * normalizedSun.x + dir.z * normalizedSun.z) /
+                                         (horizDirLen * horizSunLen),
+                                     0.0F);
+                        const float sunsetBelt =
+                            std::pow(sunAzimuthDot, 2.5F) * std::exp(-3.5F * dir.y);
+                        const Vec3 crimsonGlow(1.0F, 0.32F, 0.06F);
+                        pixelColor += crimsonGlow * (sunsetBelt * 0.95F);
+                    }
+
+                    // Forward Mie scattering aureole
+                    const float mie = std::pow(celestialDot, 12.0F) * params.mieGlow;
+                    const float sunDisk = std::pow(celestialDot, 1024.0F) * params.sunIntensity;
+                    pixelColor += (params.sunColor * sunDisk) + (params.horizonColor * mie);
+                } else if (isNight) {
+                    // Night special: Lunar disk, silver aureole, and faint celestial starlight
+                    const float moonDisk =
+                        std::pow(celestialDot, 512.0F) * (params.sunIntensity * 2.0F);
+                    const float lunarAureole = std::pow(celestialDot, 16.0F) * params.mieGlow;
+                    pixelColor +=
+                        (params.sunColor * moonDisk) + (params.horizonColor * lunarAureole);
+
+                    // Procedural deterministic astronomical starlight
+                    if (dir.y > 0.08F) {
+                        const float dotCoord = dir.x * 12.9898F + dir.y * 78.233F + dir.z * 45.164F;
+                        const float starSin = std::sin(dotCoord) * 43758.5453F;
+                        const float starHash = starSin - std::floor(starSin);
+                        if (starHash > 0.997F) {
+                            const float starBrightness = (starHash - 0.997F) / 0.003F * 0.25F;
+                            pixelColor += Vec3(starBrightness * 0.8F, starBrightness * 0.9F,
+                                               starBrightness * 1.0F);
+                        }
+                    }
+                } else {
+                    // Standard daylight: Crisp solar disk and soft forward Mie scattering
+                    const float mie = std::pow(celestialDot, 16.0F) * params.mieGlow;
+                    const float sunDisk = std::pow(celestialDot, 1024.0F) * params.sunIntensity;
+                    pixelColor += (params.sunColor * sunDisk) + (params.horizonColor * mie);
+                }
             } else {
                 // Ground hemisphere
                 const float groundFactor = std::clamp(-dir.y * 4.0F, 0.0F, 1.0F);
-                pixelColor = horizonColor * (1.0F - groundFactor) + groundColor * groundFactor;
+                pixelColor =
+                    params.horizonColor * (1.0F - groundFactor) + params.groundColor * groundFactor;
             }
 
             const size_t idx = (static_cast<size_t>(y) * width + x) * 4U;
@@ -223,6 +320,12 @@ HdrImage IblProcessor::generateProceduralSky(uint32_t width, uint32_t height, co
     }
 
     return image;
+}
+
+HdrImage IblProcessor::generateProceduralSky(uint32_t width, uint32_t height, const Vec3& sunDir,
+                                             float sunIntensity) {
+    return generateAtmosphere(AtmosphereParameters::createDaylight(sunDir, sunIntensity), width,
+                              height);
 }
 
 Vec3 IblProcessor::cubeFaceUVToDirection(uint32_t faceIndex, float u, float v) noexcept {
