@@ -150,7 +150,7 @@ struct ShadowSettings {
     uint32_t cascadeCount{4};          ///< Number of shadow cascades [1, 4]
     float splitLambda{0.80F};          ///< Logarithmic vs uniform split distribution factor [0.0, 1.0]
     bool stabilizeCascades{true};      ///< Sub-texel projection snapping to eliminate edge shimmering
-    bool contactShadows{true};         ///< Screen-space ray-marched contact shadows for fine contact grounding
+    bool contactShadows{false};        ///< Screen-space ray-marched contact shadows for fine contact grounding
     float contactShadowDistance{0.6F}; ///< Contact shadow search distance in meters [0.1, 2.0]
     bool shadowCaching{true};          ///< Static shadow caching to eliminate redundant draw-call recording
     float cascadeBlendRange{0.10F};    ///< Cascade boundary overlap blend fraction [0.0, 0.3]

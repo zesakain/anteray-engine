@@ -99,7 +99,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.shadows.pcfQuality = ShadowPcfQuality::Medium;
         s.shadows.softShadows = true;
         s.shadows.cascadeCount = 4;
-        s.shadows.contactShadows = true;
+        s.shadows.contactShadows = false;
         s.shadows.shadowCaching = true;
 
         s.postProcess.enabled = true;
