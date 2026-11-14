@@ -320,14 +320,18 @@ void HierarchyPanel::drawEntityNode(EditorContext& ctx, world::EntityHandle hand
 
     bool selfMatches = entityMatchesFilter(*ctx.world, handle, searchFilter, compFilter);
 
-    auto children = ctx.world->getChildren(handle);
-    std::sort(children.begin(), children.end(),
-              [](world::EntityHandle a, world::EntityHandle b) { return a.id < b.id; });
+    const bool hasChildren = ctx.world->hasChildren(handle);
+    std::vector<world::EntityHandle> children;
 
     bool anyDescendantMatches = false;
     if (!searchFilter.empty() || compFilter != ComponentFilter::All) {
-        anyDescendantMatches =
-            entityOrDescendantsMatch(*ctx.world, children, searchFilter, compFilter);
+        if (hasChildren) {
+            children = ctx.world->getChildren(handle);
+            std::sort(children.begin(), children.end(),
+                      [](world::EntityHandle a, world::EntityHandle b) { return a.id < b.id; });
+            anyDescendantMatches =
+                entityOrDescendantsMatch(*ctx.world, children, searchFilter, compFilter);
+        }
         if (!selfMatches && !anyDescendantMatches) {
             return;
         }
@@ -370,7 +374,6 @@ void HierarchyPanel::drawEntityNode(EditorContext& ctx, world::EntityHandle hand
             isSelected = (ctx.selectedEntityId == handle.id);
         }
 
-        const bool hasChildren = !children.empty();
         ImGuiTreeNodeFlags nodeFlags = ImGuiTreeNodeFlags_SpanAvailWidth;
 
         if (hasChildren) {
@@ -528,6 +531,11 @@ void HierarchyPanel::drawEntityNode(EditorContext& ctx, world::EntityHandle hand
 
         // Recurse children if node is open
         if (hasChildren && nodeOpen) {
+            if (children.empty()) {
+                children = ctx.world->getChildren(handle);
+                std::sort(children.begin(), children.end(),
+                          [](world::EntityHandle a, world::EntityHandle b) { return a.id < b.id; });
+            }
             for (world::EntityHandle child : children) {
                 drawEntityNode(ctx, child, displayedHandles, entityCount, searchFilter, compFilter);
             }
@@ -679,9 +687,20 @@ void HierarchyPanel::draw(EditorContext& ctx) {
 
             std::string_view searchView(searchFilter_.data());
 
-            for (world::EntityHandle root : roots) {
-                drawEntityNode(ctx, root, displayedHandles, entityCount, searchView,
-                               componentFilter_);
+            if (searchView.empty() && componentFilter_ == ComponentFilter::All) {
+                ImGuiListClipper clipper;
+                clipper.Begin(static_cast<int>(roots.size()));
+                while (clipper.Step()) {
+                    for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                        drawEntityNode(ctx, roots[static_cast<size_t>(i)], displayedHandles,
+                                       entityCount, searchView, componentFilter_);
+                    }
+                }
+            } else {
+                for (world::EntityHandle root : roots) {
+                    drawEntityNode(ctx, root, displayedHandles, entityCount, searchView,
+                                   componentFilter_);
+                }
             }
 
             if (roots.empty() && ctx.world->getAllEntities().empty()) {
