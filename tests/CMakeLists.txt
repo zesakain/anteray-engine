@@ -209,6 +209,12 @@ target_link_libraries(graphics_settings_test PRIVATE hikari::engine_render hikar
 add_test(NAME graphics_settings_test COMMAND graphics_settings_test)
 set_tests_properties(graphics_settings_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Image-Based Lighting (IBL) Verification Tests (Milestone 11C)
+add_executable(ibl_render_test unit/render/ibl_render_test.cpp)
+target_link_libraries(ibl_render_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
+add_test(NAME ibl_render_test COMMAND ibl_render_test)
+set_tests_properties(ibl_render_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Physics Unit Tests
 add_executable(physics_test unit/physics/physics_test.cpp)
 target_link_libraries(physics_test PRIVATE hikari::engine_physics)
