@@ -2,15 +2,17 @@
 """
 tools/download_benchmark_assets.py
 
-Downloads Khronos glTF Sample Assets for benchmark certification (Milestone 10G):
+Downloads glTF Sample Assets for benchmark certification:
 - Sponza (glTF with separate buffers and textures)
 - FlightHelmet (glTF with separate buffers and textures)
 - DamagedHelmet (glTF binary .glb)
+- Amazon Lumberyard Bistro (glTF with geometry buffers and CC BY 4.0 attribution)
 
 Target directories:
 - test-assets/benchmark/sponza/
 - test-assets/benchmark/flight_helmet/
 - test-assets/DamagedHelmet.glb
+- test-assets/benchmark/bistro/
 """
 
 import os
@@ -24,10 +26,12 @@ TEST_ASSETS_DIR = os.path.join(BASE_DIR, "test-assets")
 BENCHMARK_DIR = os.path.join(TEST_ASSETS_DIR, "benchmark")
 SPONZA_DIR = os.path.join(BENCHMARK_DIR, "sponza")
 FLIGHT_HELMET_DIR = os.path.join(BENCHMARK_DIR, "flight_helmet")
+BISTRO_DIR = os.path.join(BENCHMARK_DIR, "bistro")
 
 SPONZA_BASE_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Sponza/glTF/"
 FLIGHT_HELMET_BASE_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/FlightHelmet/glTF/"
 DAMAGED_HELMET_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb"
+BISTRO_BASE_URL = "https://raw.githubusercontent.com/zeux/niagara_bistro/master/"
 
 SPONZA_FILES = [
     "Sponza.gltf",
@@ -123,6 +127,14 @@ FLIGHT_HELMET_FILES = [
     "FlightHelmet_Materials_RubberWoodMat_OcclusionRoughMetal.png",
 ]
 
+BISTRO_FILES = [
+    ("bistro.gltf", "bistro.gltf"),
+    ("bistro.bin", "bistro.bin"),
+    ("bistro-anim.bin", "bistro-anim.bin"),
+    ("LICENSE", "LICENSE.txt"),
+    ("README.md", "README.md"),
+]
+
 
 def download_file(url: str, dest_path: str, max_retries: int = 3) -> bool:
     if os.path.isfile(dest_path) and os.path.getsize(dest_path) > 0:
@@ -155,6 +167,7 @@ def download_file(url: str, dest_path: str, max_retries: int = 3) -> bool:
 def main():
     os.makedirs(SPONZA_DIR, exist_ok=True)
     os.makedirs(FLIGHT_HELMET_DIR, exist_ok=True)
+    os.makedirs(BISTRO_DIR, exist_ok=True)
 
     print("=== Downloading Benchmark Assets ===")
 
@@ -189,6 +202,19 @@ def main():
             if not download_file(url, dest):
                 print(f"[ERROR] Failed to download {fname}")
                 sys.exit(1)
+
+    # 4. Amazon Lumberyard Bistro
+    print(f"Downloading Amazon Lumberyard Bistro ({len(BISTRO_FILES)} files)...")
+    for idx, (src_name, dest_name) in enumerate(BISTRO_FILES, 1):
+        url = BISTRO_BASE_URL + src_name
+        dest = os.path.join(BISTRO_DIR, dest_name)
+        if not os.path.isfile(dest) or os.path.getsize(dest) == 0:
+            print(f"  [{idx}/{len(BISTRO_FILES)}] {dest_name}")
+            if not download_file(url, dest):
+                print(f"[ERROR] Failed to download {dest_name}")
+                sys.exit(1)
+        else:
+            print(f"  [{idx}/{len(BISTRO_FILES)}] {dest_name} already present.")
 
     print("=== All Benchmark Assets Downloaded Successfully ===")
 
