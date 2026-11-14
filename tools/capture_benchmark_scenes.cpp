@@ -251,6 +251,18 @@ int main(int argc, char** argv) {
                 Mat4::lookAt(Vec3(-10.0F, 2.5F, 12.0F), Vec3(0.0F, 2.0F, 10.0F), Vec3::unitY());
             renderAndCapture(world, assetMgr, proj * viewCourtyard,
                              "bistro_persistent_courtyard.ppm");
+
+            // Close-up cafe storefront windows
+            Mat4 viewCafeWindows =
+                Mat4::lookAt(Vec3(-18.5F, 2.2F, 13.5F), Vec3(-14.0F, 2.2F, 14.8F), Vec3::unitY());
+            renderAndCapture(world, assetMgr, proj * viewCafeWindows,
+                             "bistro_cafe_windows_closeup.ppm");
+
+            // Building facade upper windows with forge grating and curtains
+            Mat4 viewFacadeWindows =
+                Mat4::lookAt(Vec3(-20.0F, 2.5F, 10.0F), Vec3(-16.0F, 7.5F, 14.0F), Vec3::unitY());
+            renderAndCapture(world, assetMgr, proj * viewFacadeWindows,
+                             "bistro_building_facade_windows.ppm");
         } else {
             std::cerr << "Failed to deserialize Bistro scene: " << desRes.error().message << '\n';
         }

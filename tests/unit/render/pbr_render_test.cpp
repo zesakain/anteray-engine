@@ -711,6 +711,37 @@ static int testDamagedHelmetPbrImportAndRender(RhiDevice& device, SceneRenderer&
 }
 
 // -----------------------------------------------------------------------------
+// Test 8: Glass Transmission & Specular Reflection
+// -----------------------------------------------------------------------------
+static int testGlassTransmission(RhiDevice& device, SceneRenderer& renderer) {
+    MeshData glassMesh = createPbrQuad();
+    Material glassMat{};
+    glassMat.baseColor = Vec4(1.0F, 1.0F, 1.0F, 1.0F);
+    glassMat.metallic = 0.0F;
+    glassMat.roughness = 0.05F;
+    glassMat.transmissionFactor = 0.9F;
+    glassMat.alphaMode = AlphaMode::Opaque;
+    glassMesh.materials = {glassMat};
+
+    auto glassRes = renderAndReadback(device, renderer, glassMesh);
+    TEST_CHECK(glassRes.hasValue());
+    const auto& glassPix = glassRes.value();
+
+    const size_t centerIdx = (32 * 64 + 32) * 4;
+    // With 90% transmission, the clear color background (20, 31, 51) shines through,
+    // blended with the specular highlight.
+    // Ensure the pixel is not opaque white (R < 150) due to transmission.
+    TEST_CHECK(glassPix[centerIdx + 0] < 150);
+
+    std::cout << "[PASS] testGlassTransmission (glass RGBA=("
+              << static_cast<int>(glassPix[centerIdx + 0]) << ","
+              << static_cast<int>(glassPix[centerIdx + 1]) << ","
+              << static_cast<int>(glassPix[centerIdx + 2]) << ","
+              << static_cast<int>(glassPix[centerIdx + 3]) << "))\n";
+    return 0;
+}
+
+// -----------------------------------------------------------------------------
 // Main Test Runner
 // -----------------------------------------------------------------------------
 int main() {
@@ -760,8 +791,11 @@ int main() {
     if (testDamagedHelmetPbrImportAndRender(*device, renderer) != 0) {
         return 7;
     }
+    if (testGlassTransmission(*device, renderer) != 0) {
+        return 8;
+    }
 
     renderer.shutdown();
-    std::cout << "[All Milestone 10D PBR Verification Tests Passed: 7/7]\n";
+    std::cout << "[All PBR Verification Tests Passed: 8/8]\n";
     return 0;
 }

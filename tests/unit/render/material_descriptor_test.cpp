@@ -60,6 +60,8 @@ static int testGpuMaterialCreationAndUniformPacking() {
     mat.alphaCutoff = 0.6F;
     mat.alphaMode = AlphaMode::Mask;
     mat.doubleSided = true;
+    mat.transmissionFactor = 0.75F;
+    mat.ior = 1.52F;
 
     auto gpuMatRes = GpuMaterial::create(device, layout, mat, assetManager);
     TEST_CHECK(gpuMatRes.hasValue());
@@ -81,6 +83,8 @@ static int testGpuMaterialCreationAndUniformPacking() {
     TEST_CHECK(std::abs(ubo.emissiveFactorAndAlphaCutoff.w - 0.6F) < 1e-4F);
     TEST_CHECK(ubo.alphaMode == 1u); // Mask
     TEST_CHECK(ubo.doubleSided == 1u);
+    TEST_CHECK(std::abs(ubo.transmissionFactor - 0.75F) < 1e-4F);
+    TEST_CHECK(std::abs(ubo.ior - 1.52F) < 1e-4F);
 
     // Fallbacks: No textures provided, so all texture flags must be 0
     TEST_CHECK(ubo.hasBaseColorTex == 0u);
