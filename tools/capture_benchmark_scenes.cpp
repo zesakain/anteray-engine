@@ -225,6 +225,37 @@ int main(int argc, char** argv) {
         }
     }
 
+    // 4. Capture Bistro_Benchmark.hikari
+    {
+        std::cout << "\n--- Loading Bistro_Benchmark.hikari ---\n";
+        world::World world;
+        render::AssetManager assetMgr;
+        const std::string bistroScenePath = "assets/benchmark-scenes/Bistro_Benchmark.hikari";
+        auto desRes = framework::SceneSerializer::deserializeFromFile(world, bistroScenePath);
+        if (desRes.hasValue()) {
+            std::cout << "Loaded " << desRes.value().entitiesLoaded << " entities.\n";
+            if (desRes.value().postProcessSettings.has_value()) {
+                renderer.setPostProcessSettings(*desRes.value().postProcessSettings);
+            }
+
+            // Exterior street view toward cafe terrace
+            Mat4 viewStreet = Mat4::lookAt(Vec3(-26.43F, 3.16F, 11.17F),
+                                           Vec3(-16.85F, 2.84F, 14.03F), Vec3::unitY());
+            Mat4 proj = Mat4::perspective(toRadians(65.0F),
+                                          static_cast<float>(width) / static_cast<float>(height),
+                                          0.1F, 2000.0F);
+            renderAndCapture(world, assetMgr, proj * viewStreet, "bistro_persistent_street.ppm");
+
+            // Courtyard / cafe closeup view
+            Mat4 viewCourtyard =
+                Mat4::lookAt(Vec3(-10.0F, 2.5F, 12.0F), Vec3(0.0F, 2.0F, 10.0F), Vec3::unitY());
+            renderAndCapture(world, assetMgr, proj * viewCourtyard,
+                             "bistro_persistent_courtyard.ppm");
+        } else {
+            std::cerr << "Failed to deserialize Bistro scene: " << desRes.error().message << '\n';
+        }
+    }
+
     device->destroyBuffer(rbHandle);
     renderer.shutdown();
     std::cout << "\nAll captures completed successfully.\n";
