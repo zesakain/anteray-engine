@@ -297,11 +297,12 @@ public:
     [[nodiscard]] rhi::TextureHandle getSsgiTarget() const noexcept { return ssgiFilteredTarget_; }
 
     struct GtaoPushConstants {
-        Mat4 invViewProj{Mat4::identity()};
+        Vec4 projParams{1.0F, 1.0F, 0.0F, 0.0F};
         Vec4 cameraPosAndRadius{0.0F, 0.0F, 0.0F, 1.5F};
         Vec4 gtaoParams{1.0F, 0.05F, 1.0F, 0.0F};
         Vec2 resolution{1920.0F, 1080.0F};
         Vec2 invResolution{1.0F / 1920.0F, 1.0F / 1080.0F};
+        Mat4 invViewProj{Mat4::identity()};
     };
 
     struct BilateralBlurPushConstants {
@@ -312,6 +313,7 @@ public:
     };
 
     struct SsgiPushConstants {
+        Mat4 reprojectMat{Mat4::identity()};
         Vec4 projParams{1.0F, 1.0F, 0.0F, 0.0F};
         Vec4 ssgiParams{1.0F, 8.0F, 0.2F, 3.0F};
         Vec2 resolution{960.0F, 540.0F};

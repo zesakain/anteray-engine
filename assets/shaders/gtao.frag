@@ -6,15 +6,15 @@ layout(location = 0) out vec4 outColor;
 layout(set = 0, binding = 0) uniform sampler2D uDepthMap;
 
 layout(push_constant) uniform GtaoPushConstants {
-    mat4 invViewProj;
-    vec4 cameraPosAndRadius; // xyz: camPos, w: radius
-    vec4 gtaoParams;          // x: intensity, y: bias, z: power, w: unused
-    vec2 resolution;
-    vec2 invResolution;
+    vec4 projParams;         // x: P00, y: P11, z: P22, w: P23 (16 B)
+    vec4 cameraPosAndRadius; // xyz: camPos, w: radius         (16 B)
+    vec4 gtaoParams;         // x: intensity, y: bias, z: power, w: unused (16 B)
+    vec2 resolution;         // (8 B)
+    vec2 invResolution;      // (8 B)
+    mat4 invViewProj;        // (64 B)
 } pc;
 
 const float PI = 3.141592653589793;
-const float HALF_PI = 1.5707963267948966;
 
 // Reconstructs world-space position from UV and depth buffer
 vec3 getWorldPos(vec2 uv) {
@@ -83,7 +83,7 @@ void main() {
             vec3 horizonVec = S - P;
             float dist = length(horizonVec);
             if (dist > 0.005 && dist < radiusWorld * 1.5) {
-                float elevation = asin(clamp(dot(horizonVec / dist, N), -1.0, 1.0));
+                float elevation = dot(horizonVec / dist, N);
                 h1 = max(h1, elevation);
             }
         }
@@ -99,15 +99,15 @@ void main() {
             vec3 horizonVec = S - P;
             float dist = length(horizonVec);
             if (dist > 0.005 && dist < radiusWorld * 1.5) {
-                float elevation = asin(clamp(dot(horizonVec / dist, N), -1.0, 1.0));
+                float elevation = dot(horizonVec / dist, N);
                 h2 = max(h2, elevation);
             }
         }
 
-        // Analytical horizon occlusion
-        h1 = clamp(h1 - bias, 0.0, HALF_PI);
-        h2 = clamp(h2 - bias, 0.0, HALF_PI);
-        float dirOcclusion = 0.5 * (sin(h1) + sin(h2));
+        // Analytical horizon occlusion without transcendental asin/sin calls
+        h1 = clamp(h1 - bias, 0.0, 1.0);
+        h2 = clamp(h2 - bias, 0.0, 1.0);
+        float dirOcclusion = 0.5 * (h1 + h2);
         totalOcclusion += clamp(dirOcclusion, 0.0, 1.0);
     }
 

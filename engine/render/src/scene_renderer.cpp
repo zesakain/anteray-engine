@@ -2621,6 +2621,35 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
             }
         });
 
+        if (totalProbeWeight <= 1e-4F) {
+            float minDistanceSq = std::numeric_limits<float>::max();
+            SphericalHarmonicsL2 nearestSh{};
+            bool foundNearest = false;
+            probeQuery.each([&](flecs::entity e, const IrradianceProbeComponent& probe) {
+                if (!probe.enabled) {
+                    return;
+                }
+                Vec3 probePos = probe.position;
+                if (e.has<world::WorldTransformComponent>()) {
+                    const auto* wt = e.get<world::WorldTransformComponent>();
+                    if (wt != nullptr) {
+                        probePos = Vec3(wt->worldMatrix.m[12], wt->worldMatrix.m[13],
+                                        wt->worldMatrix.m[14]);
+                    }
+                }
+                float dSq = (probePos - currentCameraPos_).lengthSq();
+                if (dSq < minDistanceSq) {
+                    minDistanceSq = dSq;
+                    nearestSh = probe.sh;
+                    foundNearest = true;
+                }
+            });
+            if (foundNearest) {
+                blendedSh = nearestSh;
+                totalProbeWeight = 1.0F;
+            }
+        }
+
         if (totalProbeWeight > 1e-4F) {
             blendedSh *= (1.0F / totalProbeWeight);
             for (size_t i = 0; i < 9; ++i) {
@@ -3137,12 +3166,16 @@ Result<void> SceneRenderer::createGiTargets(uint32_t width, uint32_t height) {
         return Result<void>::success();
     }
 
-    // 1. Full-resolution GTAO Targets (R8_UNORM)
+    // 1. GTAO Targets: Half-resolution Raw Target for Tier 0 performance,
+    // Full-resolution Filtered Target via bilateral depth-aware upsampling
+    const uint32_t halfW = std::max(1u, width / 2);
+    const uint32_t halfH = std::max(1u, height / 2);
+
     rhi::TextureDesc gtaoRawDesc{
         .type = rhi::TextureType::Texture2D,
         .format = rhi::TextureFormat::R8_UNORM,
-        .width = width,
-        .height = height,
+        .width = halfW,
+        .height = halfH,
         .depth = 1,
         .mipLevels = 1,
         .arrayLayers = 1,
@@ -3157,6 +3190,8 @@ Result<void> SceneRenderer::createGiTargets(uint32_t width, uint32_t height) {
     gtaoRawTarget_ = gtaoRawRes.value();
 
     auto gtaoFiltDesc = gtaoRawDesc;
+    gtaoFiltDesc.width = width;
+    gtaoFiltDesc.height = height;
     gtaoFiltDesc.debugName = "GtaoFilteredTarget";
     auto gtaoFiltRes = device_->createTexture(gtaoFiltDesc);
     if (!gtaoFiltRes.hasValue()) {
@@ -3165,9 +3200,6 @@ Result<void> SceneRenderer::createGiTargets(uint32_t width, uint32_t height) {
     gtaoFilteredTarget_ = gtaoFiltRes.value();
 
     // 2. Half-resolution SSGI & Temporal Denoise Targets
-    const uint32_t halfW = std::max(1u, width / 2);
-    const uint32_t halfH = std::max(1u, height / 2);
-
     rhi::TextureDesc ssgiDesc{
         .type = rhi::TextureType::Texture2D,
         .format = hdrFormat_,
@@ -3292,6 +3324,9 @@ void SceneRenderer::recordGtaoPass(rhi::RhiCommandList& cmdList) {
         cmdList.writeTimestamp(currentBaseQuery_ + 14, rhi::GpuTimestampStage::TopOfPipe);
     }
 
+    const uint32_t halfW = std::max(1u, width_ / 2);
+    const uint32_t halfH = std::max(1u, height_ / 2);
+
     rhi::RenderPassBeginInfo passInfo{
         .colorTarget = gtaoRawTarget_,
         .depthTarget = {},
@@ -3301,20 +3336,32 @@ void SceneRenderer::recordGtaoPass(rhi::RhiCommandList& cmdList) {
         .clearDepthTarget = false,
     };
     cmdList.beginRenderPass(passInfo);
-    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
-    cmdList.setScissor(0, 0, width_, height_);
+    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(halfW), static_cast<float>(halfH));
+    cmdList.setScissor(0, 0, halfW, halfH);
 
     cmdList.bindPipeline(gtaoPipeline_);
     const std::array<rhi::DescriptorSetHandle, 1> sets{gtaoDescriptorSet_};
     cmdList.bindDescriptorSets(gtaoPipelineLayout_, 0, sets);
 
+    const float aspect = static_cast<float>(width_) / static_cast<float>(height_ > 0 ? height_ : 1);
+    const float fovY = 1.04719755F;
+    const float tanHalfFov = std::tan(fovY * 0.5F);
+    const float f = (tanHalfFov > 1e-6F) ? (1.0F / tanHalfFov) : 1.0F;
+    const float zNear = 0.1F;
+    const float zFar = 1000.0F;
+    const float P00 = f / (aspect > 1e-6F ? aspect : 1.0F);
+    const float P11 = f;
+    const float P22 = zFar / (zNear - zFar);
+    const float P23 = (zNear * zFar) / (zNear - zFar);
+
     GtaoPushConstants pc{};
-    pc.invViewProj = currentViewProj_.inverse().value_or(Mat4::identity());
+    pc.projParams = Vec4(P00, P11, P22, P23);
     pc.cameraPosAndRadius = Vec4(currentCameraPos_.x, currentCameraPos_.y, currentCameraPos_.z,
                                  settings_.lighting.gtaoRadius);
     pc.gtaoParams = Vec4(settings_.lighting.gtaoIntensity, 0.05F, 1.0F, 0.0F);
-    pc.resolution = Vec2(static_cast<float>(width_), static_cast<float>(height_));
-    pc.invResolution = Vec2(1.0F / static_cast<float>(width_), 1.0F / static_cast<float>(height_));
+    pc.resolution = Vec2(static_cast<float>(halfW), static_cast<float>(halfH));
+    pc.invResolution = Vec2(1.0F / static_cast<float>(halfW), 1.0F / static_cast<float>(halfH));
+    pc.invViewProj = currentViewProj_.inverse().value_or(Mat4::identity());
 
     cmdList.pushConstants(gtaoPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
                           sizeof(GtaoPushConstants), &pc);
@@ -3400,6 +3447,8 @@ void SceneRenderer::recordSsgiPass(rhi::RhiCommandList& cmdList) {
     const float P23 = (zNear * zFar) / (zNear - zFar);
 
     SsgiPushConstants pc{};
+    auto invOpt = currentViewProj_.inverse();
+    pc.reprojectMat = prevViewProj_ * invOpt.value_or(Mat4::identity());
     pc.projParams = Vec4(P00, P11, P22, P23);
     pc.ssgiParams = Vec4(settings_.lighting.giIntensity, 8.0F, 0.2F, settings_.lighting.ssgiRadius);
     pc.resolution = Vec2(static_cast<float>(halfW), static_cast<float>(halfH));

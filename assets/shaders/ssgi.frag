@@ -7,6 +7,7 @@ layout(set = 0, binding = 0) uniform sampler2D uDepthMap;
 layout(set = 0, binding = 1) uniform sampler2D uSceneRadianceMap;
 
 layout(push_constant) uniform SsgiPushConstants {
+    mat4 reprojectMat;
     vec4 projParams; // x: P00, y: P11, z: P22, w: P23
     vec4 ssgiParams; // x: intensity, y: raySteps, z: thickness, w: maxRadius
     vec2 resolution;
@@ -117,8 +118,20 @@ void main() {
                 float distFalloff = clamp(1.0 - (t / maxRadius), 0.0, 1.0);
                 distFalloff *= distFalloff;
 
-                // Sample radiance from previous frame's lit scene
-                vec3 sampledColor = texture(uSceneRadianceMap, sampleUV).rgb;
+                // Reproject hit UV to previous frame screen space to eliminate motion drift
+                float sampleDepth = texture(uDepthMap, sampleUV).r;
+                vec4 hitNdc = vec4(sampleUV * 2.0 - 1.0, sampleDepth, 1.0);
+                vec4 prevClip = pc.reprojectMat * hitNdc;
+                vec2 radUV = sampleUV;
+                if (prevClip.w > 0.001) {
+                    vec2 pUV = (prevClip.xy / prevClip.w) * 0.5 + 0.5;
+                    if (pUV.x >= 0.01 && pUV.x <= 0.99 && pUV.y >= 0.01 && pUV.y <= 0.99) {
+                        radUV = pUV;
+                    }
+                }
+
+                // Sample radiance from previous frame's lit scene without recursive runaway
+                vec3 sampledColor = texture(uSceneRadianceMap, radUV).rgb;
                 sampledColor = min(sampledColor, vec3(10.0));
 
                 hitRadiance = sampledColor * (distFalloff * edgeFade);
