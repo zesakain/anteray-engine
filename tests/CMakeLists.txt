@@ -137,6 +137,10 @@ add_executable(environment_map_test unit/render/environment_map_test.cpp)
 target_link_libraries(environment_map_test PRIVATE hikari::engine_render)
 add_test(NAME environment_map_test COMMAND environment_map_test)
 
+add_executable(irradiance_probe_test unit/render/irradiance_probe_test.cpp)
+target_link_libraries(irradiance_probe_test PRIVATE hikari::engine_render)
+add_test(NAME irradiance_probe_test COMMAND irradiance_probe_test)
+
 # Mesh Unit Tests
 add_executable(mesh_test unit/render/mesh_test.cpp)
 target_link_libraries(mesh_test PRIVATE hikari::engine_render hikari::engine_rhi)
