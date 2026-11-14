@@ -140,11 +140,20 @@ struct LightingSettings {
 struct ShadowSettings {
     bool enabled{true};
     uint32_t resolution{2048};   ///< Shadow map dimension: 512, 1024, 2048, or 4096
-    float distance{50.0F};       ///< Directional shadow projection distance in meters [10.0, 200.0]
+    float distance{50.0F};       ///< Directional shadow projection distance in meters [10.0, 300.0]
     float depthBias{0.005F};     ///< Constant depth bias in range [0.0001, 0.05]
     float slopeScaledBias{1.0F}; ///< Slope-scaled depth bias multiplier [0.0, 5.0]
     ShadowPcfQuality pcfQuality{ShadowPcfQuality::Medium};
     bool softShadows{true};
+
+    // Milestone 11E: Cascaded Shadow Maps, Contact Shadows & Shadow Stability
+    uint32_t cascadeCount{4};          ///< Number of shadow cascades [1, 4]
+    float splitLambda{0.80F};          ///< Logarithmic vs uniform split distribution factor [0.0, 1.0]
+    bool stabilizeCascades{true};      ///< Sub-texel projection snapping to eliminate edge shimmering
+    bool contactShadows{true};         ///< Screen-space ray-marched contact shadows for fine contact grounding
+    float contactShadowDistance{0.6F}; ///< Contact shadow search distance in meters [0.1, 2.0]
+    bool shadowCaching{true};          ///< Static shadow caching to eliminate redundant draw-call recording
+    float cascadeBlendRange{0.10F};    ///< Cascade boundary overlap blend fraction [0.0, 0.3]
 
     bool operator==(const ShadowSettings& other) const noexcept = default;
 };

@@ -261,6 +261,15 @@ Result<std::string> GraphicsSettingsSerializer::serializeToString(const Graphics
                   JsonValue(static_cast<double>(settings.shadows.slopeScaledBias)));
     shadowObj.set("pcfQuality", JsonValue(pcfToString(settings.shadows.pcfQuality)));
     shadowObj.set("softShadows", JsonValue(settings.shadows.softShadows));
+    shadowObj.set("cascadeCount", JsonValue(static_cast<int>(settings.shadows.cascadeCount)));
+    shadowObj.set("splitLambda", JsonValue(static_cast<double>(settings.shadows.splitLambda)));
+    shadowObj.set("stabilizeCascades", JsonValue(settings.shadows.stabilizeCascades));
+    shadowObj.set("contactShadows", JsonValue(settings.shadows.contactShadows));
+    shadowObj.set("contactShadowDistance",
+                  JsonValue(static_cast<double>(settings.shadows.contactShadowDistance)));
+    shadowObj.set("shadowCaching", JsonValue(settings.shadows.shadowCaching));
+    shadowObj.set("cascadeBlendRange",
+                  JsonValue(static_cast<double>(settings.shadows.cascadeBlendRange)));
     root.set("shadows", std::move(shadowObj));
 
     // Post Processing
@@ -441,6 +450,19 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
             settings.shadows.pcfQuality = stringToPcf(s->getString("pcfQuality", "Medium"));
         }
         settings.shadows.softShadows = s->getBool("softShadows", settings.shadows.softShadows);
+        settings.shadows.cascadeCount = static_cast<uint32_t>(
+            s->getInt("cascadeCount", static_cast<int>(settings.shadows.cascadeCount)));
+        settings.shadows.splitLambda = s->getFloat("splitLambda", settings.shadows.splitLambda);
+        settings.shadows.stabilizeCascades =
+            s->getBool("stabilizeCascades", settings.shadows.stabilizeCascades);
+        settings.shadows.contactShadows =
+            s->getBool("contactShadows", settings.shadows.contactShadows);
+        settings.shadows.contactShadowDistance =
+            s->getFloat("contactShadowDistance", settings.shadows.contactShadowDistance);
+        settings.shadows.shadowCaching =
+            s->getBool("shadowCaching", settings.shadows.shadowCaching);
+        settings.shadows.cascadeBlendRange =
+            s->getFloat("cascadeBlendRange", settings.shadows.cascadeBlendRange);
     }
 
     // 4. Post Processing

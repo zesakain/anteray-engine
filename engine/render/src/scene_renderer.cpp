@@ -2574,7 +2574,7 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     Mat4 lightProj =
         Mat4::orthographic(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1F, farPlane);
     Mat4 lightSpaceMatrix = lightProj * lightView;
-    lightingData.lightSpaceMatrix = lightSpaceMatrix;
+    lightingData.cascadeLightSpaceMatrices[0] = lightSpaceMatrix;
 
     currentWorld_ = &world;
     currentAssetManager_ = &assetManager;

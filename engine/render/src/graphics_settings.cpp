@@ -48,6 +48,8 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.shadows.depthBias = 0.008F;
         s.shadows.pcfQuality = ShadowPcfQuality::Hard;
         s.shadows.softShadows = false;
+        s.shadows.cascadeCount = 1;
+        s.shadows.contactShadows = false;
 
         s.postProcess.enabled = false; // SDR direct path for max performance
         s.postProcess.bloomEnabled = false;
@@ -69,6 +71,8 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.shadows.depthBias = 0.005F;
         s.shadows.pcfQuality = ShadowPcfQuality::Medium;
         s.shadows.softShadows = true;
+        s.shadows.cascadeCount = 2;
+        s.shadows.contactShadows = false;
 
         s.postProcess.enabled = true;
         s.postProcess.bloomEnabled = true;
@@ -94,6 +98,9 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.shadows.depthBias = 0.005F;
         s.shadows.pcfQuality = ShadowPcfQuality::Medium;
         s.shadows.softShadows = true;
+        s.shadows.cascadeCount = 4;
+        s.shadows.contactShadows = true;
+        s.shadows.shadowCaching = true;
 
         s.postProcess.enabled = true;
         s.postProcess.bloomEnabled = true;
@@ -119,12 +126,9 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.shadows.depthBias = 0.0025F;
         s.shadows.pcfQuality = ShadowPcfQuality::High;
         s.shadows.softShadows = true;
-
-        s.postProcess.enabled = true;
-        s.postProcess.bloomEnabled = true;
-        s.postProcess.bloomIntensity = 0.04F;
-        s.postProcess.bloomThreshold = 1.0F;
-        s.postProcess.toneMapOp = ToneMapOperator::AcesFitted;
+        s.shadows.cascadeCount = 4;
+        s.shadows.contactShadows = true;
+        s.shadows.shadowCaching = true;
         break;
 
     case GraphicsQualityPreset::Cinematic:
@@ -144,6 +148,9 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.shadows.depthBias = 0.002F;
         s.shadows.pcfQuality = ShadowPcfQuality::High;
         s.shadows.softShadows = true;
+        s.shadows.cascadeCount = 4;
+        s.shadows.contactShadows = true;
+        s.shadows.shadowCaching = true;
 
         s.postProcess.enabled = true;
         s.postProcess.bloomEnabled = true;
@@ -228,11 +235,17 @@ GraphicsSettings GraphicsSettings::validateAgainstCaps(const rhi::GpuCaps& caps)
         }
     }
 
-    // 2. Shadow Map Resolution Clamping
+    // 2. Shadow Map Clamping
     const uint32_t maxTexDim = caps.limits.maxTextureDimension2D;
     if (validated.shadows.resolution > maxTexDim) {
         validated.shadows.resolution = maxTexDim;
     }
+    validated.shadows.cascadeCount = std::clamp(validated.shadows.cascadeCount, 1U, 4U);
+    validated.shadows.splitLambda = std::clamp(validated.shadows.splitLambda, 0.0F, 1.0F);
+    validated.shadows.cascadeBlendRange =
+        std::clamp(validated.shadows.cascadeBlendRange, 0.0F, 0.30F);
+    validated.shadows.contactShadowDistance =
+        std::clamp(validated.shadows.contactShadowDistance, 0.05F, 5.0F);
 
     // 3. Render Scale Boundary Guard
     validated.quality.renderScale = std::clamp(validated.quality.renderScale, 0.5F, 2.0F);
@@ -269,8 +282,9 @@ GraphicsSettings::computeChangeSeverity(const GraphicsSettings& other) const noe
         return SettingChangeSeverity::PipelineRecompilation;
     }
 
-    // Resource allocation required if shadow resolution, render scale, or HDR target changed
+    // Resource allocation required if shadow resolution, cascade count, render scale, or HDR target changed
     if (shadows.resolution != other.shadows.resolution ||
+        shadows.cascadeCount != other.shadows.cascadeCount ||
         std::abs(quality.renderScale - other.quality.renderScale) > 1e-4F ||
         postProcess.enabled != other.postProcess.enabled) {
         return SettingChangeSeverity::RenderResourceRecreation;
