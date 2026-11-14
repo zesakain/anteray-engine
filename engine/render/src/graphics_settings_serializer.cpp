@@ -244,6 +244,9 @@ Result<std::string> GraphicsSettingsSerializer::serializeToString(const Graphics
                 JsonValue(static_cast<double>(settings.postProcess.bloomIntensity)));
     postObj.set("bloomFilterRadius",
                 JsonValue(static_cast<double>(settings.postProcess.bloomFilterRadius)));
+    postObj.set("whiteBalance", JsonValue(static_cast<double>(settings.postProcess.whiteBalance)));
+    postObj.set("contrast", JsonValue(static_cast<double>(settings.postProcess.contrast)));
+    postObj.set("saturation", JsonValue(static_cast<double>(settings.postProcess.saturation)));
     root.set("postProcess", std::move(postObj));
 
     // Performance
@@ -411,6 +414,11 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
             pp->getFloat("bloomIntensity", settings.postProcess.bloomIntensity);
         settings.postProcess.bloomFilterRadius =
             pp->getFloat("bloomFilterRadius", settings.postProcess.bloomFilterRadius);
+        settings.postProcess.whiteBalance =
+            pp->getFloat("whiteBalance", settings.postProcess.whiteBalance);
+        settings.postProcess.contrast = pp->getFloat("contrast", settings.postProcess.contrast);
+        settings.postProcess.saturation =
+            pp->getFloat("saturation", settings.postProcess.saturation);
     }
 
     // 5. Performance

@@ -84,6 +84,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.quality.textureQuality = TextureQuality::High;
 
         s.lighting.directLighting = true;
+        s.lighting.iblEnabled = true;
         s.lighting.environmentIntensity = 1.0F;
         s.lighting.exposure = 1.0F;
 
@@ -108,6 +109,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.quality.textureQuality = TextureQuality::Ultra;
 
         s.lighting.directLighting = true;
+        s.lighting.iblEnabled = true;
         s.lighting.environmentIntensity = 1.0F;
         s.lighting.exposure = 1.0F;
 
@@ -132,6 +134,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.quality.textureQuality = TextureQuality::Ultra;
 
         s.lighting.directLighting = true;
+        s.lighting.iblEnabled = true;
         s.lighting.environmentIntensity = 1.0F;
         s.lighting.exposure = 1.0F;
 

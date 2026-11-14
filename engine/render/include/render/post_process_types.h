@@ -61,6 +61,20 @@ struct PostProcessSettings {
     /// 9-tap tent blur reconstruction filter radius.
     /// Range: [0.5, 4.0], default: 1.0.
     float bloomFilterRadius{1.0F};
+
+    /// Correlated color temperature in Kelvin for Planckian chromatic adaptation.
+    /// Range: [1000.0, 12000.0], default: 6500.0 (D65 standard daylight).
+    float whiteBalance{6500.0F};
+
+    /// Midtone contrast adjustment factor around 18% gray in linear space.
+    /// Range: [0.5, 2.0], default: 1.0 (neutral).
+    float contrast{1.0F};
+
+    /// Color saturation multiplier.
+    /// Range: [0.0, 2.0], default: 1.0 (neutral).
+    float saturation{1.0F};
+
+    bool operator==(const PostProcessSettings& other) const noexcept = default;
 };
 
 } // namespace eng::render

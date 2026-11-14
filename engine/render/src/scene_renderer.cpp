@@ -38,7 +38,9 @@ struct ToneMappingPushConstants {
     float bloomIntensity;
     int32_t bloomEnabled;
     float whitePoint;
-    float padding[3];
+    float whiteBalance;
+    float contrast;
+    float saturation;
 };
 
 rhi::TextureFormat selectHdrFormat(const rhi::RhiDevice& device) {
@@ -1144,6 +1146,9 @@ Result<void> SceneRenderer::applyGraphicsSettings(const GraphicsSettings& newSet
     postProcessSettings_.reinhardWhitePoint = validated.postProcess.reinhardWhitePoint;
     postProcessSettings_.exposure = validated.postProcess.exposure;
     postProcessSettings_.toneMapOp = validated.postProcess.toneMapOp;
+    postProcessSettings_.whiteBalance = validated.postProcess.whiteBalance;
+    postProcessSettings_.contrast = validated.postProcess.contrast;
+    postProcessSettings_.saturation = validated.postProcess.saturation;
 
     // 5. Hardware VSync toggle
     device_->setVsync(validated.performance.vsync);
@@ -2787,7 +2792,9 @@ void SceneRenderer::recordToneMappingPass(rhi::RhiCommandList& cmdList) {
             postProcessSettings_.bloomEnabled ? postProcessSettings_.bloomIntensity : 0.0F,
         .bloomEnabled = postProcessSettings_.bloomEnabled ? 1 : 0,
         .whitePoint = postProcessSettings_.reinhardWhitePoint,
-        .padding = {0.0F, 0.0F, 0.0F},
+        .whiteBalance = postProcessSettings_.whiteBalance,
+        .contrast = postProcessSettings_.contrast,
+        .saturation = postProcessSettings_.saturation,
     };
     cmdList.pushConstants(toneMappingPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
                           sizeof(ToneMappingPushConstants), &pc);

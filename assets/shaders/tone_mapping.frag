@@ -12,7 +12,52 @@ layout(push_constant) uniform ToneMappingPushConstants {
     float bloomIntensity;
     int bloomEnabled;
     float whitePoint;
+    float whiteBalance; // Color temperature in Kelvin (default 6500K)
+    float contrast;     // Midtone contrast (default 1.0)
+    float saturation;   // Saturation factor (default 1.0)
 } pc;
+
+vec3 colorTemperatureToRgb(float kelvin) {
+    if (abs(kelvin - 6500.0) < 1.0) {
+        return vec3(1.0);
+    }
+    float temp = clamp(kelvin, 1000.0, 12000.0) / 100.0;
+    float r, g, b;
+
+    if (temp <= 66.0) {
+        r = 1.0;
+        g = clamp(0.39008157876901960784 * log(temp) - 0.63184144378862745098, 0.0, 1.0);
+    } else {
+        float t = temp - 60.0;
+        r = clamp(1.29293618606274509804 * pow(t, -0.1332047592), 0.0, 1.0);
+        g = clamp(1.12989086089529411765 * pow(t, -0.0755148492), 0.0, 1.0);
+    }
+
+    if (temp >= 66.0) {
+        b = 1.0;
+    } else if (temp <= 19.0) {
+        b = 0.0;
+    } else {
+        float t = temp - 10.0;
+        b = clamp(0.54320678911019607843 * log(t) - 1.19625408914, 0.0, 1.0);
+    }
+
+    // Normalize against D65 standard reference (6500K)
+    vec3 d65 = vec3(1.0, 0.9931, 0.9852);
+    return vec3(r, g, b) / d65;
+}
+
+vec3 applyColorGrading(vec3 c, float contrast, float saturation) {
+    c = max(vec3(0.0), c);
+    if (abs(contrast - 1.0) > 0.001) {
+        c = pow(c / 0.18, vec3(contrast)) * 0.18;
+    }
+    if (abs(saturation - 1.0) > 0.001) {
+        float luma = dot(c, vec3(0.2126, 0.7152, 0.0722));
+        c = mix(vec3(luma), c, max(0.0, saturation));
+    }
+    return c;
+}
 
 vec3 acesFitted(vec3 x) {
     const float a = 2.51;
@@ -69,8 +114,12 @@ void main() {
         color += bloom * pc.bloomIntensity;
     }
 
-    // Apply photometric linear exposure scale
+    // Apply photometric linear exposure scale and chromatic white balance
     color *= max(pc.exposure, 0.0);
+    color *= colorTemperatureToRgb(pc.whiteBalance);
+
+    // Apply color grading (contrast & saturation in linear HDR space)
+    color = applyColorGrading(color, pc.contrast, pc.saturation);
 
     // Apply tone mapping operator
     vec3 mappedColor = color;
