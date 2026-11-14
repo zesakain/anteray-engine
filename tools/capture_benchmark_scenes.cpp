@@ -263,6 +263,14 @@ int main(int argc, char** argv) {
                 Mat4::lookAt(Vec3(-20.0F, 2.5F, 10.0F), Vec3(-16.0F, 7.5F, 14.0F), Vec3::unitY());
             renderAndCapture(world, assetMgr, proj * viewFacadeWindows,
                              "bistro_building_facade_windows.ppm");
+
+            // Hero Corner View matching Bistro_Exterior_1.png reference
+            Mat4 viewHero =
+                Mat4::lookAt(Vec3(-22.8F, 2.1F, 12.4F), Vec3(-14.2F, 2.2F, 14.5F), Vec3::unitY());
+            Mat4 projHero = Mat4::perspective(
+                toRadians(52.0F), static_cast<float>(width) / static_cast<float>(height), 0.1F,
+                2000.0F);
+            renderAndCapture(world, assetMgr, projHero * viewHero, "bistro_hero_corner_match.ppm");
         } else {
             std::cerr << "Failed to deserialize Bistro scene: " << desRes.error().message << '\n';
         }

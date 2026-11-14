@@ -167518,18 +167518,18 @@
       "components": {
         "DirectionalLight": {
           "direction": [
-            0.618032,
-            0.669534,
-            -0.412021
+            -0.452885,
+            0.785001,
+            -0.422693
           ],
           "color": [
             1,
-            0.96,
-            0.9
+            0.97,
+            0.92
           ],
-          "intensity": 3,
+          "intensity": 3.6,
           "castShadows": true,
-          "shadowBias": 0.0015,
+          "shadowBias": 0.0012,
           "enabled": true
         }
       }
@@ -167540,9 +167540,9 @@
       "components": {
         "Transform": {
           "position": [
-            -24.5,
-            2,
-            11.2
+            -22.8,
+            2.1,
+            12.4
           ],
           "rotation": [
             0,
@@ -167793,22 +167793,22 @@
       "exposure": 1,
       "toneMapOp": "ACES",
       "bloomEnabled": true,
-      "bloomThreshold": 1,
+      "bloomThreshold": 1.6,
       "bloomKnee": 0.5,
       "reinhardWhitePoint": 4,
-      "bloomIntensity": 0.04,
+      "bloomIntensity": 0.035,
       "bloomFilterRadius": 1
     },
     "camera": {
       "position": [
-        -24.5,
-        2,
-        11.2
+        -22.8,
+        2.1,
+        12.4
       ],
       "target": [
-        -15,
+        -14.2,
         2.2,
-        14
+        14.5
       ]
     }
   }

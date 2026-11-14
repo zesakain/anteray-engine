@@ -267,19 +267,20 @@ static bool generateBistro(const std::filesystem::path& outDir) {
     }
 
     // Directional Sunlight with calibrated afternoon lighting and shadow mapping
+    // Sunlight shines from upper-right-rear (towards +X, -Y, +Z) matching Bistro_Exterior_1.png
     auto sun = world.createEntity("Sunlight");
     render::DirectionalLightComponent dl{};
-    dl.direction = Vec3(0.6F, 0.65F, -0.4F).normalized();
-    dl.color = Vec3(1.0F, 0.96F, 0.90F);
-    dl.intensity = 3.0F;
+    dl.direction = Vec3(-0.45F, 0.78F, -0.42F).normalized();
+    dl.color = Vec3(1.0F, 0.97F, 0.92F);
+    dl.intensity = 3.6F;
     dl.castShadows = true;
-    dl.shadowBias = 0.0015F;
+    dl.shadowBias = 0.0012F;
     dl.enabled = true;
     world.setComponent(sun, dl);
 
     // Canonical Bistro Hero Corner Camera looking at Le Petit Coin storefront and terrace
     auto cam = world.createEntity("Bistro_Hero_Corner");
-    world.setComponent(cam, world::TransformComponent{Transform(Vec3(-24.5F, 2.0F, 11.2F))});
+    world.setComponent(cam, world::TransformComponent{Transform(Vec3(-22.8F, 2.1F, 12.4F))});
     render::CameraComponent cc{};
     cc.fovDegrees = 52.0F;
     cc.nearPlane = 0.1F;
@@ -332,8 +333,8 @@ static bool generateBistro(const std::filesystem::path& outDir) {
     pp.exposure = 1.0F;
     pp.toneMapOp = render::ToneMapOperator::AcesFitted;
     pp.bloomEnabled = true;
-    pp.bloomThreshold = 1.0F;
-    pp.bloomIntensity = 0.04F;
+    pp.bloomThreshold = 1.6F;
+    pp.bloomIntensity = 0.035F;
     pp.bloomKnee = 0.5F;
     pp.reinhardWhitePoint = 4.0F;
 
@@ -343,8 +344,8 @@ static bool generateBistro(const std::filesystem::path& outDir) {
         .timestamp = 20261114,
     };
 
-    const Vec3 camPos(-24.5F, 2.0F, 11.2F);
-    const Vec3 camTarget(-15.0F, 2.2F, 14.0F);
+    const Vec3 camPos(-22.8F, 2.1F, 12.4F);
+    const Vec3 camTarget(-14.2F, 2.2F, 14.5F);
 
     const std::filesystem::path dest = outDir / "Bistro_Benchmark.hikari";
     std::cout << "Serializing Bistro benchmark scene to " << dest.string() << "...\n";
