@@ -47,17 +47,12 @@ EntityHandle World::createEntity() {
 }
 
 EntityHandle World::createEntity(std::string_view name) {
-    // Small stack buffer to ensure null-terminated string for Flecs name
-    std::array<char, 256> buf{};
-    const size_t copyLen = std::min(name.size(), buf.size() - 1);
-    for (size_t i = 0; i < copyLen; ++i) {
-        buf[i] = name[i];
-    }
-    buf[copyLen] = '\0';
-
-    const flecs::entity e = ecs_.entity(buf.data());
+    const flecs::entity e = ecs_.entity();
     EntityHandle handle(e.id());
     activeEntities_.push_back(handle);
+    if (!name.empty()) {
+        setEntityName(handle, name);
+    }
     return handle;
 }
 
@@ -123,8 +118,21 @@ std::string_view World::getEntityName(EntityHandle entity) const {
     if (!isAlive(entity)) {
         return "";
     }
-    const char* name = ecs_.entity(entity.id).name().c_str();
-    return (name != nullptr) ? std::string_view(name) : std::string_view("");
+    const flecs::entity fe = ecs_.entity(entity.id);
+    const char* docName = fe.doc_name();
+    if (docName != nullptr && docName[0] != '\0') {
+        return std::string_view(docName);
+    }
+    const char* name = fe.name().c_str();
+    if (name != nullptr) {
+        std::string_view sv(name);
+        auto hashPos = sv.rfind('#');
+        if (hashPos != std::string_view::npos) {
+            return sv.substr(0, hashPos);
+        }
+        return sv;
+    }
+    return std::string_view("");
 }
 
 void World::setEntityName(EntityHandle entity, std::string_view name) {
@@ -137,7 +145,28 @@ void World::setEntityName(EntityHandle entity, std::string_view name) {
         buf[i] = name[i];
     }
     buf[copyLen] = '\0';
-    ecs_.entity(entity.id).set_name(buf.data());
+
+    flecs::entity fe = ecs_.entity(entity.id);
+    fe.set_doc_name(buf.data());
+
+    auto parent = fe.parent();
+    bool exists = false;
+    if (parent.is_valid() && parent.id() != 0) {
+        auto existing = parent.lookup(buf.data());
+        exists = (existing.is_valid() && existing.id() != 0 && existing.id() != fe.id());
+    } else {
+        auto existing = ecs_.lookup(buf.data());
+        exists = (existing.is_valid() && existing.id() != 0 && existing.id() != fe.id());
+    }
+
+    if (!exists) {
+        fe.set_name(buf.data());
+    } else {
+        std::array<char, 280> disambigBuf{};
+        std::snprintf(disambigBuf.data(), disambigBuf.size(), "%s#%llu", buf.data(),
+                      static_cast<unsigned long long>(entity.id));
+        fe.set_name(disambigBuf.data());
+    }
 }
 
 void World::registerSystem(SystemGroup group, flecs::system system) {
