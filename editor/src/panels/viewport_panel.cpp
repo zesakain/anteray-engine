@@ -71,6 +71,9 @@ Vec3 s_dragStartEntityPos{Vec3::zero()};
 Quat s_dragStartEntityRot{Quat::identity()};
 Vec3 s_dragStartEntityScale{Vec3::one()};
 Vec3 s_dragStartHitPoint{Vec3::zero()};
+Vec3 s_dragStartRotateVec{Vec3::zero()};
+Vec3 s_dragConstraintAxis{Vec3::unitY()};
+ImVec2 s_dragStartMousePos{0.0F, 0.0F};
 
 struct DragStartRecord {
     world::EntityHandle handle;
@@ -1112,17 +1115,76 @@ void ViewportPanel::draw(EditorContext& ctx) {
 
                 // Detect axis hover
                 if (!s_isDraggingGizmo && isCanvasHovered) {
-                    if (validX && distancePointToSegment(
-                                      mousePos, cPos, ImVec2(screenTipX.x, screenTipX.y)) < 9.0F) {
-                        hoveredAxis = GizmoAxis::X;
-                    } else if (validY &&
-                               distancePointToSegment(mousePos, cPos,
-                                                      ImVec2(screenTipY.x, screenTipY.y)) < 9.0F) {
-                        hoveredAxis = GizmoAxis::Y;
-                    } else if (validZ &&
-                               distancePointToSegment(mousePos, cPos,
-                                                      ImVec2(screenTipZ.x, screenTipZ.y)) < 9.0F) {
-                        hoveredAxis = GizmoAxis::Z;
+                    if (s_transformMode == 0) { // Translate
+                        if (validX &&
+                            distancePointToSegment(mousePos, cPos,
+                                                   ImVec2(screenTipX.x, screenTipX.y)) < 9.0F) {
+                            hoveredAxis = GizmoAxis::X;
+                        } else if (validY &&
+                                   distancePointToSegment(
+                                       mousePos, cPos, ImVec2(screenTipY.x, screenTipY.y)) < 9.0F) {
+                            hoveredAxis = GizmoAxis::Y;
+                        } else if (validZ &&
+                                   distancePointToSegment(
+                                       mousePos, cPos, ImVec2(screenTipZ.x, screenTipZ.y)) < 9.0F) {
+                            hoveredAxis = GizmoAxis::Z;
+                        }
+                    } else if (s_transformMode == 1) { // Rotate
+                        constexpr int kNumSegments = 36;
+                        float closestDepth = std::numeric_limits<float>::infinity();
+
+                        auto testRing = [&](const Vec3& u, const Vec3& v, GizmoAxis axis) {
+                            for (int i = 0; i < kNumSegments; ++i) {
+                                const float th0 = 2.0F * std::numbers::pi_v<float> *
+                                                  static_cast<float>(i) /
+                                                  static_cast<float>(kNumSegments);
+                                const float th1 = 2.0F * std::numbers::pi_v<float> *
+                                                  static_cast<float>(i + 1) /
+                                                  static_cast<float>(kNumSegments);
+                                const Vec3 p0 =
+                                    gizmoCenter +
+                                    (u * std::cos(th0) + v * std::sin(th0)) * gizmoWorldLength;
+                                const Vec3 p1 =
+                                    gizmoCenter +
+                                    (u * std::cos(th1) + v * std::sin(th1)) * gizmoWorldLength;
+                                Vec3 s0{};
+                                Vec3 s1{};
+                                float d0 = 0.0F;
+                                float d1 = 0.0F;
+                                if (camera_.project(p0, canvasOrigin3D, canvasSize3D, s0, d0) &&
+                                    camera_.project(p1, canvasOrigin3D, canvasSize3D, s1, d1)) {
+                                    if (distancePointToSegment(mousePos, ImVec2(s0.x, s0.y),
+                                                               ImVec2(s1.x, s1.y)) < 8.0F) {
+                                        const float avgDepth = (d0 + d1) * 0.5F;
+                                        if (avgDepth < closestDepth) {
+                                            closestDepth = avgDepth;
+                                            hoveredAxis = axis;
+                                        }
+                                    }
+                                }
+                            }
+                        };
+
+                        testRing(axisY, axisZ, GizmoAxis::X);
+                        testRing(axisZ, axisX, GizmoAxis::Y);
+                        testRing(axisX, axisY, GizmoAxis::Z);
+                    } else if (s_transformMode == 2) { // Scale
+                        const float dCenter = std::hypot(mousePos.x - cPos.x, mousePos.y - cPos.y);
+                        if (dCenter < 10.0F) {
+                            hoveredAxis = GizmoAxis::Center;
+                        } else if (validX &&
+                                   distancePointToSegment(
+                                       mousePos, cPos, ImVec2(screenTipX.x, screenTipX.y)) < 9.0F) {
+                            hoveredAxis = GizmoAxis::X;
+                        } else if (validY &&
+                                   distancePointToSegment(
+                                       mousePos, cPos, ImVec2(screenTipY.x, screenTipY.y)) < 9.0F) {
+                            hoveredAxis = GizmoAxis::Y;
+                        } else if (validZ &&
+                                   distancePointToSegment(
+                                       mousePos, cPos, ImVec2(screenTipZ.x, screenTipZ.y)) < 9.0F) {
+                            hoveredAxis = GizmoAxis::Z;
+                        }
                     }
                 }
 
@@ -1134,12 +1196,46 @@ void ViewportPanel::draw(EditorContext& ctx) {
                     s_dragStartEntityPos = primarySelectedTransform.position;
                     s_dragStartEntityRot = primarySelectedTransform.rotation;
                     s_dragStartEntityScale = primarySelectedTransform.scale;
+                    s_dragStartMousePos = mousePos;
+
+                    s_dragConstraintAxis = (s_activeGizmoAxis == GizmoAxis::X)   ? axisX
+                                           : (s_activeGizmoAxis == GizmoAxis::Y) ? axisY
+                                           : (s_activeGizmoAxis == GizmoAxis::Z) ? axisZ
+                                                                                 : axisY;
 
                     const Ray mouseRay = camera_.unproject(Vec3{mousePos.x, mousePos.y, 0.0F},
                                                            canvasOrigin3D, canvasSize3D);
-                    auto tPlane = mouseRay.intersectPlane(gizmoCenter, -camera_.getForward());
-                    if (tPlane.has_value()) {
-                        s_dragStartHitPoint = mouseRay.getPoint(*tPlane);
+
+                    if (s_transformMode == 1) { // Rotate
+                        Vec3 planeNormal = s_dragConstraintAxis;
+                        if (std::abs(Vec3::dot(mouseRay.direction, s_dragConstraintAxis)) < 0.08F) {
+                            planeNormal = -camera_.getForward();
+                        }
+                        auto tPlane = mouseRay.intersectPlane(gizmoCenter, planeNormal);
+                        if (tPlane.has_value()) {
+                            const Vec3 hitP = mouseRay.getPoint(*tPlane);
+                            const Vec3 diff = hitP - gizmoCenter;
+                            const Vec3 v = diff - (s_dragConstraintAxis *
+                                                   Vec3::dot(diff, s_dragConstraintAxis));
+                            if (v.lengthSq() > 1e-6F) {
+                                s_dragStartRotateVec = v.normalized();
+                            } else {
+                                s_dragStartRotateVec =
+                                    (s_activeGizmoAxis == GizmoAxis::X)
+                                        ? axisY
+                                        : ((s_activeGizmoAxis == GizmoAxis::Y) ? axisZ : axisX);
+                            }
+                        } else {
+                            s_dragStartRotateVec =
+                                (s_activeGizmoAxis == GizmoAxis::X)
+                                    ? axisY
+                                    : ((s_activeGizmoAxis == GizmoAxis::Y) ? axisZ : axisX);
+                        }
+                    } else { // Translate or Scale
+                        auto tPlane = mouseRay.intersectPlane(gizmoCenter, -camera_.getForward());
+                        if (tPlane.has_value()) {
+                            s_dragStartHitPoint = mouseRay.getPoint(*tPlane);
+                        }
                     }
 
                     s_dragStartEntities.clear();
@@ -1180,23 +1276,18 @@ void ViewportPanel::draw(EditorContext& ctx) {
                     hoveredAxis = s_activeGizmoAxis;
                     const Ray mouseRay = camera_.unproject(Vec3{mousePos.x, mousePos.y, 0.0F},
                                                            canvasOrigin3D, canvasSize3D);
+                    const float snapStep = getSnapStep(s_snappingMode, s_transformMode);
 
-                    Vec3 constraintAxis = (s_activeGizmoAxis == GizmoAxis::X)   ? axisX
-                                          : (s_activeGizmoAxis == GizmoAxis::Y) ? axisY
-                                                                                : axisZ;
-
-                    auto tPlane = mouseRay.intersectPlane(gizmoCenter, -camera_.getForward());
-                    if (tPlane.has_value()) {
-                        const Vec3 currentHit = mouseRay.getPoint(*tPlane);
-                        const Vec3 hitDelta = currentHit - s_dragStartHitPoint;
-                        const float snapStep = getSnapStep(s_snappingMode, s_transformMode);
-
-                        if (s_transformMode == 0) { // Translate
-                            float projectedDelta = Vec3::dot(hitDelta, constraintAxis);
+                    if (s_transformMode == 0) { // Translate
+                        auto tPlane = mouseRay.intersectPlane(gizmoCenter, -camera_.getForward());
+                        if (tPlane.has_value()) {
+                            const Vec3 currentHit = mouseRay.getPoint(*tPlane);
+                            const Vec3 hitDelta = currentHit - s_dragStartHitPoint;
+                            float projectedDelta = Vec3::dot(hitDelta, s_dragConstraintAxis);
                             if (snapStep > 0.0F) {
                                 projectedDelta = snapValue(projectedDelta, snapStep);
                             }
-                            const Vec3 moveVec = constraintAxis * projectedDelta;
+                            const Vec3 moveVec = s_dragConstraintAxis * projectedDelta;
 
                             for (const auto& entry : s_dragStartEntities) {
                                 if (!ctx.world->isAlive(entry.handle)) {
@@ -1257,82 +1348,124 @@ void ViewportPanel::draw(EditorContext& ctx) {
                             }
                             world::updateHierarchyTransforms(*ctx.world);
                             ctx.markDirty();
-                        } else if (s_transformMode == 1) { // Rotate
-                            float rotAngle = (io.MouseDelta.x + io.MouseDelta.y) * 0.02F;
-                            if (snapStep > 0.0F) {
-                                rotAngle = snapValue(rotAngle, snapStep);
+                        }
+                    } else if (s_transformMode == 1) { // Rotate
+                        Vec3 planeNormal = s_dragConstraintAxis;
+                        if (std::abs(Vec3::dot(mouseRay.direction, s_dragConstraintAxis)) < 0.08F) {
+                            planeNormal = -camera_.getForward();
+                        }
+                        auto tPlane = mouseRay.intersectPlane(gizmoCenter, planeNormal);
+                        if (tPlane.has_value()) {
+                            const Vec3 currentHit = mouseRay.getPoint(*tPlane);
+                            const Vec3 diff = currentHit - gizmoCenter;
+                            const Vec3 v = diff - (s_dragConstraintAxis *
+                                                   Vec3::dot(diff, s_dragConstraintAxis));
+                            if (v.lengthSq() > 1e-6F) {
+                                const Vec3 currV = v.normalized();
+                                const float cosAng =
+                                    std::clamp(Vec3::dot(s_dragStartRotateVec, currV), -1.0F, 1.0F);
+                                const float sinAng = Vec3::dot(
+                                    Vec3::cross(s_dragStartRotateVec, currV), s_dragConstraintAxis);
+                                float rotAngle = std::atan2(sinAng, cosAng);
+                                if (snapStep > 0.0F) {
+                                    rotAngle = snapValue(rotAngle, snapStep);
+                                }
+                                const Quat deltaRot =
+                                    Quat::fromAxisAngle(s_dragConstraintAxis, rotAngle);
+
+                                for (const auto& entry : s_dragStartEntities) {
+                                    if (!ctx.world->isAlive(entry.handle)) {
+                                        continue;
+                                    }
+                                    const Quat targetWorldRot =
+                                        (deltaRot * entry.worldTr.rotation).normalized();
+                                    const Vec3 targetWorldPos =
+                                        gizmoCenter +
+                                        deltaRot.rotate(entry.worldTr.position - gizmoCenter);
+                                    Vec3 newLocalPos = targetWorldPos;
+                                    Quat newLocalRot = targetWorldRot;
+
+                                    world::EntityHandle parent = ctx.world->getParent(entry.handle);
+                                    if (parent.isValid() && ctx.world->isAlive(parent)) {
+                                        Transform parentWorldTr = Transform::identity();
+                                        if (ctx.world->hasComponent<world::WorldTransformComponent>(
+                                                parent)) {
+                                            parentWorldTr =
+                                                ctx.world
+                                                    ->getComponent<world::WorldTransformComponent>(
+                                                        parent)
+                                                    ->worldTransform;
+                                        } else if (ctx.world
+                                                       ->hasComponent<world::TransformComponent>(
+                                                           parent)) {
+                                            parentWorldTr =
+                                                ctx.world
+                                                    ->getComponent<world::TransformComponent>(
+                                                        parent)
+                                                    ->transform;
+                                        }
+                                        const Vec3 relPos = targetWorldPos - parentWorldTr.position;
+                                        const Vec3 unrotPos =
+                                            parentWorldTr.rotation.inverse().rotate(relPos);
+                                        const Vec3 pScale = parentWorldTr.scale;
+                                        newLocalPos = Vec3{
+                                            std::abs(pScale.x) > 1e-5F ? unrotPos.x / pScale.x
+                                                                       : unrotPos.x,
+                                            std::abs(pScale.y) > 1e-5F ? unrotPos.y / pScale.y
+                                                                       : unrotPos.y,
+                                            std::abs(pScale.z) > 1e-5F ? unrotPos.z / pScale.z
+                                                                       : unrotPos.z,
+                                        };
+                                        newLocalRot =
+                                            (parentWorldTr.rotation.inverse() * targetWorldRot)
+                                                .normalized();
+                                    }
+
+                                    if (ctx.world->hasComponent<world::TransformComponent>(
+                                            entry.handle)) {
+                                        auto* tc =
+                                            ctx.world
+                                                ->getMutableComponent<world::TransformComponent>(
+                                                    entry.handle);
+                                        if (tc != nullptr) {
+                                            tc->transform.position = newLocalPos;
+                                            tc->transform.rotation = newLocalRot;
+                                            tc->isDirty = true;
+                                        }
+                                    }
+                                    if (ctx.world->hasComponent<physics::PhysicsTransformComponent>(
+                                            entry.handle)) {
+                                        auto* ptc = ctx.world->getMutableComponent<
+                                            physics::PhysicsTransformComponent>(entry.handle);
+                                        if (ptc != nullptr) {
+                                            ptc->transform.position = newLocalPos;
+                                            ptc->transform.rotation = newLocalRot;
+                                        }
+                                    }
+                                }
+                                world::updateHierarchyTransforms(*ctx.world);
+                                ctx.markDirty();
                             }
-                            const Quat deltaRot = Quat::fromAxisAngle(constraintAxis, rotAngle);
+                        }
+                    } else if (s_transformMode == 2) { // Scale
+                        if (s_activeGizmoAxis == GizmoAxis::Center) {
+                            // Uniform scale driven by mouse diagonal delta
+                            const float mouseDeltaPix = (mousePos.x - s_dragStartMousePos.x) -
+                                                        (mousePos.y - s_dragStartMousePos.y);
+                            float scaleFactor = std::max(0.01F, 1.0F + (mouseDeltaPix * 0.005F));
+                            if (snapStep > 0.0F) {
+                                scaleFactor =
+                                    std::max(0.01F, 1.0F + snapValue(scaleFactor - 1.0F, snapStep));
+                            }
 
                             for (const auto& entry : s_dragStartEntities) {
                                 if (!ctx.world->isAlive(entry.handle)) {
                                     continue;
                                 }
-                                const Quat targetWorldRot =
-                                    (deltaRot * entry.worldTr.rotation).normalized();
-                                Quat newLocalRot = targetWorldRot;
-
-                                world::EntityHandle parent = ctx.world->getParent(entry.handle);
-                                if (parent.isValid() && ctx.world->isAlive(parent)) {
-                                    Transform parentWorldTr = Transform::identity();
-                                    if (ctx.world->hasComponent<world::WorldTransformComponent>(
-                                            parent)) {
-                                        parentWorldTr =
-                                            ctx.world
-                                                ->getComponent<world::WorldTransformComponent>(
-                                                    parent)
-                                                ->worldTransform;
-                                    } else if (ctx.world->hasComponent<world::TransformComponent>(
-                                                   parent)) {
-                                        parentWorldTr =
-                                            ctx.world
-                                                ->getComponent<world::TransformComponent>(parent)
-                                                ->transform;
-                                    }
-                                    newLocalRot =
-                                        (parentWorldTr.rotation.inverse() * targetWorldRot)
-                                            .normalized();
-                                }
-
-                                if (ctx.world->hasComponent<world::TransformComponent>(
-                                        entry.handle)) {
-                                    auto* tc =
-                                        ctx.world->getMutableComponent<world::TransformComponent>(
-                                            entry.handle);
-                                    if (tc != nullptr) {
-                                        tc->transform.rotation = newLocalRot;
-                                        tc->isDirty = true;
-                                    }
-                                }
-                                if (ctx.world->hasComponent<physics::PhysicsTransformComponent>(
-                                        entry.handle)) {
-                                    auto* ptc = ctx.world->getMutableComponent<
-                                        physics::PhysicsTransformComponent>(entry.handle);
-                                    if (ptc != nullptr) {
-                                        ptc->transform.rotation = newLocalRot;
-                                    }
-                                }
-                            }
-                            world::updateHierarchyTransforms(*ctx.world);
-                            ctx.markDirty();
-                        } else if (s_transformMode == 2) { // Scale
-                            float scaleDelta = Vec3::dot(hitDelta, constraintAxis) * 0.5F;
-                            if (snapStep > 0.0F) {
-                                scaleDelta = snapValue(scaleDelta, snapStep);
-                            }
-
-                            for (const auto& entry : s_dragStartEntities) {
-                                if (!ctx.world->isAlive(entry.handle)) {
-                                    continue;
-                                }
-                                Vec3 newScale = entry.localTr.scale;
-                                if (s_activeGizmoAxis == GizmoAxis::X) {
-                                    newScale.x = std::max(0.05F, newScale.x + scaleDelta);
-                                } else if (s_activeGizmoAxis == GizmoAxis::Y) {
-                                    newScale.y = std::max(0.05F, newScale.y + scaleDelta);
-                                } else {
-                                    newScale.z = std::max(0.05F, newScale.z + scaleDelta);
-                                }
+                                Vec3 newScale = entry.localTr.scale * scaleFactor;
+                                newScale.x = std::max(0.01F, newScale.x);
+                                newScale.y = std::max(0.01F, newScale.y);
+                                newScale.z = std::max(0.01F, newScale.z);
 
                                 if (ctx.world->hasComponent<world::TransformComponent>(
                                         entry.handle)) {
@@ -1355,6 +1488,78 @@ void ViewportPanel::draw(EditorContext& ctx) {
                             }
                             world::updateHierarchyTransforms(*ctx.world);
                             ctx.markDirty();
+                        } else {
+                            // Single axis scale
+                            auto tPlane =
+                                mouseRay.intersectPlane(gizmoCenter, -camera_.getForward());
+                            if (tPlane.has_value()) {
+                                const Vec3 currentHit = mouseRay.getPoint(*tPlane);
+                                const Vec3 hitDelta = currentHit - s_dragStartHitPoint;
+                                const float projDelta = Vec3::dot(hitDelta, s_dragConstraintAxis);
+                                float scaleFactor =
+                                    std::max(0.01F, 1.0F + (projDelta / gizmoWorldLength));
+                                if (snapStep > 0.0F) {
+                                    scaleFactor = std::max(
+                                        0.01F, 1.0F + snapValue(scaleFactor - 1.0F, snapStep));
+                                }
+
+                                for (const auto& entry : s_dragStartEntities) {
+                                    if (!ctx.world->isAlive(entry.handle)) {
+                                        continue;
+                                    }
+                                    Vec3 newScale = entry.localTr.scale;
+                                    if (s_coordSpace == 1) { // Local coordinate space
+                                        if (s_activeGizmoAxis == GizmoAxis::X) {
+                                            newScale.x = std::max(0.01F, entry.localTr.scale.x *
+                                                                             scaleFactor);
+                                        } else if (s_activeGizmoAxis == GizmoAxis::Y) {
+                                            newScale.y = std::max(0.01F, entry.localTr.scale.y *
+                                                                             scaleFactor);
+                                        } else if (s_activeGizmoAxis == GizmoAxis::Z) {
+                                            newScale.z = std::max(0.01F, entry.localTr.scale.z *
+                                                                             scaleFactor);
+                                        }
+                                    } else { // World coordinate space
+                                        const Vec3 localAxis =
+                                            entry.worldTr.rotation.inverse().rotate(
+                                                s_dragConstraintAxis);
+                                        const Vec3 absAxis{std::abs(localAxis.x),
+                                                           std::abs(localAxis.y),
+                                                           std::abs(localAxis.z)};
+                                        newScale.x = std::max(
+                                            0.01F, entry.localTr.scale.x *
+                                                       (1.0F + ((scaleFactor - 1.0F) * absAxis.x)));
+                                        newScale.y = std::max(
+                                            0.01F, entry.localTr.scale.y *
+                                                       (1.0F + ((scaleFactor - 1.0F) * absAxis.y)));
+                                        newScale.z = std::max(
+                                            0.01F, entry.localTr.scale.z *
+                                                       (1.0F + ((scaleFactor - 1.0F) * absAxis.z)));
+                                    }
+
+                                    if (ctx.world->hasComponent<world::TransformComponent>(
+                                            entry.handle)) {
+                                        auto* tc =
+                                            ctx.world
+                                                ->getMutableComponent<world::TransformComponent>(
+                                                    entry.handle);
+                                        if (tc != nullptr) {
+                                            tc->transform.scale = newScale;
+                                            tc->isDirty = true;
+                                        }
+                                    }
+                                    if (ctx.world->hasComponent<physics::PhysicsTransformComponent>(
+                                            entry.handle)) {
+                                        auto* ptc = ctx.world->getMutableComponent<
+                                            physics::PhysicsTransformComponent>(entry.handle);
+                                        if (ptc != nullptr) {
+                                            ptc->transform.scale = newScale;
+                                        }
+                                    }
+                                }
+                                world::updateHierarchyTransforms(*ctx.world);
+                                ctx.markDirty();
+                            }
                         }
                     }
                 } else if (s_isDraggingGizmo && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
@@ -1375,19 +1580,80 @@ void ViewportPanel::draw(EditorContext& ctx) {
                 const float thY = (hoveredAxis == GizmoAxis::Y) ? 3.5F : 2.2F;
                 const float thZ = (hoveredAxis == GizmoAxis::Z) ? 3.5F : 2.2F;
 
-                if (validX) {
-                    drawList->AddLine(cPos, ImVec2(screenTipX.x, screenTipX.y), colX, thX);
-                    drawList->AddCircleFilled(ImVec2(screenTipX.x, screenTipX.y), 4.5F, colX);
+                if (s_transformMode == 0) { // Translate Gizmo Visuals
+                    if (validX) {
+                        drawList->AddLine(cPos, ImVec2(screenTipX.x, screenTipX.y), colX, thX);
+                        drawList->AddCircleFilled(ImVec2(screenTipX.x, screenTipX.y), 4.5F, colX);
+                    }
+                    if (validY) {
+                        drawList->AddLine(cPos, ImVec2(screenTipY.x, screenTipY.y), colY, thY);
+                        drawList->AddCircleFilled(ImVec2(screenTipY.x, screenTipY.y), 4.5F, colY);
+                    }
+                    if (validZ) {
+                        drawList->AddLine(cPos, ImVec2(screenTipZ.x, screenTipZ.y), colZ, thZ);
+                        drawList->AddCircleFilled(ImVec2(screenTipZ.x, screenTipZ.y), 4.5F, colZ);
+                    }
+                    drawList->AddCircleFilled(cPos, 4.0F, IM_COL32(240, 240, 240, 255));
+                } else if (s_transformMode == 1) { // Rotate Gizmo Visuals (Rings)
+                    constexpr int kNumRingSegments = 36;
+                    auto drawRing = [&](const Vec3& u, const Vec3& v, ImU32 color,
+                                        float thickness) {
+                        for (int i = 0; i < kNumRingSegments; ++i) {
+                            const float th0 = 2.0F * std::numbers::pi_v<float> *
+                                              static_cast<float>(i) /
+                                              static_cast<float>(kNumRingSegments);
+                            const float th1 = 2.0F * std::numbers::pi_v<float> *
+                                              static_cast<float>(i + 1) /
+                                              static_cast<float>(kNumRingSegments);
+                            const Vec3 p0 = gizmoCenter + (u * std::cos(th0) + v * std::sin(th0)) *
+                                                              gizmoWorldLength;
+                            const Vec3 p1 = gizmoCenter + (u * std::cos(th1) + v * std::sin(th1)) *
+                                                              gizmoWorldLength;
+                            Vec3 s0{};
+                            Vec3 s1{};
+                            float d0 = 0.0F;
+                            float d1 = 0.0F;
+                            if (camera_.project(p0, canvasOrigin3D, canvasSize3D, s0, d0) &&
+                                camera_.project(p1, canvasOrigin3D, canvasSize3D, s1, d1)) {
+                                drawList->AddLine(ImVec2(s0.x, s0.y), ImVec2(s1.x, s1.y), color,
+                                                  thickness);
+                            }
+                        }
+                    };
+
+                    drawRing(axisY, axisZ, colX, thX);
+                    drawRing(axisZ, axisX, colY, thY);
+                    drawRing(axisX, axisY, colZ, thZ);
+                    drawList->AddCircleFilled(cPos, 4.0F, IM_COL32(240, 240, 240, 255));
+                } else if (s_transformMode == 2) { // Scale Gizmo Visuals (Lines + Boxes)
+                    constexpr float kBoxHalfSize = 4.0F;
+                    if (validX) {
+                        drawList->AddLine(cPos, ImVec2(screenTipX.x, screenTipX.y), colX, thX);
+                        drawList->AddRectFilled(
+                            ImVec2(screenTipX.x - kBoxHalfSize, screenTipX.y - kBoxHalfSize),
+                            ImVec2(screenTipX.x + kBoxHalfSize, screenTipX.y + kBoxHalfSize), colX);
+                    }
+                    if (validY) {
+                        drawList->AddLine(cPos, ImVec2(screenTipY.x, screenTipY.y), colY, thY);
+                        drawList->AddRectFilled(
+                            ImVec2(screenTipY.x - kBoxHalfSize, screenTipY.y - kBoxHalfSize),
+                            ImVec2(screenTipY.x + kBoxHalfSize, screenTipY.y + kBoxHalfSize), colY);
+                    }
+                    if (validZ) {
+                        drawList->AddLine(cPos, ImVec2(screenTipZ.x, screenTipZ.y), colZ, thZ);
+                        drawList->AddRectFilled(
+                            ImVec2(screenTipZ.x - kBoxHalfSize, screenTipZ.y - kBoxHalfSize),
+                            ImVec2(screenTipZ.x + kBoxHalfSize, screenTipZ.y + kBoxHalfSize), colZ);
+                    }
+
+                    const ImU32 colCenter = (hoveredAxis == GizmoAxis::Center)
+                                                ? IM_COL32(250, 204, 21, 255)
+                                                : IM_COL32(240, 240, 240, 255);
+                    constexpr float kCenterHalfSize = 5.0F;
+                    drawList->AddRectFilled(
+                        ImVec2(cPos.x - kCenterHalfSize, cPos.y - kCenterHalfSize),
+                        ImVec2(cPos.x + kCenterHalfSize, cPos.y + kCenterHalfSize), colCenter);
                 }
-                if (validY) {
-                    drawList->AddLine(cPos, ImVec2(screenTipY.x, screenTipY.y), colY, thY);
-                    drawList->AddCircleFilled(ImVec2(screenTipY.x, screenTipY.y), 4.5F, colY);
-                }
-                if (validZ) {
-                    drawList->AddLine(cPos, ImVec2(screenTipZ.x, screenTipZ.y), colZ, thZ);
-                    drawList->AddCircleFilled(ImVec2(screenTipZ.x, screenTipZ.y), 4.5F, colZ);
-                }
-                drawList->AddCircleFilled(cPos, 4.0F, IM_COL32(240, 240, 240, 255));
             }
         }
 

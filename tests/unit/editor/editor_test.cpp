@@ -1896,6 +1896,142 @@ static void testViewportTransformGizmoManipulation() {
     TEST_CHECK(std::abs((wtB->worldTransform.position - wtA->worldTransform.position).length() -
                         5.0F) < 1e-4F);
 
+    // 4. Detailed Gizmo Rotate Interaction & Math Verification
+    {
+        // 4.1. Zero-jump at drag start: V0 == V1 -> rotAngle == 0 -> deltaRot == Identity
+        const Vec3 axisZ = Vec3::unitZ();
+        const Vec3 v0{1.0F, 0.0F, 0.0F};
+        const Vec3 v1{1.0F, 0.0F, 0.0F};
+        const float cos0 = std::clamp(Vec3::dot(v0, v1), -1.0F, 1.0F);
+        const float sin0 = Vec3::dot(Vec3::cross(v0, v1), axisZ);
+        const float rot0 = std::atan2(sin0, cos0);
+        TEST_CHECK(std::abs(rot0) < 1e-6F);
+        const Quat delta0 = Quat::fromAxisAngle(axisZ, rot0);
+        TEST_CHECK(std::abs(delta0.w - 1.0F) < 1e-5F);
+
+        // 4.2. Continuous rotation angle around X, Y, Z
+        const Vec3 vRot45 = Vec3{std::cos(std::numbers::pi_v<float> * 0.25F),
+                                 std::sin(std::numbers::pi_v<float> * 0.25F), 0.0F}
+                                .normalized();
+        const float cos45 = std::clamp(Vec3::dot(v0, vRot45), -1.0F, 1.0F);
+        const float sin45 = Vec3::dot(Vec3::cross(v0, vRot45), axisZ);
+        const float rot45 = std::atan2(sin45, cos45);
+        TEST_CHECK(std::abs(rot45 - std::numbers::pi_v<float> * 0.25F) < 1e-4F);
+
+        // 4.3. Angular snapping (15 degrees = pi/12 rad)
+        const float snapStepRad = std::numbers::pi_v<float> / 12.0F;
+        const float smallAngle = 0.05F; // ~2.8 degrees -> snaps to 0
+        const float snapSmall = std::round(smallAngle / snapStepRad) * snapStepRad;
+        TEST_CHECK(std::abs(snapSmall - 0.0F) < 1e-6F);
+
+        const float largeAngle = 0.28F; // ~16 degrees -> snaps to 15 deg (0.261799 rad)
+        const float snapLarge = std::round(largeAngle / snapStepRad) * snapStepRad;
+        TEST_CHECK(std::abs(snapLarge - snapStepRad) < 1e-5F);
+
+        // 4.4. Multi-selection orbital rotation around gizmo pivot
+        auto pivotEnt = testWorld.createEntity("RotatePivot");
+        auto orbitEnt = testWorld.createEntity("RotateOrbit");
+        testWorld.setComponent(pivotEnt,
+                               world::TransformComponent{Transform{Vec3{0.0F, 0.0F, 0.0F}}});
+        testWorld.setComponent(orbitEnt,
+                               world::TransformComponent{Transform{Vec3{4.0F, 0.0F, 0.0F}}});
+        world::updateHierarchyTransforms(testWorld);
+
+        const Vec3 gizmoCenter = Vec3{0.0F, 0.0F, 0.0F};
+        const Quat deltaRot90Y =
+            Quat::fromAxisAngle(Vec3::unitY(), std::numbers::pi_v<float> * 0.5F);
+
+        // Rotate orbitEnt around pivot: (4, 0, 0) rotated 90 deg around Y becomes (0, 0, -4)
+        const Vec3 targetWorldPosOrbit =
+            gizmoCenter + deltaRot90Y.rotate(Vec3{4.0F, 0.0F, 0.0F} - gizmoCenter);
+        TEST_CHECK(std::abs(targetWorldPosOrbit.x - 0.0F) < 1e-4F);
+        TEST_CHECK(std::abs(targetWorldPosOrbit.z - (-4.0F)) < 1e-4F);
+        TEST_CHECK(std::abs(targetWorldPosOrbit.length() - 4.0F) < 1e-4F);
+
+        auto* orbitTc = testWorld.getMutableComponent<world::TransformComponent>(orbitEnt);
+        TEST_CHECK(orbitTc != nullptr);
+        orbitTc->transform.position = targetWorldPosOrbit;
+        orbitTc->transform.rotation = (deltaRot90Y * orbitTc->transform.rotation).normalized();
+        orbitTc->isDirty = true;
+        world::updateHierarchyTransforms(testWorld);
+
+        const auto* orbitWt = testWorld.getComponent<world::WorldTransformComponent>(orbitEnt);
+        TEST_CHECK(orbitWt != nullptr);
+        TEST_CHECK(std::abs(orbitWt->worldTransform.position.z + 4.0F) < 1e-4F);
+    }
+
+    // 5. Detailed Gizmo Scale Interaction & Math Verification
+    {
+        auto scaleEnt = testWorld.createEntity("ScaleTarget");
+        testWorld.setComponent(
+            scaleEnt, world::TransformComponent{Transform{Vec3{1.0F, 2.0F, 3.0F}, Quat::identity(),
+                                                          Vec3{2.0F, 4.0F, 8.0F}}});
+        world::updateHierarchyTransforms(testWorld);
+
+        // 5.1. Multiplicative ratio single axis scale (Local space)
+        const float gizmoWorldLength = 2.0F;
+        const float projDelta = 1.0F;                                  // +1.0m along X
+        const float scaleFactor = 1.0F + projDelta / gizmoWorldLength; // 1.5x
+        TEST_CHECK(std::abs(scaleFactor - 1.5F) < 1e-5F);
+
+        auto* stc = testWorld.getMutableComponent<world::TransformComponent>(scaleEnt);
+        TEST_CHECK(stc != nullptr);
+        stc->transform.scale.x = std::max(0.01F, stc->transform.scale.x * scaleFactor);
+        stc->isDirty = true;
+        world::updateHierarchyTransforms(testWorld);
+
+        TEST_CHECK(std::abs(stc->transform.scale.x - 3.0F) < 1e-4F); // 2.0 * 1.5 = 3.0
+        TEST_CHECK(std::abs(stc->transform.scale.y - 4.0F) < 1e-4F); // unchanged
+        TEST_CHECK(std::abs(stc->transform.scale.z - 8.0F) < 1e-4F); // unchanged
+        TEST_CHECK(stc->transform.position.isNearlyEqual(Vec3{1.0F, 2.0F, 3.0F})); // no move
+
+        // 5.2. Center uniform scale
+        const float uniformFactor = 0.5F;
+        stc->transform.scale = stc->transform.scale * uniformFactor;
+        stc->transform.scale.x = std::max(0.01F, stc->transform.scale.x);
+        stc->transform.scale.y = std::max(0.01F, stc->transform.scale.y);
+        stc->transform.scale.z = std::max(0.01F, stc->transform.scale.z);
+        stc->isDirty = true;
+        world::updateHierarchyTransforms(testWorld);
+
+        TEST_CHECK(std::abs(stc->transform.scale.x - 1.5F) < 1e-4F);
+        TEST_CHECK(std::abs(stc->transform.scale.y - 2.0F) < 1e-4F);
+        TEST_CHECK(std::abs(stc->transform.scale.z - 4.0F) < 1e-4F);
+
+        // 5.3. Extreme negative clamping (must not invert or reach zero)
+        const float extremeShrink = -10.0F;
+        const float clampedScale = std::max(0.01F, stc->transform.scale.x * (1.0F + extremeShrink));
+        TEST_CHECK(clampedScale == 0.01F);
+
+        // 5.4. World coordinate space scaling on rotated object
+        // Object rotated 90 degrees around Y: World X corresponds to local Z!
+        const Quat rot90Y = Quat::fromAxisAngle(Vec3::unitY(), std::numbers::pi_v<float> * 0.5F);
+        stc->transform.rotation = rot90Y;
+        stc->transform.scale = Vec3{1.0F, 1.0F, 1.0F};
+        world::updateHierarchyTransforms(testWorld);
+
+        const Vec3 worldAxisX = Vec3::unitX();
+        const Vec3 localAxis = rot90Y.inverse().rotate(worldAxisX);
+        const Vec3 absAxis{std::abs(localAxis.x), std::abs(localAxis.y), std::abs(localAxis.z)};
+        TEST_CHECK(std::abs(absAxis.x - 0.0F) < 1e-4F);
+        TEST_CHECK(std::abs(absAxis.y - 0.0F) < 1e-4F);
+        TEST_CHECK(std::abs(absAxis.z - 1.0F) < 1e-4F);
+
+        const float worldScaleFactor = 2.0F;
+        stc->transform.scale.x = std::max(
+            0.01F, stc->transform.scale.x * (1.0F + (worldScaleFactor - 1.0F) * absAxis.x));
+        stc->transform.scale.y = std::max(
+            0.01F, stc->transform.scale.y * (1.0F + (worldScaleFactor - 1.0F) * absAxis.y));
+        stc->transform.scale.z = std::max(
+            0.01F, stc->transform.scale.z * (1.0F + (worldScaleFactor - 1.0F) * absAxis.z));
+        stc->isDirty = true;
+        world::updateHierarchyTransforms(testWorld);
+
+        TEST_CHECK(std::abs(stc->transform.scale.x - 1.0F) < 1e-4F);
+        TEST_CHECK(std::abs(stc->transform.scale.y - 1.0F) < 1e-4F);
+        TEST_CHECK(std::abs(stc->transform.scale.z - 2.0F) < 1e-4F);
+    }
+
     std::cout << "[PASS] testViewportTransformGizmoManipulation\n";
 }
 
