@@ -35,6 +35,7 @@
 #include "render/mesh_component.h"
 #include "render/post_process_types.h"
 #include "render/render_graph.h"
+#include "render/shadow_cascade.h"
 #include "rhi/command_list.h"
 #include "rhi/pipeline.h"
 #include "rhi/rhi_device.h"
@@ -295,15 +296,18 @@ public:
     [[nodiscard]] rhi::TextureHandle getGtaoTarget() const noexcept { return gtaoFilteredTarget_; }
     [[nodiscard]] rhi::TextureHandle getGtaoRawTarget() const noexcept { return gtaoRawTarget_; }
     [[nodiscard]] rhi::TextureHandle getSsgiTarget() const noexcept { return ssgiFilteredTarget_; }
+    [[nodiscard]] const std::vector<ShadowCascade>& getShadowCascades() const noexcept {
+        return shadowCascades_;
+    }
 
     struct GtaoPushConstants {
-        Vec4 projParams{1.0F, 1.0F, 0.0F, 0.0F};
+        Vec4 lightDirAndContact{0.5F, 0.8F, 0.5F, 0.6F};
         Vec4 cameraPosAndRadius{0.0F, 0.0F, 0.0F, 1.5F};
-        Vec4 gtaoParams{1.0F, 0.05F, 1.0F, 0.0F};
-        Vec2 resolution{1920.0F, 1080.0F};
-        Vec2 invResolution{1.0F / 1920.0F, 1.0F / 1080.0F};
+        Vec4 gtaoParams{1.0F, 0.05F, 1.0F, 1.0F};
+        Vec4 screenAndProj{1920.0F, 1080.0F, 1.0F, 1.0F};
         Mat4 invViewProj{Mat4::identity()};
     };
+    static_assert(sizeof(GtaoPushConstants) == 128, "GtaoPushConstants must be exactly 128 bytes");
 
     struct BilateralBlurPushConstants {
         Vec2 blurDirection{1.0F, 0.0F};
@@ -495,11 +499,14 @@ private:
         GpuMesh* gpuMesh{nullptr};
         Mat4 model{Mat4::identity()};
         uint32_t submeshIndex{0};
+        AABB worldBounds{};
         float distanceToLight{0.0F};
     };
 
     std::vector<VisibleMeshItem> visibleItems_{};
     std::vector<ShadowCasterItem> shadowCasters_{};
+    std::vector<ShadowCascade> shadowCascades_{};
+    std::array<Mat4, 4> lastCascadeViewProj_{};
     bool shadowDirty_{true};
     Vec3 lastLightDir_{Vec3::zero()};
     AtmosphereParameters atmosphereParams_{AtmosphereParameters::createDaylight()};

@@ -9,10 +9,8 @@ layout(push_constant) uniform GtaoPushConstants {
     vec4 lightDirAndContact; // xyz: lightDir, w: maxContactDist (16 B)
     vec4 cameraPosAndRadius; // xyz: camPos, w: radius         (16 B)
     vec4 gtaoParams;         // x: intensity, y: bias, z: power, w: contactShadowEnabled (16 B)
-    vec2 resolution;         // (8 B)
-    vec2 invResolution;      // (8 B)
+    vec4 screenAndProj;      // xy: resolution, z: P00, w: P11 (16 B)
     mat4 invViewProj;        // (64 B)
-    mat4 viewProj;           // (64 B)
 } pc;
 
 const float PI = 3.141592653589793;
@@ -42,22 +40,33 @@ float calculateContactShadow(vec3 P, vec3 N, vec3 lightDir, float maxDist, float
     vec3 rayStep = lightDir * stepSize;
     rayPos += rayStep * (noise * 0.5);
 
+    vec3 camPos = pc.cameraPosAndRadius.xyz;
+    vec3 camRight = normalize(pc.invViewProj[0].xyz);
+    vec3 camUp = normalize(pc.invViewProj[1].xyz);
+    vec3 camForward = -normalize(pc.invViewProj[2].xyz);
+    float p00 = pc.screenAndProj.z;
+    float p11 = pc.screenAndProj.w;
+
     float shadow = 1.0;
     for (int i = 0; i < kSteps; ++i) {
         rayPos += rayStep;
-        vec4 proj = pc.viewProj * vec4(rayPos, 1.0);
-        if (proj.w <= 0.0) {
+        vec3 toRay = rayPos - camPos;
+        float vZ = dot(toRay, camForward);
+        if (vZ <= 0.01) {
             break;
         }
-        vec3 ndc = proj.xyz / proj.w;
-        vec2 sampleUV = vec2(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
+        float vX = dot(toRay, camRight);
+        float vY = dot(toRay, camUp);
+        float ndcX = (vX / vZ) * p00;
+        float ndcY = (vY / vZ) * p11;
+        vec2 sampleUV = vec2(ndcX * 0.5 + 0.5, ndcY * -0.5 + 0.5);
         if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) {
             break;
         }
-        float sampleDepth = texture(uDepthMap, sampleUV).r;
-        float rayDepth = ndc.z;
-        float depthDiff = rayDepth - sampleDepth;
-        if (depthDiff > 0.0004 && depthDiff < 0.025) {
+        vec3 hitWorld = getWorldPos(sampleUV);
+        float hitZ = dot(hitWorld - camPos, camForward);
+        float depthDiff = vZ - hitZ;
+        if (depthDiff > 0.01 && depthDiff < 0.35) {
             float fade = 1.0 - (float(i) / float(kSteps));
             shadow = clamp(1.0 - fade * 0.85, 0.0, 1.0);
             break;
@@ -95,7 +104,9 @@ void main() {
 
     // Screen-space search radius scaled inversely with camera distance and viewport resolution
     float camDist = length(P - camPos);
-    float screenRadius = clamp((radiusWorld * pc.resolution.y * 0.4) / max(camDist, 0.1), 2.0, pc.resolution.y * 0.5);
+    float screenRadius = clamp((radiusWorld * pc.screenAndProj.y * 0.4) / max(camDist, 0.1), 2.0,
+                               pc.screenAndProj.y * 0.5);
+    vec2 invResolution = 1.0 / pc.screenAndProj.xy;
 
     const int kNumDirections = 4;
     const int kNumSteps = 4;
@@ -111,7 +122,7 @@ void main() {
         // Search positive direction
         for (int s = 1; s <= kNumSteps; ++s) {
             float stepScale = (float(s) + noise) / float(kNumSteps + 1);
-            vec2 sampleUV = inUV + dir * (stepScale * screenRadius) * pc.invResolution;
+            vec2 sampleUV = inUV + dir * (stepScale * screenRadius) * invResolution;
             if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) {
                 continue;
             }
@@ -127,7 +138,7 @@ void main() {
         // Search negative direction
         for (int s = 1; s <= kNumSteps; ++s) {
             float stepScale = (float(s) + noise) / float(kNumSteps + 1);
-            vec2 sampleUV = inUV - dir * (stepScale * screenRadius) * pc.invResolution;
+            vec2 sampleUV = inUV - dir * (stepScale * screenRadius) * invResolution;
             if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) {
                 continue;
             }

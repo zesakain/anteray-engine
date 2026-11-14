@@ -1619,9 +1619,9 @@ void SceneRenderer::buildRenderGraph() {
         lightBufId = renderGraph_.importBuffer("LightingBuffer", lightingUniformBuffer_);
     }
 
-    const bool hasGtao = settings_.lighting.gtaoEnabled && gtaoPipeline_.isValid() &&
-                         gtaoBlurPipeline_.isValid() && gtaoRawTarget_.isValid() &&
-                         gtaoFilteredTarget_.isValid();
+    const bool hasGtao = (settings_.lighting.gtaoEnabled || settings_.shadows.contactShadows) &&
+                         gtaoPipeline_.isValid() && gtaoBlurPipeline_.isValid() &&
+                         gtaoRawTarget_.isValid() && gtaoFilteredTarget_.isValid();
     const bool hasSsgi = settings_.lighting.ssgiEnabled && ssgiPipeline_.isValid() &&
                          ssgiRawTarget_.isValid() && ssgiFilteredTarget_.isValid();
 
@@ -1770,13 +1770,9 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
         .renderHeight = shadowResolution_,
     };
     cmdList.beginRenderPass(shadowPassInfo);
-    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(shadowResolution_),
-                        static_cast<float>(shadowResolution_));
-    cmdList.setScissor(0, 0, shadowResolution_, shadowResolution_);
     cmdList.bindPipeline(shadowPipeline_);
 
     const bool applyLightCulling = settings_.performance.frustumCulling;
-    const Frustum lightFrustum = Frustum::fromViewProjection(currentLightSpaceMatrix_);
 
     shadowCasters_.clear();
     auto& ecs = currentWorld_->getRawWorld();
@@ -1843,77 +1839,102 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
                                      : gpuMesh->getBounds();
         const AABB worldBounds = localBounds.transform(model);
 
-        if (applyLightCulling) {
-            if (!lightFrustum.intersectsAABB(worldBounds)) {
-                lastRenderStats_.culledPrimitives++;
-                return;
-            }
-        }
-
         const Vec3 center = (worldBounds.minBound + worldBounds.maxBound) * 0.5F;
         const float distToLight = Vec3::dot(center, currentLightDir_);
         shadowCasters_.push_back({
             .gpuMesh = gpuMesh,
             .model = model,
             .submeshIndex = meshComp.submeshIndex,
+            .worldBounds = worldBounds,
             .distanceToLight = distToLight,
         });
     });
 
-    // Sort shadow casters front-to-back from the directional light source for Z-cull efficiency
+    // Sort shadow casters front-to-back from directional light source
     std::sort(shadowCasters_.begin(), shadowCasters_.end(),
               [](const ShadowCasterItem& a, const ShadowCasterItem& b) {
                   return a.distanceToLight > b.distanceToLight;
               });
 
-    rhi::BufferHandle lastBoundVb{};
-    rhi::BufferHandle lastBoundIb{};
-    bool hasPushedMvp = false;
-    Mat4 lastMvp{};
+    const size_t numCascades = shadowCascades_.empty() ? 1 : shadowCascades_.size();
+    for (size_t cIdx = 0; cIdx < numCascades; ++cIdx) {
+        float vpX = 0.0F;
+        float vpY = 0.0F;
+        float vpW = static_cast<float>(shadowResolution_);
+        float vpH = static_cast<float>(shadowResolution_);
+        Mat4 cascadeVp = currentLightSpaceMatrix_;
+        Frustum lightFrustum = Frustum::fromViewProjection(cascadeVp);
 
-    for (const auto& caster : shadowCasters_) {
-        if (shadowPipelineLayout_.isValid()) {
-            const Mat4 mvp = currentLightSpaceMatrix_ * caster.model;
-            if (!hasPushedMvp || std::memcmp(lastMvp.m, mvp.m, sizeof(mvp.m)) != 0) {
-                alignas(16) float pushData[16];
-                std::memcpy(pushData, mvp.m, sizeof(pushData));
-                cmdList.pushConstants(shadowPipelineLayout_, rhi::ShaderStageFlags::Vertex, 0,
-                                      sizeof(pushData), pushData);
-                lastMvp = mvp;
-                hasPushedMvp = true;
-            }
+        if (!shadowCascades_.empty()) {
+            const auto& cascade = shadowCascades_[cIdx];
+            vpX = cascade.atlasTileUV.x * static_cast<float>(shadowResolution_);
+            vpY = cascade.atlasTileUV.y * static_cast<float>(shadowResolution_);
+            vpW = cascade.atlasTileUV.z * static_cast<float>(shadowResolution_);
+            vpH = cascade.atlasTileUV.w * static_cast<float>(shadowResolution_);
+            cascadeVp = cascade.viewProjMatrix;
+            lightFrustum = cascade.lightFrustum;
         }
 
-        if (lastBoundVb != caster.gpuMesh->getVertexBuffer()) {
-            cmdList.bindVertexBuffer(0, caster.gpuMesh->getVertexBuffer(), 0);
-            lastBoundVb = caster.gpuMesh->getVertexBuffer();
-        }
-        if (caster.gpuMesh->getIndexBuffer().isValid() && caster.gpuMesh->getIndexCount() > 0) {
-            if (lastBoundIb != caster.gpuMesh->getIndexBuffer()) {
-                cmdList.bindIndexBuffer(caster.gpuMesh->getIndexBuffer(), 0, true);
-                lastBoundIb = caster.gpuMesh->getIndexBuffer();
+        cmdList.setViewport(vpX, vpY, vpW, vpH);
+        cmdList.setScissor(static_cast<int32_t>(vpX), static_cast<int32_t>(vpY),
+                           static_cast<uint32_t>(vpW), static_cast<uint32_t>(vpH));
+
+        rhi::BufferHandle lastBoundVb{};
+        rhi::BufferHandle lastBoundIb{};
+        bool hasPushedMvp = false;
+        Mat4 lastMvp{};
+
+        for (const auto& caster : shadowCasters_) {
+            if (applyLightCulling) {
+                if (!lightFrustum.intersectsAABB(caster.worldBounds)) {
+                    lastRenderStats_.culledPrimitives++;
+                    continue;
+                }
             }
-            const auto& submeshes = caster.gpuMesh->getSubmeshes();
-            if (caster.submeshIndex < submeshes.size()) {
-                const auto& sub = submeshes[caster.submeshIndex];
-                cmdList.drawIndexed(sub.indexCount, 1, sub.firstIndex, sub.vertexOffset, 0);
-                lastRenderStats_.shadowDrawCalls++;
-                lastRenderStats_.shadowTriangles += sub.indexCount / 3;
-            } else if (submeshes.empty()) {
-                cmdList.drawIndexed(caster.gpuMesh->getIndexCount(), 1, 0, 0, 0);
-                lastRenderStats_.shadowDrawCalls++;
-                lastRenderStats_.shadowTriangles += caster.gpuMesh->getIndexCount() / 3;
-            } else {
-                for (const auto& sub : submeshes) {
+
+            if (shadowPipelineLayout_.isValid()) {
+                const Mat4 mvp = cascadeVp * caster.model;
+                if (!hasPushedMvp || std::memcmp(lastMvp.m, mvp.m, sizeof(mvp.m)) != 0) {
+                    alignas(16) float pushData[16];
+                    std::memcpy(pushData, mvp.m, sizeof(pushData));
+                    cmdList.pushConstants(shadowPipelineLayout_, rhi::ShaderStageFlags::Vertex, 0,
+                                          sizeof(pushData), pushData);
+                    lastMvp = mvp;
+                    hasPushedMvp = true;
+                }
+            }
+
+            if (lastBoundVb != caster.gpuMesh->getVertexBuffer()) {
+                cmdList.bindVertexBuffer(0, caster.gpuMesh->getVertexBuffer(), 0);
+                lastBoundVb = caster.gpuMesh->getVertexBuffer();
+            }
+            if (caster.gpuMesh->getIndexBuffer().isValid() && caster.gpuMesh->getIndexCount() > 0) {
+                if (lastBoundIb != caster.gpuMesh->getIndexBuffer()) {
+                    cmdList.bindIndexBuffer(caster.gpuMesh->getIndexBuffer(), 0, true);
+                    lastBoundIb = caster.gpuMesh->getIndexBuffer();
+                }
+                const auto& submeshes = caster.gpuMesh->getSubmeshes();
+                if (caster.submeshIndex < submeshes.size()) {
+                    const auto& sub = submeshes[caster.submeshIndex];
                     cmdList.drawIndexed(sub.indexCount, 1, sub.firstIndex, sub.vertexOffset, 0);
                     lastRenderStats_.shadowDrawCalls++;
                     lastRenderStats_.shadowTriangles += sub.indexCount / 3;
+                } else if (submeshes.empty()) {
+                    cmdList.drawIndexed(caster.gpuMesh->getIndexCount(), 1, 0, 0, 0);
+                    lastRenderStats_.shadowDrawCalls++;
+                    lastRenderStats_.shadowTriangles += caster.gpuMesh->getIndexCount() / 3;
+                } else {
+                    for (const auto& sub : submeshes) {
+                        cmdList.drawIndexed(sub.indexCount, 1, sub.firstIndex, sub.vertexOffset, 0);
+                        lastRenderStats_.shadowDrawCalls++;
+                        lastRenderStats_.shadowTriangles += sub.indexCount / 3;
+                    }
                 }
+            } else if (caster.gpuMesh->getVertexCount() > 0) {
+                cmdList.draw(caster.gpuMesh->getVertexCount(), 1, 0, 0);
+                lastRenderStats_.shadowDrawCalls++;
+                lastRenderStats_.shadowTriangles += caster.gpuMesh->getVertexCount() / 3;
             }
-        } else if (caster.gpuMesh->getVertexCount() > 0) {
-            cmdList.draw(caster.gpuMesh->getVertexCount(), 1, 0, 0);
-            lastRenderStats_.shadowDrawCalls++;
-            lastRenderStats_.shadowTriangles += caster.gpuMesh->getVertexCount() / 3;
         }
     }
 
@@ -2555,26 +2576,40 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         Vec4(isIblActive ? 1.0F : 0.0F, settings_.lighting.environmentIntensity,
              envMap_.maxPrefilterMipLevel, 0.0F);
 
-    // Compute Directional Light-Space View-Projection Matrix
+    // Compute Directional Cascaded Shadow Maps (Milestone 11E)
     Vec3 dir = Vec3(lightingData.dirLight.directionAndCastShadow.x,
                     lightingData.dirLight.directionAndCastShadow.y,
                     lightingData.dirLight.directionAndCastShadow.z);
-    Vec3 camPos(lightingData.cameraPosAndAmbientIntensity.x,
-                lightingData.cameraPosAndAmbientIntensity.y,
-                lightingData.cameraPosAndAmbientIntensity.z);
-    Vec3 target(0.0F, 0.0F, 0.0F);
-    if (camPos.lengthSq() > 1.0F) {
-        target = camPos;
+    if (dir.lengthSq() < 1e-6F) {
+        dir = Vec3(0.5F, 0.8F, 0.5F).normalized();
     }
-    float orthoSize = std::clamp(settings_.shadows.distance * 0.40F, 12.0F, 60.0F);
-    float farPlane = std::max(60.0F, settings_.shadows.distance * 2.0F);
-    Vec3 lightPos = target + dir * (farPlane * 0.45F);
-    Vec3 up = std::abs(dir.y) > 0.99F ? Vec3::unitZ() : Vec3::unitY();
-    Mat4 lightView = Mat4::lookAt(lightPos, target, up);
-    Mat4 lightProj =
-        Mat4::orthographic(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1F, farPlane);
-    Mat4 lightSpaceMatrix = lightProj * lightView;
-    lightingData.cascadeLightSpaceMatrices[0] = lightSpaceMatrix;
+
+    if (settings_.shadows.enabled) {
+        CascadeConfig cascadeConfig{
+            .cascadeCount = std::clamp(settings_.shadows.cascadeCount, 1U, 4U),
+            .maxDistance = settings_.shadows.distance,
+            .splitLambda = settings_.shadows.splitLambda,
+            .stabilizeCascades = settings_.shadows.stabilizeCascades,
+            .atlasResolution = shadowResolution_,
+        };
+        computeShadowCascades(Mat4::identity(), viewProjection, 0.1F, settings_.shadows.distance,
+                              dir, cascadeConfig, shadowCascades_);
+        for (size_t i = 0; i < shadowCascades_.size() && i < 4; ++i) {
+            lightingData.cascadeLightSpaceMatrices[i] = shadowCascades_[i].atlasMatrix;
+        }
+        lightingData.cascadeSplits = Vec4(
+            shadowCascades_.size() > 0 ? shadowCascades_[0].splitFar : settings_.shadows.distance,
+            shadowCascades_.size() > 1 ? shadowCascades_[1].splitFar : settings_.shadows.distance,
+            shadowCascades_.size() > 2 ? shadowCascades_[2].splitFar : settings_.shadows.distance,
+            shadowCascades_.size() > 3 ? shadowCascades_[3].splitFar : settings_.shadows.distance);
+        lightingData.cascadeParams =
+            Vec4(static_cast<float>(shadowCascades_.size()), settings_.shadows.cascadeBlendRange,
+                 settings_.shadows.contactShadows ? 1.0F : 0.0F,
+                 settings_.shadows.softShadows ? 1.0F : 0.0F);
+    } else {
+        shadowCascades_.clear();
+        lightingData.cascadeParams = Vec4(0.0F, 0.0F, 0.0F, 0.0F);
+    }
 
     currentWorld_ = &world;
     currentAssetManager_ = &assetManager;
@@ -2583,7 +2618,8 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     currentCameraPos_ = Vec3(lightingData.cameraPosAndAmbientIntensity.x,
                              lightingData.cameraPosAndAmbientIntensity.y,
                              lightingData.cameraPosAndAmbientIntensity.z);
-    currentLightSpaceMatrix_ = lightSpaceMatrix;
+    currentLightSpaceMatrix_ =
+        shadowCascades_.empty() ? Mat4::identity() : shadowCascades_[0].viewProjMatrix;
     currentLightDir_ = dir;
 
     // Global Illumination (Milestone 11D)
@@ -2740,15 +2776,29 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         });
     }
 
+    bool cascadesChanged = false;
+    if (shadowCascades_.empty() || !settings_.shadows.shadowCaching) {
+        cascadesChanged = true;
+    } else {
+        for (size_t i = 0; i < shadowCascades_.size(); ++i) {
+            if (!shadowCascades_[i].viewProjMatrix.isNearlyEqual(lastCascadeViewProj_[i])) {
+                cascadesChanged = true;
+                break;
+            }
+        }
+    }
+
     if (&world != lastWorld_ || casterCount != lastCasterCount_ ||
         currentCasterChecksum != lastCasterChecksum_ || !dir.isNearlyEqual(lastLightDir_) ||
-        !lightSpaceMatrix.isNearlyEqual(lastLightSpaceMatrix_)) {
+        cascadesChanged) {
         shadowDirty_ = true;
         lastWorld_ = &world;
         lastCasterCount_ = casterCount;
         lastCasterChecksum_ = currentCasterChecksum;
         lastLightDir_ = dir;
-        lastLightSpaceMatrix_ = lightSpaceMatrix;
+        for (size_t i = 0; i < shadowCascades_.size() && i < 4; ++i) {
+            lastCascadeViewProj_[i] = shadowCascades_[i].viewProjMatrix;
+        }
     }
     lastRenderStats_ = RenderStats{};
 
@@ -2759,7 +2809,8 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
 
     // Update Set 1 bindings 5 & 6 for Main PBR Pass
     const rhi::TextureHandle aoTex =
-        (settings_.lighting.gtaoEnabled && gtaoFilteredTarget_.isValid())
+        ((settings_.lighting.gtaoEnabled || settings_.shadows.contactShadows) &&
+         gtaoFilteredTarget_.isValid())
             ? gtaoFilteredTarget_
             : (defaultAoTexture_ ? defaultAoTexture_->getTexture() : rhi::TextureHandle{});
     const rhi::SamplerHandle aoSamp =
@@ -3040,7 +3091,7 @@ Result<void> SceneRenderer::initGiResources() {
             .colorWriteMask = rhi::ColorComponentFlags::All,
         }},
         .layout = gtaoPipelineLayout_,
-        .colorAttachmentFormats = {rhi::TextureFormat::R8_UNORM},
+        .colorAttachmentFormats = {rhi::TextureFormat::RGBA8_UNORM},
         .debugName = "GtaoGraphicsPipeline",
     };
     auto gtaoPipeRes = device_->createGraphicsPipeline(gtaoPipeDesc);
@@ -3179,7 +3230,7 @@ Result<void> SceneRenderer::createGiTargets(uint32_t width, uint32_t height) {
 
     rhi::TextureDesc gtaoRawDesc{
         .type = rhi::TextureType::Texture2D,
-        .format = rhi::TextureFormat::R8_UNORM,
+        .format = rhi::TextureFormat::RGBA8_UNORM,
         .width = halfW,
         .height = halfH,
         .depth = 1,
@@ -3353,20 +3404,17 @@ void SceneRenderer::recordGtaoPass(rhi::RhiCommandList& cmdList) {
     const float fovY = 1.04719755F;
     const float tanHalfFov = std::tan(fovY * 0.5F);
     const float f = (tanHalfFov > 1e-6F) ? (1.0F / tanHalfFov) : 1.0F;
-    const float zNear = 0.1F;
-    const float zFar = 1000.0F;
     const float P00 = f / (aspect > 1e-6F ? aspect : 1.0F);
     const float P11 = f;
-    const float P22 = zFar / (zNear - zFar);
-    const float P23 = (zNear * zFar) / (zNear - zFar);
 
     GtaoPushConstants pc{};
-    pc.projParams = Vec4(P00, P11, P22, P23);
+    pc.lightDirAndContact = Vec4(currentLightDir_.x, currentLightDir_.y, currentLightDir_.z,
+                                 settings_.shadows.contactShadowDistance);
     pc.cameraPosAndRadius = Vec4(currentCameraPos_.x, currentCameraPos_.y, currentCameraPos_.z,
                                  settings_.lighting.gtaoRadius);
-    pc.gtaoParams = Vec4(settings_.lighting.gtaoIntensity, 0.05F, 1.0F, 0.0F);
-    pc.resolution = Vec2(static_cast<float>(halfW), static_cast<float>(halfH));
-    pc.invResolution = Vec2(1.0F / static_cast<float>(halfW), 1.0F / static_cast<float>(halfH));
+    pc.gtaoParams = Vec4(settings_.lighting.gtaoIntensity, 0.05F, 1.0F,
+                         settings_.shadows.contactShadows ? 1.0F : 0.0F);
+    pc.screenAndProj = Vec4(static_cast<float>(halfW), static_cast<float>(halfH), P00, P11);
     pc.invViewProj = currentViewProj_.inverse().value_or(Mat4::identity());
 
     cmdList.pushConstants(gtaoPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
