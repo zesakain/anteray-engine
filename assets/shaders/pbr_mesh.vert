@@ -12,7 +12,7 @@ layout(push_constant) uniform PushConstants {
 } pc;
 
 layout(std140, set = 1, binding = 0) uniform LightingData {
-    mat4 lightSpaceMatrix;
+    mat4 cascadeLightSpaceMatrices[4];
 } uLighting;
 
 layout(location = 0) out vec3 outWorldPos;
@@ -36,7 +36,7 @@ void main() {
     vec3 worldTan = normalize(normalMatrix * inTangent.xyz);
     outTangent = vec4(worldTan, inTangent.w);
 
-    // Compute light-space coordinates for directional shadow map directly in vertex stage
-    vec4 lpos = uLighting.lightSpaceMatrix * worldPos;
-    outShadowCoord = vec3(lpos.x * 0.5 + 0.5, lpos.y * -0.5 + 0.5, lpos.z);
+    // Compute light-space coordinates for primary directional cascade
+    vec4 lpos = uLighting.cascadeLightSpaceMatrices[0] * worldPos;
+    outShadowCoord = lpos.xyz;
 }

@@ -57,7 +57,7 @@ struct GpuSpotLight {
 };
 
 layout(std140, set = 1, binding = 0) uniform LightingData {
-    mat4 lightSpaceMatrix;
+    mat4 cascadeLightSpaceMatrices[4];
     GpuDirectionalLight dirLight;
     GpuPointLight pointLights[16];
     GpuSpotLight spotLights[16];
@@ -73,7 +73,9 @@ layout(std140, set = 1, binding = 0) uniform LightingData {
     mat4 prevViewProj;
     mat4 invViewProj;
     vec4 probeSh[9];
-    vec4 padGi;
+    vec4 cascadeSplits; // View-space cascade far distances: x: c0, y: c1, z: c2, w: c3
+    vec4 cascadeParams; // x: cascadeCount, y: cascadeBlendRange, z: contactShadows, w: softShadows
+    vec4 padShadow;
 }
 uLighting;
 
@@ -161,23 +163,42 @@ vec3 evaluateDirectLight(vec3 L, vec3 radiance, vec3 N, vec3 V, vec3 albedo, flo
 // Sample directional shadow map with rotated Vogel-disc PCF and slope-scaled depth bias
 const float GOLDEN_ANGLE = 2.39996323;
 
-float calculateShadow(vec3 shadowCoord, float NdotL, float baseBias, vec2 screenPos) {
-    if (shadowCoord.z > 1.0 || shadowCoord.z < 0.0 || shadowCoord.x < 0.0 || shadowCoord.x > 1.0 ||
-        shadowCoord.y < 0.0 || shadowCoord.y > 1.0) {
+float sampleCascadeShadow(int cascadeIdx, vec3 worldPos, float NdotL, float baseBias,
+                           vec2 screenPos) {
+    vec4 shadowPos = uLighting.cascadeLightSpaceMatrices[cascadeIdx] * vec4(worldPos, 1.0);
+    vec3 shadowCoord = shadowPos.xyz;
+
+    int cascadeCount = int(clamp(uLighting.cascadeParams.x, 1.0, 4.0));
+    vec2 tileOffset = vec2(0.0);
+    vec2 tileSize = vec2(1.0);
+    if (cascadeCount > 1) {
+        tileSize = vec2(0.5);
+        tileOffset = vec2(float(cascadeIdx % 2) * 0.5, float(cascadeIdx / 2) * 0.5);
+    }
+
+    uint shadowRes = uLighting.shadowPackedParams & 0xFFFFu;
+    if (shadowRes == 0u) {
+        shadowRes = 2048u;
+    }
+    float invRes = 1.0 / float(shadowRes);
+
+    vec2 tileMin = tileOffset + vec2(1.5 * invRes);
+    vec2 tileMax = tileOffset + tileSize - vec2(1.5 * invRes);
+
+    if (shadowCoord.x < tileMin.x || shadowCoord.x > tileMax.x || shadowCoord.y < tileMin.y ||
+        shadowCoord.y > tileMax.y || shadowCoord.z > 1.0 || shadowCoord.z < 0.0) {
         return 1.0;
     }
 
-    // Adaptive slope bias: scales smoothly with tangent of angle to prevent grazing acne
+    // Adaptive slope bias: scales with slope and cascade index to prevent grazing acne
     float tanTheta = clamp(sqrt(max(0.0, 1.0 - NdotL * NdotL)) / max(NdotL, 0.001), 0.0, 4.0);
-    float bias = baseBias * (0.6 + 0.4 * tanTheta);
+    float cascadeBiasScale = 1.0 + float(cascadeIdx) * 0.75;
+    float bias = baseBias * (0.6 + 0.4 * tanTheta) * cascadeBiasScale;
     float currentDepth = shadowCoord.z - bias;
 
-    uint shadowRes = uLighting.shadowPackedParams & 0xFFFFu;
     uint pcfQuality = (uLighting.shadowPackedParams >> 16u) & 0xFFu;
-    float invRes = (shadowRes > 0u) ? (1.0 / float(shadowRes)) : 0.00048828125;
-
     if (pcfQuality == 0u) {
-        return texture(uShadowMap, vec3(shadowCoord.xy, currentDepth));
+        return texture(uShadowMap, vec3(clamp(shadowCoord.xy, tileMin, tileMax), currentDepth));
     }
 
     // Interleaved gradient noise for screen-space sample rotation
@@ -191,27 +212,68 @@ float calculateShadow(vec3 shadowCoord, float NdotL, float baseBias, vec2 screen
         // Medium: 8-tap rotated Vogel disc PCF
         float shadow = 0.0;
         const int TAPS_MED = 8;
-        float filterRadius = 1.25 * invRes;
+        float filterRadius = 1.5 * invRes;
         for (int i = 0; i < TAPS_MED; ++i) {
             float r = sqrt((float(i) + 0.5) / float(TAPS_MED)) * filterRadius;
             float theta = float(i) * GOLDEN_ANGLE;
             vec2 offset = rot * vec2(cos(theta), sin(theta)) * r;
-            shadow += texture(uShadowMap, vec3(shadowCoord.xy + offset, currentDepth));
+            vec2 tapCoord = clamp(shadowCoord.xy + offset, tileMin, tileMax);
+            shadow += texture(uShadowMap, vec3(tapCoord, currentDepth));
         }
         return shadow * (1.0 / float(TAPS_MED));
     } else {
         // High: 16-tap rotated Vogel disc PCF for smooth cinematic penumbra
         float shadow = 0.0;
         const int TAPS_HIGH = 16;
-        float filterRadius = 2.0 * invRes;
+        float filterRadius = 2.25 * invRes;
         for (int i = 0; i < TAPS_HIGH; ++i) {
             float r = sqrt((float(i) + 0.5) / float(TAPS_HIGH)) * filterRadius;
             float theta = float(i) * GOLDEN_ANGLE;
             vec2 offset = rot * vec2(cos(theta), sin(theta)) * r;
-            shadow += texture(uShadowMap, vec3(shadowCoord.xy + offset, currentDepth));
+            vec2 tapCoord = clamp(shadowCoord.xy + offset, tileMin, tileMax);
+            shadow += texture(uShadowMap, vec3(tapCoord, currentDepth));
         }
         return shadow * (1.0 / float(TAPS_HIGH));
     }
+}
+
+float calculateCascadedShadow(vec3 worldPos, float NdotL, float baseBias, vec2 screenPos) {
+    float viewDist = length(uLighting.cameraPosAndAmbientIntensity.xyz - worldPos);
+    int cascadeCount = int(clamp(uLighting.cascadeParams.x, 1.0, 4.0));
+    float blendRange = clamp(uLighting.cascadeParams.y, 0.0, 0.30);
+
+    if (viewDist >= uLighting.cascadeSplits.w) {
+        return 1.0;
+    }
+
+    int cascadeIdx = 0;
+    if (cascadeCount > 1 && viewDist > uLighting.cascadeSplits.x) {
+        cascadeIdx = 1;
+    }
+    if (cascadeCount > 2 && viewDist > uLighting.cascadeSplits.y) {
+        cascadeIdx = 2;
+    }
+    if (cascadeCount > 3 && viewDist > uLighting.cascadeSplits.z) {
+        cascadeIdx = 3;
+    }
+
+    float shadow = sampleCascadeShadow(cascadeIdx, worldPos, NdotL, baseBias, screenPos);
+
+    // Cross-cascade smooth blending
+    float splitFar = uLighting.cascadeSplits[cascadeIdx];
+    float blendBand = splitFar * blendRange;
+    if (blendBand > 0.001 && viewDist > (splitFar - blendBand)) {
+        float blendFactor = clamp((viewDist - (splitFar - blendBand)) / blendBand, 0.0, 1.0);
+        if (cascadeIdx + 1 < cascadeCount) {
+            float nextShadow =
+                sampleCascadeShadow(cascadeIdx + 1, worldPos, NdotL, baseBias, screenPos);
+            shadow = mix(shadow, nextShadow, blendFactor);
+        } else {
+            shadow = mix(shadow, 1.0, blendFactor);
+        }
+    }
+
+    return shadow;
 }
 
 void main() {
@@ -273,8 +335,16 @@ void main() {
         if (NdotL > 0.0) {
             float shadow = 1.0;
             if (uLighting.dirLight.directionAndCastShadow.w > 0.5) {
-                shadow = calculateShadow(inShadowCoord, NdotL,
-                                         uLighting.ambientColorAndShadowBias.w, gl_FragCoord.xy);
+                shadow = calculateCascadedShadow(inWorldPos, NdotL,
+                                                 uLighting.ambientColorAndShadowBias.w,
+                                                 gl_FragCoord.xy);
+                // Contact Shadow grounding from bilateral filtered uAoMap (channel G)
+                if (uLighting.cascadeParams.z > 0.5) {
+                    vec2 screenSize = vec2(textureSize(uAoMap, 0));
+                    vec2 screenUV = gl_FragCoord.xy / max(screenSize, vec2(1.0));
+                    float contactShadow = texture(uAoMap, screenUV).g;
+                    shadow = min(shadow, contactShadow);
+                }
             }
             if (shadow > 0.001) {
                 vec3 radiance = uLighting.dirLight.colorAndIntensity.rgb *

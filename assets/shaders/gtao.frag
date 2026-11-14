@@ -6,12 +6,13 @@ layout(location = 0) out vec4 outColor;
 layout(set = 0, binding = 0) uniform sampler2D uDepthMap;
 
 layout(push_constant) uniform GtaoPushConstants {
-    vec4 projParams;         // x: P00, y: P11, z: P22, w: P23 (16 B)
+    vec4 lightDirAndContact; // xyz: lightDir, w: maxContactDist (16 B)
     vec4 cameraPosAndRadius; // xyz: camPos, w: radius         (16 B)
-    vec4 gtaoParams;         // x: intensity, y: bias, z: power, w: unused (16 B)
+    vec4 gtaoParams;         // x: intensity, y: bias, z: power, w: contactShadowEnabled (16 B)
     vec2 resolution;         // (8 B)
     vec2 invResolution;      // (8 B)
     mat4 invViewProj;        // (64 B)
+    mat4 viewProj;           // (64 B)
 } pc;
 
 const float PI = 3.141592653589793;
@@ -28,6 +29,41 @@ float spatialHash(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
+}
+
+// Ray marches along sunlight direction in screen/world space to detect fine occluders
+float calculateContactShadow(vec3 P, vec3 N, vec3 lightDir, float maxDist, float noise) {
+    if (dot(N, lightDir) <= 0.0) {
+        return 1.0;
+    }
+    const int kSteps = 10;
+    float stepSize = maxDist / float(kSteps);
+    vec3 rayPos = P + N * 0.015;
+    vec3 rayStep = lightDir * stepSize;
+    rayPos += rayStep * (noise * 0.5);
+
+    float shadow = 1.0;
+    for (int i = 0; i < kSteps; ++i) {
+        rayPos += rayStep;
+        vec4 proj = pc.viewProj * vec4(rayPos, 1.0);
+        if (proj.w <= 0.0) {
+            break;
+        }
+        vec3 ndc = proj.xyz / proj.w;
+        vec2 sampleUV = vec2(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
+        if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) {
+            break;
+        }
+        float sampleDepth = texture(uDepthMap, sampleUV).r;
+        float rayDepth = ndc.z;
+        float depthDiff = rayDepth - sampleDepth;
+        if (depthDiff > 0.0004 && depthDiff < 0.025) {
+            float fade = 1.0 - (float(i) / float(kSteps));
+            shadow = clamp(1.0 - fade * 0.85, 0.0, 1.0);
+            break;
+        }
+    }
+    return shadow;
 }
 
 void main() {
@@ -115,5 +151,11 @@ void main() {
     occlusion = clamp(pow(occlusion, max(power, 0.1)) * intensity, 0.0, 1.0);
     float ao = 1.0 - occlusion;
 
-    outColor = vec4(ao, ao, ao, 1.0);
+    float contactShadow = 1.0;
+    if (pc.gtaoParams.w > 0.5) {
+        vec3 lightDir = normalize(pc.lightDirAndContact.xyz);
+        contactShadow = calculateContactShadow(P, N, lightDir, pc.lightDirAndContact.w, noise);
+    }
+
+    outColor = vec4(ao, contactShadow, 0.0, 1.0);
 }
