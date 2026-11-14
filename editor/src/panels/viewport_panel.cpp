@@ -825,7 +825,11 @@ void ViewportPanel::draw(EditorContext& ctx) {
                     halfExtents = halfExtents * tr.scale;
                 }
 
-                if (!hasCustomMesh) {
+                const bool hasCollider = e.has<physics::ColliderComponent>();
+                const bool renderPrimitive =
+                    (!isGpuAvailable || !s_useGpuRenderer) || isSelected || hasCollider;
+
+                if (!hasCustomMesh && renderPrimitive) {
                     tagYOffset = halfExtents.y + 0.4F;
                     if (isSphere) {
                         // Render 3D Wireframe / Shaded Sphere
@@ -1010,7 +1014,18 @@ void ViewportPanel::draw(EditorContext& ctx) {
                     float tagDepth = 0.0F;
                     if (camera_.project(tagPos, canvasOrigin3D, canvasSize3D, tagScreen,
                                         tagDepth)) {
-                        const char* name = e.name().c_str();
+                        std::string_view sv =
+                            ctx.world != nullptr ? ctx.world->getEntityName(h) : "";
+                        char nameBuf[64];
+                        if (!sv.empty()) {
+                            size_t len = std::min(sv.size(), sizeof(nameBuf) - 1);
+                            std::memcpy(nameBuf, sv.data(), len);
+                            nameBuf[len] = '\0';
+                        } else {
+                            std::snprintf(nameBuf, sizeof(nameBuf), "Entity #%llu",
+                                          static_cast<unsigned long long>(h.id));
+                        }
+                        const char* name = nameBuf;
                         ImVec2 textSize = ImGui::CalcTextSize(name);
                         ImVec2 textMin(tagScreen.x - (textSize.x * 0.5F) - 4.0F,
                                        tagScreen.y - (textSize.y * 0.5F) - 2.0F);

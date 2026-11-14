@@ -150,10 +150,16 @@ void InspectorPanel::draw(EditorContext& ctx) {
             if (ImGui::CollapsingHeader("Selected Entities List")) {
                 ImGui::BeginChild("MultiSelectionList", ImVec2(0.0F, 110.0F), true);
                 for (auto h : selected) {
-                    flecs::entity e = ecs.entity(h.id);
-                    const char* entityName = e.name().c_str();
-                    char fallbackName[32];
-                    if (entityName == nullptr || entityName[0] == '\0') {
+                    std::string_view nameSv =
+                        ctx.world != nullptr ? ctx.world->getEntityName(h) : "";
+                    char fallbackName[64];
+                    const char* entityName = nullptr;
+                    if (!nameSv.empty()) {
+                        const size_t copyLen = std::min(nameSv.size(), sizeof(fallbackName) - 1);
+                        std::memcpy(fallbackName, nameSv.data(), copyLen);
+                        fallbackName[copyLen] = '\0';
+                        entityName = fallbackName;
+                    } else {
                         std::snprintf(fallbackName, sizeof(fallbackName), "Entity #%llu",
                                       static_cast<unsigned long long>(h.id));
                         entityName = fallbackName;
@@ -709,13 +715,17 @@ void InspectorPanel::draw(EditorContext& ctx) {
                     ImGui::SameLine();
                     ImGui::TextDisabled("(Ephemeral)");
                 }
-                const char* entityName = e.name().c_str();
-                if (entityName == nullptr || entityName[0] == '\0') {
-                    entityName = "Unnamed Entity";
-                }
-
+                std::string_view nameSv =
+                    ctx.world != nullptr ? ctx.world->getEntityName(world::EntityHandle(e.id()))
+                                         : "";
                 char nameBuf[64];
-                std::snprintf(nameBuf, sizeof(nameBuf), "%s", entityName);
+                if (!nameSv.empty()) {
+                    const size_t copyLen = std::min(nameSv.size(), sizeof(nameBuf) - 1);
+                    std::memcpy(nameBuf, nameSv.data(), copyLen);
+                    nameBuf[copyLen] = '\0';
+                } else {
+                    std::snprintf(nameBuf, sizeof(nameBuf), "Unnamed Entity");
+                }
 
                 const auto& theme = getActiveThemeColors();
                 const char* entityIcon =

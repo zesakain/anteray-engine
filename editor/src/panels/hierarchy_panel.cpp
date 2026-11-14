@@ -304,10 +304,15 @@ void HierarchyPanel::drawEntityNode(EditorContext& ctx, world::EntityHandle hand
         return;
     }
 
-    const char* rawName = e.name().c_str();
+    std::string_view nameSv = ctx.world->getEntityName(handle);
     char fallbackName[64];
-    const char* name = rawName;
-    if (name == nullptr || name[0] == '\0') {
+    const char* name = nullptr;
+    if (!nameSv.empty()) {
+        const size_t copyLen = std::min(nameSv.size(), sizeof(fallbackName) - 1);
+        std::memcpy(fallbackName, nameSv.data(), copyLen);
+        fallbackName[copyLen] = '\0';
+        name = fallbackName;
+    } else {
         std::snprintf(fallbackName, sizeof(fallbackName), "Entity #%llu",
                       static_cast<unsigned long long>(handle.id));
         name = fallbackName;

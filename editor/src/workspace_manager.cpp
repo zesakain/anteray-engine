@@ -661,6 +661,21 @@ struct WorkspaceManager::Impl {
                         ctx.selectedEntityId = 0;
                     }
                 }
+                if (ImGui::MenuItem("Amazon Lumberyard Bistro")) {
+                    if (ctx.world != nullptr) {
+                        const char* bistroScene = "assets/benchmark-scenes/Bistro_Benchmark.hikari";
+                        if (std::filesystem::exists(bistroScene)) {
+                            openScene(*ctx.world, bistroScene, ctx.selection, ctx.editorCamera,
+                                      ctx.sceneRenderer);
+                        } else {
+                            loadBenchmarkScene(*ctx.world,
+                                               "test-assets/benchmark/bistro/bistro.gltf",
+                                               ctx.selection, ctx.assetManager, ctx.editorCamera,
+                                               ctx.sceneRenderer);
+                        }
+                        ctx.selectedEntityId = 0;
+                    }
+                }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Reset Benchmark Camera")) {
                     resetBenchmarkCamera(ctx.editorCamera);
@@ -839,6 +854,11 @@ struct WorkspaceManager::Impl {
             if (ImGui::SmallButton("Damaged Helmet")) {
                 std::snprintf(openPathBuffer, sizeof(openPathBuffer),
                               "assets/benchmark-scenes/DamagedHelmet_Benchmark.hikari");
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Bistro")) {
+                std::snprintf(openPathBuffer, sizeof(openPathBuffer),
+                              "assets/benchmark-scenes/Bistro_Benchmark.hikari");
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Sample")) {
@@ -1190,11 +1210,11 @@ struct WorkspaceManager::Impl {
                                    ctx.selection->count());
             } else if (ctx.selectedEntityId != 0 && ctx.world != nullptr &&
                        ctx.world->isAlive(world::EntityHandle(ctx.selectedEntityId))) {
-                flecs::world& ecs = ctx.world->getRawWorld();
-                flecs::entity e = ecs.entity(ctx.selectedEntityId);
-                const char* name = e.name().c_str();
-                if (name != nullptr && name[0] != '\0') {
-                    ImGui::TextColored(toImVec4(theme.textPrimary), "Selected: %s (#%llu)", name,
+                std::string_view nameSv =
+                    ctx.world->getEntityName(world::EntityHandle(ctx.selectedEntityId));
+                if (!nameSv.empty()) {
+                    ImGui::TextColored(toImVec4(theme.textPrimary), "Selected: %.*s (#%llu)",
+                                       static_cast<int>(nameSv.size()), nameSv.data(),
                                        static_cast<unsigned long long>(ctx.selectedEntityId));
                 } else {
                     ImGui::TextColored(toImVec4(theme.textPrimary), "Selected: Entity #%llu",
