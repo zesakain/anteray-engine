@@ -151,10 +151,25 @@ parseTextureInfo(const cgltf_data* data, const cgltf_texture_view& view, std::st
         mat.textureAsset = mat.baseColorTexture.textureAsset;
         mat.metallicRoughnessTexture = parseTextureInfo(
             data, pbr.metallic_roughness_texture, baseDir, TextureColorSpace::Linear, sourcePath);
+    } else if (cgMat.has_pbr_specular_glossiness) {
+        const auto& sg = cgMat.pbr_specular_glossiness;
+        mat.baseColor = Vec4{sg.diffuse_factor[0], sg.diffuse_factor[1], sg.diffuse_factor[2],
+                             sg.diffuse_factor[3]};
+        mat.roughness = std::clamp(1.0F - sg.glossiness_factor, 0.04F, 1.0F);
+        const float maxSpec =
+            std::max(sg.specular_factor[0], std::max(sg.specular_factor[1], sg.specular_factor[2]));
+        // Dielectric materials have F0 ~ 0.04. High specular indicates conductive/metal.
+        mat.metallic = std::clamp((maxSpec - 0.04F) / 0.96F, 0.0F, 1.0F);
+
+        mat.baseColorTexture = parseTextureInfo(data, sg.diffuse_texture, baseDir,
+                                                TextureColorSpace::sRGB, sourcePath);
+        mat.textureAsset = mat.baseColorTexture.textureAsset;
+        mat.metallicRoughnessTexture = parseTextureInfo(
+            data, sg.specular_glossiness_texture, baseDir, TextureColorSpace::Linear, sourcePath);
     } else {
         mat.baseColor = Vec4{1.0F, 1.0F, 1.0F, 1.0F};
         mat.roughness = 1.0F;
-        mat.metallic = 1.0F;
+        mat.metallic = 0.0F;
     }
 
     mat.normalTexture = parseTextureInfo(data, cgMat.normal_texture, baseDir,
