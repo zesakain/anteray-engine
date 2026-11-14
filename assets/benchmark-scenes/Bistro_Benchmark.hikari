@@ -167518,31 +167518,31 @@
       "components": {
         "DirectionalLight": {
           "direction": [
-            0.50702,
-            0.76053,
-            -0.405616
+            0.618032,
+            0.669534,
+            -0.412021
           ],
           "color": [
             1,
-            0.95,
-            0.88
+            0.96,
+            0.9
           ],
-          "intensity": 3.2,
+          "intensity": 3,
           "castShadows": true,
-          "shadowBias": 0.002,
+          "shadowBias": 0.0015,
           "enabled": true
         }
       }
     },
     {
       "id": 6008,
-      "name": "DefaultBenchmarkCamera",
+      "name": "Bistro_Hero_Corner",
       "components": {
         "Transform": {
           "position": [
-            -26.43,
-            3.16,
-            11.17
+            -24.5,
+            2,
+            11.2
           ],
           "rotation": [
             0,
@@ -167557,7 +167557,7 @@
           ]
         },
         "Camera": {
-          "fovDegrees": 65,
+          "fovDegrees": 52,
           "nearPlane": 0.1,
           "farPlane": 2000,
           "isPrimary": true
@@ -167801,14 +167801,14 @@
     },
     "camera": {
       "position": [
-        -26.43,
-        3.16,
-        11.17
+        -24.5,
+        2,
+        11.2
       ],
       "target": [
-        -16.85,
-        2.84,
-        14.03
+        -15,
+        2.2,
+        14
       ]
     }
   }

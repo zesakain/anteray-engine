@@ -266,22 +266,22 @@ static bool generateBistro(const std::filesystem::path& outDir) {
         return false;
     }
 
-    // Directional Sunlight with shadow mapping
+    // Directional Sunlight with calibrated afternoon lighting and shadow mapping
     auto sun = world.createEntity("Sunlight");
     render::DirectionalLightComponent dl{};
-    dl.direction = Vec3(0.5F, 0.75F, -0.4F).normalized();
-    dl.color = Vec3(1.0F, 0.95F, 0.88F);
-    dl.intensity = 3.2F;
+    dl.direction = Vec3(0.6F, 0.65F, -0.4F).normalized();
+    dl.color = Vec3(1.0F, 0.96F, 0.90F);
+    dl.intensity = 3.0F;
     dl.castShadows = true;
-    dl.shadowBias = 0.0020F;
+    dl.shadowBias = 0.0015F;
     dl.enabled = true;
     world.setComponent(sun, dl);
 
-    // Primary Overview Camera looking down the street toward the cafe terrace
-    auto cam = world.createEntity("DefaultBenchmarkCamera");
-    world.setComponent(cam, world::TransformComponent{Transform(Vec3(-26.43F, 3.16F, 11.17F))});
+    // Canonical Bistro Hero Corner Camera looking at Le Petit Coin storefront and terrace
+    auto cam = world.createEntity("Bistro_Hero_Corner");
+    world.setComponent(cam, world::TransformComponent{Transform(Vec3(-24.5F, 2.0F, 11.2F))});
     render::CameraComponent cc{};
-    cc.fovDegrees = 65.0F;
+    cc.fovDegrees = 52.0F;
     cc.nearPlane = 0.1F;
     cc.farPlane = 2000.0F;
     cc.isPrimary = true;
@@ -343,8 +343,8 @@ static bool generateBistro(const std::filesystem::path& outDir) {
         .timestamp = 20261114,
     };
 
-    const Vec3 camPos(-26.43F, 3.16F, 11.17F);
-    const Vec3 camTarget(-16.85F, 2.84F, 14.03F);
+    const Vec3 camPos(-24.5F, 2.0F, 11.2F);
+    const Vec3 camTarget(-15.0F, 2.2F, 14.0F);
 
     const std::filesystem::path dest = outDir / "Bistro_Benchmark.hikari";
     std::cout << "Serializing Bistro benchmark scene to " << dest.string() << "...\n";
