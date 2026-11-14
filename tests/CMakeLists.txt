@@ -215,6 +215,12 @@ target_link_libraries(ibl_render_test PRIVATE hikari::engine_render hikari::engi
 add_test(NAME ibl_render_test COMMAND ibl_render_test)
 set_tests_properties(ibl_render_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Premium Lighting & Atmospheric Conditions Verification Tests (Milestone 11C Upgrade)
+add_executable(lighting_upgrade_test unit/render/lighting_upgrade_test.cpp)
+target_link_libraries(lighting_upgrade_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
+add_test(NAME lighting_upgrade_test COMMAND lighting_upgrade_test)
+set_tests_properties(lighting_upgrade_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Physics Unit Tests
 add_executable(physics_test unit/physics/physics_test.cpp)
 target_link_libraries(physics_test PRIVATE hikari::engine_physics)
@@ -265,6 +271,10 @@ if(HIKARI_BUILD_EDITOR)
     add_executable(benchmark_scalability ${CMAKE_SOURCE_DIR}/tools/benchmark_scalability.cpp)
     target_link_libraries(benchmark_scalability PRIVATE hikari::editor_lib hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi imgui_static)
     target_include_directories(benchmark_scalability PRIVATE ${imgui_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/editor/src)
+
+    add_executable(benchmark_lighting_conditions ${CMAKE_SOURCE_DIR}/tools/benchmark_lighting_conditions.cpp)
+    target_link_libraries(benchmark_lighting_conditions PRIVATE hikari::editor_lib hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi imgui_static)
+    target_include_directories(benchmark_lighting_conditions PRIVATE ${imgui_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/editor/src)
 
     add_executable(sponza_sustained_benchmark ${CMAKE_SOURCE_DIR}/tools/sponza_sustained_benchmark.cpp)
     target_link_libraries(sponza_sustained_benchmark PRIVATE hikari::editor_lib hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi imgui_static)
