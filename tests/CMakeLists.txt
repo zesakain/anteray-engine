@@ -195,6 +195,12 @@ target_link_libraries(lighting_render_test PRIVATE hikari::engine_render hikari:
 add_test(NAME lighting_render_test COMMAND lighting_render_test)
 set_tests_properties(lighting_render_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Cascaded Shadow Maps Verification Tests (Milestone 11E)
+add_executable(shadow_cascade_test unit/render/shadow_cascade_test.cpp)
+target_link_libraries(shadow_cascade_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_core)
+add_test(NAME shadow_cascade_test COMMAND shadow_cascade_test)
+set_tests_properties(shadow_cascade_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # HDR, Tone Mapping & Post-Processing Verification Tests (Milestone 10F)
 add_executable(post_process_test unit/render/post_process_test.cpp)
 target_link_libraries(post_process_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
@@ -272,6 +278,9 @@ if(HIKARI_BUILD_EDITOR)
 
     add_executable(benchmark_gi_1080p ${CMAKE_SOURCE_DIR}/tools/benchmark_gi_1080p.cpp)
     target_link_libraries(benchmark_gi_1080p PRIVATE hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi)
+
+    add_executable(benchmark_shadow_baseline ${CMAKE_SOURCE_DIR}/tools/benchmark_shadow_baseline.cpp)
+    target_link_libraries(benchmark_shadow_baseline PRIVATE hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi)
 
     add_executable(capture_editor_telemetry ${CMAKE_SOURCE_DIR}/tools/capture_editor_telemetry.cpp)
     target_link_libraries(capture_editor_telemetry PRIVATE hikari::editor_lib hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi imgui_static)
