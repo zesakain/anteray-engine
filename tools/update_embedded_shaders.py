@@ -13,6 +13,10 @@ shader_mappings = [
     ("kBloomDownsampleFragmentShaderSpirv", "assets/shaders/bloom_downsample.frag"),
     ("kBloomUpsampleFragmentShaderSpirv", "assets/shaders/bloom_upsample.frag"),
     ("kToneMappingFragmentShaderSpirv", "assets/shaders/tone_mapping.frag"),
+    ("kGtaoFragmentShaderSpirv", "assets/shaders/gtao.frag"),
+    ("kBilateralBlurFragmentShaderSpirv", "assets/shaders/bilateral_blur.frag"),
+    ("kSsgiFragmentShaderSpirv", "assets/shaders/ssgi.frag"),
+    ("kTemporalFilterFragmentShaderSpirv", "assets/shaders/temporal_filter.frag"),
 ]
 
 output_header = "engine/render/include/render/mesh_shader_spirv.h"

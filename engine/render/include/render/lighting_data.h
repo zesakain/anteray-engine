@@ -101,10 +101,29 @@ struct alignas(16) GpuLightingData {
 
     /// x: hasIbl (1.0 = true, 0.0 = false), y: intensity, z: maxPrefilterMipLevel, w: unused pad
     Vec4 iblParams{0.0F, 1.0F, 4.0F, 0.0F};
+
+    /// x: giEnabled (1.0 = true, 0.0 = false), y: giIntensity, z: ssgiRadius, w: gtaoIntensity
+    Vec4 giParams{0.0F, 1.0F, 2.0F, 1.0F};
+
+    /// x: probesEnabled (1.0 = true, 0.0 = false), y: probeIntensity, zw: pad
+    Vec4 probeParams{0.0F, 1.0F, 0.0F, 0.0F};
+
+    /// Previous frame view-projection matrix for temporal reprojection (64 bytes)
+    Mat4 prevViewProj{Mat4::identity()};
+
+    /// Inverse view-projection matrix for world-space position reconstruction (64 bytes)
+    Mat4 invViewProj{Mat4::identity()};
+
+    /// Order-2 Spherical Harmonics coefficients for localized diffuse irradiance (9 * 16 = 144
+    /// bytes)
+    Vec4 probeSh[9]{};
+
+    /// Explicit std140 alignment padding (16 bytes)
+    Vec4 padGi{0.0F, 0.0F, 0.0F, 0.0F};
 };
 
-static_assert(sizeof(GpuLightingData) == 1696,
-              "GpuLightingData must strictly match std140 layout (1696 bytes)");
+static_assert(sizeof(GpuLightingData) == 2016,
+              "GpuLightingData must strictly match std140 layout (2016 bytes)");
 
 /// @brief Generates descriptor set layout descriptor for Scene/Lighting/Shadows (Set 1).
 ///
@@ -113,6 +132,8 @@ static_assert(sizeof(GpuLightingData) == 1696,
 /// Binding 2: CombinedImageSampler (Diffuse Irradiance Cubemap) in Fragment stage.
 /// Binding 3: CombinedImageSampler (Specular Prefiltered Cubemap) in Fragment stage.
 /// Binding 4: CombinedImageSampler (Split-Sum BRDF 2D LUT) in Fragment stage.
+/// Binding 5: CombinedImageSampler (Ground-Truth Ambient Occlusion Map) in Fragment stage.
+/// Binding 6: CombinedImageSampler (Screen-Space Indirect Light Map) in Fragment stage.
 [[nodiscard]] inline rhi::DescriptorSetLayoutDesc createSceneDescriptorSetLayoutDesc() {
     return rhi::DescriptorSetLayoutDesc{
         .bindings =
@@ -143,6 +164,18 @@ static_assert(sizeof(GpuLightingData) == 1696,
                 },
                 {
                     .binding = 4,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 5,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 6,
                     .descriptorType = rhi::DescriptorType::CombinedImageSampler,
                     .descriptorCount = 1,
                     .stageFlags = rhi::ShaderStageFlags::Fragment,

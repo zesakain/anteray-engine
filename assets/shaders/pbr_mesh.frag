@@ -67,8 +67,13 @@ layout(std140, set = 1, binding = 0) uniform LightingData {
     uint numSpotLights;
     uint dirLightActive;
     uint shadowPackedParams;
-    vec4 iblParams; // x: hasIbl (1.0 = true, 0.0 = false), y: intensity, z: maxPrefilterMipLevel,
-                    // w: unused
+    vec4 iblParams; // x: hasIbl, y: intensity, z: maxPrefilterMipLevel, w: unused
+    vec4 giParams;  // x: giEnabled, y: giIntensity, z: ssgiRadius, w: gtaoIntensity
+    vec4 probeParams; // x: probesEnabled, y: probeIntensity, zw: pad
+    mat4 prevViewProj;
+    mat4 invViewProj;
+    vec4 probeSh[9];
+    vec4 padGi;
 }
 uLighting;
 
@@ -76,6 +81,37 @@ layout(set = 1, binding = 1) uniform sampler2DShadow uShadowMap;
 layout(set = 1, binding = 2) uniform samplerCube uIrradianceMap;
 layout(set = 1, binding = 3) uniform samplerCube uPrefilteredEnvMap;
 layout(set = 1, binding = 4) uniform sampler2D uBrdfLut;
+layout(set = 1, binding = 5) uniform sampler2D uAoMap;
+layout(set = 1, binding = 6) uniform sampler2D uIndirectLightMap;
+
+// Analytical Order-2 Spherical Harmonics Diffuse Irradiance Convolution (Ramamoorthi 2001)
+vec3 evaluateProbeIrradiance(vec3 N) {
+    if (uLighting.probeParams.x <= 0.5) {
+        return vec3(0.0);
+    }
+    vec3 c0 = uLighting.probeSh[0].xyz;
+    vec3 c1 = uLighting.probeSh[1].xyz;
+    vec3 c2 = uLighting.probeSh[2].xyz;
+    vec3 c3 = uLighting.probeSh[3].xyz;
+    vec3 c4 = uLighting.probeSh[4].xyz;
+    vec3 c5 = uLighting.probeSh[5].xyz;
+    vec3 c6 = uLighting.probeSh[6].xyz;
+    vec3 c7 = uLighting.probeSh[7].xyz;
+    vec3 c8 = uLighting.probeSh[8].xyz;
+
+    const float r1 = 0.429043;
+    const float r2 = 0.511664;
+    const float r3 = 0.743125;
+    const float r4 = 0.886227;
+    const float r5 = 0.247708;
+
+    vec3 irr = r4 * c0 +
+               (2.0 * r2) * (c3 * N.x + c1 * N.y + c2 * N.z) +
+               r1 * c8 * (N.x * N.x - N.y * N.y) +
+               r3 * c6 * (N.z * N.z) - r5 * c6 +
+               (2.0 * r1) * (c4 * (N.x * N.y) + c7 * (N.x * N.z) + c5 * (N.y * N.z));
+    return max(irr, vec3(0.0)) * uLighting.probeParams.y;
+}
 
 const float PI = 3.141592653589793;
 const float INV_PI = 0.31830988618379067;
@@ -316,24 +352,36 @@ void main() {
         }
     }
 
-    // 6. Ambient Occlusion (glTF: Red channel)
-    float occlusion = 1.0;
+    // 6. Ambient Occlusion: combine glTF material AO with dynamic Screen-Space GTAO
+    float materialOcclusion = 1.0;
     if (material.hasOcclusionTex != 0u) {
-        occlusion = mix(1.0, texture(uOcclusionMap, inUV).r, material.occlusionStrength);
+        materialOcclusion = mix(1.0, texture(uOcclusionMap, inUV).r, material.occlusionStrength);
     }
+    vec2 screenSize = vec2(textureSize(uAoMap, 0));
+    vec2 screenUV = gl_FragCoord.xy / max(screenSize, vec2(1.0));
+    float screenAo = texture(uAoMap, screenUV).r;
+    float finalOcclusion = materialOcclusion * mix(1.0, screenAo, uLighting.giParams.w);
 
-    // 7. Ambient / Image-Based Lighting (IBL) Term
+    // 7. Ambient / Image-Based Lighting (IBL) & Screen-Space Indirect GI Term
     vec3 ambient = vec3(0.0);
     float diffTransScale = clamp(1.0 - transmission, 0.0, 1.0);
+
+    // Sample Screen-Space Indirect Lighting (SSGI) & Probe Irradiance
+    vec3 ssgiRadiance = vec3(0.0);
+    if (uLighting.giParams.x > 0.5) {
+        ssgiRadiance = texture(uIndirectLightMap, screenUV).rgb * uLighting.giParams.y;
+    }
+    vec3 probeRadiance = evaluateProbeIrradiance(N);
 
     if (uLighting.iblParams.x > 0.5) {
         float NdotV = max(dot(N, V), 0.0);
         vec3 F_ibl = fresnelSchlickRoughness(NdotV, F0, roughness);
         vec3 kD_ibl = (vec3(1.0) - F_ibl) * (1.0 - metallic);
 
-        // Diffuse IBL (suppressed by transmission since light passes through thin surface)
+        // Diffuse IBL + Diffuse Indirect (SSGI color bleed + probe bounce)
         vec3 irradiance = texture(uIrradianceMap, N).rgb;
-        vec3 diffuseIBL = kD_ibl * irradiance * baseColor.rgb * diffTransScale;
+        vec3 diffuseRadiance = irradiance + ssgiRadiance + probeRadiance;
+        vec3 diffuseAmbient = kD_ibl * diffuseRadiance * baseColor.rgb * diffTransScale;
 
         // Specular IBL (Split-Sum Cook-Torrance with roughness-compensated Fresnel)
         vec3 R = reflect(-V, N);
@@ -343,11 +391,12 @@ void main() {
         vec3 F_env = F0 * envBRDF.x + max(vec3(1.0 - roughness), F0) * envBRDF.y;
         vec3 specularIBL = prefilteredColor * F_env;
 
-        ambient = (diffuseIBL + specularIBL) * (occlusion * uLighting.iblParams.y);
+        ambient = (diffuseAmbient + specularIBL) * (finalOcclusion * uLighting.iblParams.y);
     } else {
         float ambIntensity = uLighting.cameraPosAndAmbientIntensity.w;
-        vec3 ambLight = (ambIntensity * occlusion) * uLighting.ambientColorAndShadowBias.rgb;
-        vec3 ambientDiffuse = baseColor.rgb * (1.0 - metallic) * ambLight * diffTransScale;
+        vec3 ambLight = (ambIntensity * finalOcclusion) * uLighting.ambientColorAndShadowBias.rgb;
+        vec3 diffuseRadiance = ambLight + ssgiRadiance + probeRadiance;
+        vec3 ambientDiffuse = baseColor.rgb * (1.0 - metallic) * diffuseRadiance * diffTransScale;
         vec3 ambientSpecular = mix(F0, baseColor.rgb, metallic) * (1.0 - roughness) * ambLight;
         ambient = ambientDiffuse + ambientSpecular;
     }

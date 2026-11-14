@@ -4,6 +4,7 @@
 #include "core/assert.h"
 #include "render/asset_manager.h"
 #include "render/gpu_material.h"
+#include "render/lighting_data.h"
 #include "render/material.h"
 #include "rhi/rhi_device.h"
 
@@ -35,6 +36,16 @@ static int testMaterialDescriptorSetLayoutCreation() {
     const auto layout = layoutRes.value();
     TEST_CHECK(layout.isValid());
 
+    const auto sceneLayoutDesc = createSceneDescriptorSetLayoutDesc();
+    TEST_CHECK(sceneLayoutDesc.bindings.size() == 7);
+    TEST_CHECK(sizeof(GpuLightingData) == 2016);
+
+    auto sceneLayoutRes = device.createDescriptorSetLayout(sceneLayoutDesc);
+    TEST_CHECK(sceneLayoutRes.hasValue());
+    const auto sceneLayout = sceneLayoutRes.value();
+    TEST_CHECK(sceneLayout.isValid());
+
+    device.destroyDescriptorSetLayout(sceneLayout);
     device.destroyDescriptorSetLayout(layout);
     return 0;
 }
