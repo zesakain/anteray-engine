@@ -52,13 +52,13 @@ GpuEnvironmentMap::createFromHdr(rhi::RhiDevice& device, const HdrImage& hdr, ui
 
     // 4. Generate 2D split-sum BRDF integration LUT
     // Cached once across instances as Cook-Torrance GGX split-sum is invariant to environment maps.
-    static const BrdfLutData kCachedBrdfLut = IblProcessor::generateBrdfLut(128, 128);
-    if (!kCachedBrdfLut.isValid()) {
+    static const BrdfLutData s_cachedBrdfLut = IblProcessor::generateBrdfLut(128, 128);
+    if (!s_cachedBrdfLut.isValid()) {
         return Error{.code = ErrorCode::ResourceCreationFailed,
                      .message = "Failed to generate BRDF integration LUT"};
     }
 
-    auto lutTexRes = GpuTexture::createBrdfLut(device, kCachedBrdfLut);
+    auto lutTexRes = GpuTexture::createBrdfLut(device, s_cachedBrdfLut);
     if (!lutTexRes.hasValue()) {
         return lutTexRes.error();
     }

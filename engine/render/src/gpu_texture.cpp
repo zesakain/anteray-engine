@@ -291,7 +291,7 @@ GpuTexture::createCubemap(rhi::RhiDevice& device, const CubemapData& cubemapData
                 device.destroyTexture(texture);
                 return writeRes.error();
             }
-            copyOps.push_back(CopyOp{.offset = currentOffset, .mip = m, .face = f});
+            copyOps.push_back(CopyOp{currentOffset, m, f});
             currentOffset += faceBytes;
         }
     }
