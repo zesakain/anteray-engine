@@ -140,15 +140,18 @@ int main(int argc, char** argv) {
         Vec3 camPos;
         Vec3 camTarget;
         float fov;
+        float farPlane{100.0F};
     };
 
     std::vector<SceneInfo> scenes = {
         {"Sponza Atrium", "assets/benchmark-scenes/Sponza_Benchmark.hikari", Vec3(0.0F, 2.0F, 0.0F),
-         Vec3(0.0F, 2.0F, 5.0F), 60.0F},
+         Vec3(0.0F, 2.0F, 5.0F), 60.0F, 200.0F},
         {"Flight Helmet", "assets/benchmark-scenes/FlightHelmet_Benchmark.hikari",
-         Vec3(0.0F, 0.35F, 0.85F), Vec3(0.0F, 0.20F, 0.0F), 45.0F},
+         Vec3(0.0F, 0.35F, 0.85F), Vec3(0.0F, 0.20F, 0.0F), 45.0F, 50.0F},
         {"Damaged Helmet", "assets/benchmark-scenes/DamagedHelmet_Benchmark.hikari",
-         Vec3(0.0F, 0.0F, 2.4F), Vec3(0.0F, 0.0F, 0.0F), 45.0F},
+         Vec3(0.0F, 0.0F, 2.4F), Vec3(0.0F, 0.0F, 0.0F), 45.0F, 50.0F},
+        {"Amazon Bistro", "assets/benchmark-scenes/Bistro_Benchmark.hikari",
+         Vec3(-26.43F, 3.16F, 11.17F), Vec3(-16.85F, 2.84F, 14.03F), 65.0F, 500.0F},
     };
 
     struct PresetConfig {
@@ -202,7 +205,7 @@ int main(int argc, char** argv) {
         Mat4 view = Mat4::lookAt(scene.camPos, scene.camTarget, Vec3::unitY());
         Mat4 proj = Mat4::perspective(
             toRadians(scene.fov), static_cast<float>(baseWidth) / static_cast<float>(baseHeight),
-            0.1F, 100.0F);
+            0.1F, scene.farPlane);
         Mat4 vp = proj * view;
 
         for (const auto& preset : presetConfigs) {

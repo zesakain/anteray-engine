@@ -235,6 +235,79 @@ static bool generateDamagedHelmet(const std::filesystem::path& outDir) {
     return true;
 }
 
+static bool generateBistro(const std::filesystem::path& outDir) {
+    const std::string gltfPath = "test-assets/benchmark/bistro/bistro.gltf";
+    if (!std::filesystem::exists(gltfPath)) {
+        std::cerr << "Bistro glTF source not found: " << gltfPath << '\n';
+        return false;
+    }
+
+    world::World world;
+    render::AssetManager assetMgr;
+    std::cout << "Importing Amazon Lumberyard Bistro glTF hierarchy...\n";
+    auto importRes = render::GltfSceneImporter::importScene(gltfPath, world, &assetMgr);
+    if (!importRes.success) {
+        std::cerr << "Failed to import Bistro: " << importRes.errorMessage << '\n';
+        return false;
+    }
+
+    // Directional Sunlight with shadow mapping
+    auto sun = world.createEntity("Sunlight");
+    render::DirectionalLightComponent dl{};
+    dl.direction = Vec3(0.5F, 0.75F, -0.4F).normalized();
+    dl.color = Vec3(1.0F, 0.95F, 0.88F);
+    dl.intensity = 4.0F;
+    dl.castShadows = true;
+    dl.shadowBias = 0.0025F;
+    dl.enabled = true;
+    world.setComponent(sun, dl);
+
+    // Primary Overview Camera looking down the street toward the cafe terrace
+    auto cam = world.createEntity("DefaultBenchmarkCamera");
+    world.setComponent(cam, world::TransformComponent{Transform(Vec3(-26.43F, 3.16F, 11.17F))});
+    render::CameraComponent cc{};
+    cc.fovDegrees = 65.0F;
+    cc.nearPlane = 0.1F;
+    cc.farPlane = 2000.0F;
+    cc.isPrimary = true;
+    world.setComponent(cam, cc);
+
+    world::updateHierarchyTransforms(world);
+
+    // Post-processing: ACES fitted tone mapping + exposure 1.0 + bloom
+    render::PostProcessSettings pp{};
+    pp.enabled = true;
+    pp.exposure = 1.0F;
+    pp.toneMapOp = render::ToneMapOperator::AcesFitted;
+    pp.bloomEnabled = true;
+    pp.bloomThreshold = 1.0F;
+    pp.bloomIntensity = 0.04F;
+    pp.bloomKnee = 0.5F;
+    pp.reinhardWhitePoint = 4.0F;
+
+    framework::SceneMetadata meta{
+        .name = "Amazon Lumberyard Bistro Benchmark",
+        .generator = "Hikari Engine Benchmark Certification",
+        .timestamp = 20261114,
+    };
+
+    const Vec3 camPos(-26.43F, 3.16F, 11.17F);
+    const Vec3 camTarget(-16.85F, 2.84F, 14.03F);
+
+    const std::filesystem::path dest = outDir / "Bistro_Benchmark.hikari";
+    std::cout << "Serializing Bistro benchmark scene to " << dest.string() << "...\n";
+    auto serRes =
+        framework::SceneSerializer::serializeToFile(world, dest, meta, {}, pp, camPos, camTarget);
+    if (!serRes.hasValue()) {
+        std::cerr << "Failed to serialize Bistro benchmark: " << serRes.error().message << '\n';
+        return false;
+    }
+
+    std::cout << "[SUCCESS] Wrote " << dest.string() << " (" << importRes.nodeCount + 2
+              << " entities)\n";
+    return true;
+}
+
 int main(int argc, char** argv) {
     std::filesystem::path outDir = "assets/benchmark-scenes";
     if (argc > 1) {
@@ -250,6 +323,7 @@ int main(int argc, char** argv) {
     ok &= generateSponza(outDir);
     ok &= generateFlightHelmet(outDir);
     ok &= generateDamagedHelmet(outDir);
+    ok &= generateBistro(outDir);
 
     if (!ok) {
         std::cerr << "One or more benchmark scenes failed to generate.\n";
