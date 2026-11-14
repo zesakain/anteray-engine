@@ -2559,12 +2559,18 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     Vec3 dir = Vec3(lightingData.dirLight.directionAndCastShadow.x,
                     lightingData.dirLight.directionAndCastShadow.y,
                     lightingData.dirLight.directionAndCastShadow.z);
+    Vec3 camPos(lightingData.cameraPosAndAmbientIntensity.x,
+                lightingData.cameraPosAndAmbientIntensity.y,
+                lightingData.cameraPosAndAmbientIntensity.z);
     Vec3 target(0.0F, 0.0F, 0.0F);
-    Vec3 lightPos = target + dir * 25.0F;
+    if (camPos.lengthSq() > 1.0F) {
+        target = camPos;
+    }
+    float orthoSize = std::clamp(settings_.shadows.distance * 0.40F, 12.0F, 60.0F);
+    float farPlane = std::max(60.0F, settings_.shadows.distance * 2.0F);
+    Vec3 lightPos = target + dir * (farPlane * 0.45F);
     Vec3 up = std::abs(dir.y) > 0.99F ? Vec3::unitZ() : Vec3::unitY();
     Mat4 lightView = Mat4::lookAt(lightPos, target, up);
-    float orthoSize = std::clamp(settings_.shadows.distance * 0.15F, 5.0F, 50.0F);
-    float farPlane = std::max(20.0F, settings_.shadows.distance);
     Mat4 lightProj =
         Mat4::orthographic(-orthoSize, orthoSize, -orthoSize, orthoSize, 0.1F, farPlane);
     Mat4 lightSpaceMatrix = lightProj * lightView;
