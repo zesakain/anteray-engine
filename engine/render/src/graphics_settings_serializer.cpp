@@ -147,6 +147,30 @@ ToneMapOperator stringToToneMap(std::string_view s) noexcept {
     return ToneMapOperator::AcesFitted;
 }
 
+std::string_view timeOfDayToString(EnvironmentTimeOfDay tod) noexcept {
+    switch (tod) {
+    case EnvironmentTimeOfDay::Daylight:
+        return "Daylight";
+    case EnvironmentTimeOfDay::Sunset:
+        return "Sunset";
+    case EnvironmentTimeOfDay::Night:
+        return "Night";
+    case EnvironmentTimeOfDay::Custom:
+        return "Custom";
+    }
+    return "Daylight";
+}
+
+EnvironmentTimeOfDay stringToTimeOfDay(std::string_view s) noexcept {
+    if (s == "Sunset")
+        return EnvironmentTimeOfDay::Sunset;
+    if (s == "Night")
+        return EnvironmentTimeOfDay::Night;
+    if (s == "Custom")
+        return EnvironmentTimeOfDay::Custom;
+    return EnvironmentTimeOfDay::Daylight;
+}
+
 std::string_view debugViewToString(DebugViewMode m) noexcept {
     switch (m) {
     case DebugViewMode::Lit:
@@ -215,6 +239,7 @@ Result<std::string> GraphicsSettingsSerializer::serializeToString(const Graphics
     lightingObj.set("indirectLighting", JsonValue(settings.lighting.indirectLighting));
     lightingObj.set("exposure", JsonValue(static_cast<double>(settings.lighting.exposure)));
     lightingObj.set("whiteBalance", JsonValue(static_cast<double>(settings.lighting.whiteBalance)));
+    lightingObj.set("timeOfDay", JsonValue(timeOfDayToString(settings.lighting.timeOfDay)));
     root.set("lighting", std::move(lightingObj));
 
     // Shadows
@@ -378,6 +403,9 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
         settings.lighting.exposure = l->getFloat("exposure", settings.lighting.exposure);
         settings.lighting.whiteBalance =
             l->getFloat("whiteBalance", settings.lighting.whiteBalance);
+        if (l->contains("timeOfDay")) {
+            settings.lighting.timeOfDay = stringToTimeOfDay(l->getString("timeOfDay", "Daylight"));
+        }
     }
 
     // 3. Shadows

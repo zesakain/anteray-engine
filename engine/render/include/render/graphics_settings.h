@@ -17,6 +17,7 @@
 #pragma once
 
 #include "core/math.h"
+#include "render/environment_map.h"
 #include "render/post_process_types.h"
 #include "rhi/gpu_caps.h"
 
@@ -118,6 +119,8 @@ struct LightingSettings {
     bool indirectLighting{false};     ///< Diffuse GI (Milestone 11C+)
     float exposure{1.0F};             ///< Photometric camera exposure in range [0.01, 100.0]
     float whiteBalance{6500.0F};      ///< Correlated color temperature in Kelvin [2000, 12000]
+    EnvironmentTimeOfDay timeOfDay{
+        EnvironmentTimeOfDay::Daylight}; ///< Atmospheric condition (Milestone 11C+)
 
     bool operator==(const LightingSettings& other) const noexcept = default;
 };

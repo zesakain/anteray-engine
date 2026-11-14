@@ -213,6 +213,20 @@ public:
     void setEnvironmentMap(GpuEnvironmentMap&& envMap);
     [[nodiscard]] Result<void> loadEnvironmentMap(const HdrImage& hdr);
     [[nodiscard]] Result<void> loadEnvironmentMapFromFile(std::string_view filePath);
+
+    /// @brief Applies atmospheric lighting condition (daylight, sunset, night), generating or
+    /// binding corresponding IBL cubemaps and synchronizing tone mapping color grading.
+    [[nodiscard]] Result<void> applyAtmosphere(const AtmosphereParameters& params);
+
+    /// @brief Applies atmospheric lighting condition to the renderer and synchronizes any
+    /// DirectionalLightComponent present in the World, or creates one if absent.
+    [[nodiscard]] Result<void> applyAtmosphere(world::World& world,
+                                               const AtmosphereParameters& params);
+
+    /// @brief Returns current active atmospheric lighting parameters.
+    [[nodiscard]] const AtmosphereParameters& getAtmosphereParameters() const noexcept {
+        return atmosphereParams_;
+    }
     [[nodiscard]] bool isIblEnabled() const noexcept { return settings_.lighting.iblEnabled; }
     void setIblEnabled(bool enabled) noexcept { settings_.lighting.iblEnabled = enabled; }
     [[nodiscard]] float getIblIntensity() const noexcept {
@@ -383,6 +397,7 @@ private:
     std::vector<ShadowCasterItem> shadowCasters_{};
     bool shadowDirty_{true};
     Vec3 lastLightDir_{Vec3::zero()};
+    AtmosphereParameters atmosphereParams_{AtmosphereParameters::createDaylight()};
     Mat4 lastLightSpaceMatrix_{Mat4::identity()};
     world::World* lastWorld_{nullptr};
     uint32_t lastCasterCount_{0};

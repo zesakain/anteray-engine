@@ -1150,6 +1150,22 @@ Result<void> SceneRenderer::applyGraphicsSettings(const GraphicsSettings& newSet
     postProcessSettings_.contrast = validated.postProcess.contrast;
     postProcessSettings_.saturation = validated.postProcess.saturation;
 
+    if (settings_.lighting.timeOfDay != validated.lighting.timeOfDay) {
+        switch (validated.lighting.timeOfDay) {
+        case EnvironmentTimeOfDay::Daylight:
+            std::ignore = applyAtmosphere(AtmosphereParameters::createDaylight());
+            break;
+        case EnvironmentTimeOfDay::Sunset:
+            std::ignore = applyAtmosphere(AtmosphereParameters::createSunset());
+            break;
+        case EnvironmentTimeOfDay::Night:
+            std::ignore = applyAtmosphere(AtmosphereParameters::createNight());
+            break;
+        case EnvironmentTimeOfDay::Custom:
+            break;
+        }
+    }
+
     // 5. Hardware VSync toggle
     device_->setVsync(validated.performance.vsync);
 
@@ -1199,6 +1215,58 @@ Result<void> SceneRenderer::loadEnvironmentMapFromFile(std::string_view filePath
         return hdrRes.error();
     }
     return loadEnvironmentMap(hdrRes.value());
+}
+
+Result<void> SceneRenderer::applyAtmosphere(const AtmosphereParameters& params) {
+    atmosphereParams_ = params;
+    postProcessSettings_.whiteBalance = params.whiteBalance;
+    postProcessSettings_.exposure = params.exposure;
+    postProcessSettings_.contrast = params.contrast;
+    postProcessSettings_.saturation = params.saturation;
+
+    if (device_ != nullptr && settings_.lighting.iblEnabled) {
+        auto envRes = GpuEnvironmentMap::createAtmosphere(*device_, params, 64, 16, 32, 4);
+        if (!envRes.hasValue()) {
+            return envRes.error();
+        }
+        setEnvironmentMap(std::move(envRes.value()));
+    }
+    return Result<void>::success();
+}
+
+Result<void> SceneRenderer::applyAtmosphere(world::World& world,
+                                            const AtmosphereParameters& params) {
+    auto res = applyAtmosphere(params);
+    if (!res.hasValue()) {
+        return res;
+    }
+
+    auto& ecs = world.getRawWorld();
+    bool found = false;
+    auto dirQuery = ecs.query<DirectionalLightComponent>();
+    dirQuery.each([&](flecs::entity e, DirectionalLightComponent& comp) {
+        static_cast<void>(e);
+        comp.direction = params.sunDirection.normalized();
+        comp.color = params.sunColor;
+        comp.intensity = params.sunIntensity;
+        comp.castShadows = true;
+        comp.enabled = true;
+        found = true;
+    });
+
+    if (!found) {
+        auto e = ecs.entity("SunMoonLight");
+        e.set(DirectionalLightComponent{
+            .direction = params.sunDirection.normalized(),
+            .color = params.sunColor,
+            .intensity = params.sunIntensity,
+            .castShadows = true,
+            .shadowBias = 0.005F,
+            .enabled = true,
+        });
+    }
+
+    return Result<void>::success();
 }
 
 void SceneRenderer::buildRenderGraph() {
