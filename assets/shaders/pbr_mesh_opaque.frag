@@ -115,40 +115,60 @@ vec3 evaluateDirectLight(vec3 L, vec3 radiance, vec3 N, vec3 V, vec3 albedo, flo
     return (diffTerm + specTerm) * radiance * NdotL;
 }
 
-// Sample directional shadow map with multi-tap PCF and slope-scaled depth bias
-float calculateShadow(vec3 shadowCoord, float NdotL, float baseBias) {
+// Sample directional shadow map with rotated Vogel-disc PCF and slope-scaled depth bias
+const float GOLDEN_ANGLE = 2.39996323;
+
+float calculateShadow(vec3 shadowCoord, float NdotL, float baseBias, vec2 screenPos) {
     if (shadowCoord.z > 1.0 || shadowCoord.z < 0.0 ||
         shadowCoord.x < 0.0 || shadowCoord.x > 1.0 ||
         shadowCoord.y < 0.0 || shadowCoord.y > 1.0) {
         return 1.0;
     }
 
-    float bias = max(baseBias * (1.0 - NdotL), baseBias * 0.2);
+    // Adaptive slope bias: scales smoothly with tangent of angle to prevent grazing acne
+    float tanTheta = clamp(sqrt(max(0.0, 1.0 - NdotL * NdotL)) / max(NdotL, 0.001), 0.0, 4.0);
+    float bias = baseBias * (0.6 + 0.4 * tanTheta);
     float currentDepth = shadowCoord.z - bias;
 
     uint shadowRes = uLighting.shadowPackedParams & 0xFFFFu;
     uint pcfQuality = (uLighting.shadowPackedParams >> 16u) & 0xFFu;
     float invRes = (shadowRes > 0u) ? (1.0 / float(shadowRes)) : 0.00048828125;
-    vec2 texelSize = vec2(invRes);
 
     if (pcfQuality == 0u) {
         return texture(uShadowMap, vec3(shadowCoord.xy, currentDepth));
-    } else if (pcfQuality == 1u) {
-        // 4-tap rotated bilinear filter (each tap performs 2x2 bilinear comparison covering 16 texels)
-        vec2 h = 0.5 * texelSize;
-        float s0 = texture(uShadowMap, vec3(shadowCoord.xy - h, currentDepth));
-        float s1 = texture(uShadowMap, vec3(shadowCoord.xy + vec2(h.x, -h.y), currentDepth));
-        float s2 = texture(uShadowMap, vec3(shadowCoord.xy + vec2(-h.x, h.y), currentDepth));
-        float s3 = texture(uShadowMap, vec3(shadowCoord.xy + h, currentDepth));
-        return (s0 + s1 + s2 + s3) * 0.25;
-    } else {
+    }
+
+    // Interleaved gradient noise for screen-space sample rotation
+    float noise = fract(52.9829189 * fract(dot(screenPos, vec2(0.06711056, 0.00583715))));
+    float phi = noise * 6.2831853;
+    float cosPhi = cos(phi);
+    float sinPhi = sin(phi);
+    mat2 rot = mat2(cosPhi, -sinPhi, sinPhi, cosPhi);
+
+    if (pcfQuality == 1u) {
+        // Medium: 8-tap rotated Vogel disc PCF
         float shadow = 0.0;
-        for (int x = -1; x <= 1; ++x) {
-            for (int y = -1; y <= 1; ++y) {
-                shadow += texture(uShadowMap, vec3(shadowCoord.xy + vec2(x, y) * texelSize, currentDepth));
-            }
+        const int TAPS_MED = 8;
+        float filterRadius = 1.25 * invRes;
+        for (int i = 0; i < TAPS_MED; ++i) {
+            float r = sqrt((float(i) + 0.5) / float(TAPS_MED)) * filterRadius;
+            float theta = float(i) * GOLDEN_ANGLE;
+            vec2 offset = rot * vec2(cos(theta), sin(theta)) * r;
+            shadow += texture(uShadowMap, vec3(shadowCoord.xy + offset, currentDepth));
         }
-        return shadow / 9.0;
+        return shadow * (1.0 / float(TAPS_MED));
+    } else {
+        // High: 16-tap rotated Vogel disc PCF for smooth cinematic penumbra
+        float shadow = 0.0;
+        const int TAPS_HIGH = 16;
+        float filterRadius = 2.0 * invRes;
+        for (int i = 0; i < TAPS_HIGH; ++i) {
+            float r = sqrt((float(i) + 0.5) / float(TAPS_HIGH)) * filterRadius;
+            float theta = float(i) * GOLDEN_ANGLE;
+            vec2 offset = rot * vec2(cos(theta), sin(theta)) * r;
+            shadow += texture(uShadowMap, vec3(shadowCoord.xy + offset, currentDepth));
+        }
+        return shadow * (1.0 / float(TAPS_HIGH));
     }
 }
 
@@ -197,7 +217,7 @@ void main() {
         if (NdotL > 0.0) {
             float shadow = 1.0;
             if (uLighting.dirLight.directionAndCastShadow.w > 0.5) {
-                shadow = calculateShadow(inShadowCoord, NdotL, uLighting.ambientColorAndShadowBias.w);
+                shadow = calculateShadow(inShadowCoord, NdotL, uLighting.ambientColorAndShadowBias.w, gl_FragCoord.xy);
             }
             if (shadow > 0.001) {
                 vec3 radiance = uLighting.dirLight.colorAndIntensity.rgb * uLighting.dirLight.colorAndIntensity.w;
@@ -217,8 +237,10 @@ void main() {
                 vec3 L = toLight / dist;
                 float NdotL = max(dot(N, L), 0.0);
                 if (NdotL > 0.0) {
-                    float atten = 1.0 / (dist * dist + 1.0);
-                    float window = clamp(1.0 - pow(dist / range, 4.0), 0.0, 1.0);
+                    float distSq = max(dist * dist, 0.0001);
+                    float atten = 1.0 / distSq;
+                    float factor = dist / range;
+                    float window = clamp(1.0 - factor * factor * factor * factor, 0.0, 1.0);
                     atten *= (window * window);
 
                     vec3 radiance = uLighting.pointLights[i].colorAndIntensity.rgb *
@@ -249,8 +271,10 @@ void main() {
                     spotAtten = spotAtten * spotAtten;
 
                     if (spotAtten > 0.0) {
-                        float distAtten = 1.0 / (dist * dist + 1.0);
-                        float window = clamp(1.0 - pow(dist / range, 4.0), 0.0, 1.0);
+                        float distSq = max(dist * dist, 0.0001);
+                        float distAtten = 1.0 / distSq;
+                        float factor = dist / range;
+                        float window = clamp(1.0 - factor * factor * factor * factor, 0.0, 1.0);
                         distAtten *= (window * window);
 
                         vec3 radiance = uLighting.spotLights[i].colorAndCastShadow.rgb *
@@ -280,12 +304,13 @@ void main() {
         vec3 irradiance = texture(uIrradianceMap, N).rgb;
         vec3 diffuseIBL = kD_ibl * irradiance * baseColor.rgb;
 
-        // Specular IBL
+        // Specular IBL (Split-Sum Cook-Torrance with roughness-compensated Fresnel)
         vec3 R = reflect(-V, N);
         float maxMip = uLighting.iblParams.z;
         vec3 prefilteredColor = textureLod(uPrefilteredEnvMap, R, roughness * maxMip).rgb;
         vec2 envBRDF = texture(uBrdfLut, vec2(NdotV, roughness)).rg;
-        vec3 specularIBL = prefilteredColor * (F_ibl * envBRDF.x + envBRDF.y);
+        vec3 F_env = F0 * envBRDF.x + max(vec3(1.0 - roughness), F0) * envBRDF.y;
+        vec3 specularIBL = prefilteredColor * F_env;
 
         ambient = (diffuseIBL + specularIBL) * (occlusion * uLighting.iblParams.y);
     } else {
