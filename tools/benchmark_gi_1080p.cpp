@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
             renderer.updateGpuTimings(*device);
         }
 
-        // Benchmark 30 frames
+        // Benchmark 50 frames
         std::vector<double> frameTimes;
         std::vector<double> gtaoTimes;
         std::vector<double> ssgiTimes;
@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
         std::vector<double> totalGiTimes;
         std::vector<double> cpuRecordTimes;
 
-        for (int i = 0; i < 30; ++i) {
+        for (int i = 0; i < 50; ++i) {
             auto startCpu = std::chrono::high_resolution_clock::now();
             auto cmdRes = device->createCommandList();
             if (!cmdRes.hasValue())
@@ -197,9 +197,6 @@ int main(int argc, char** argv) {
             renderer.renderScene(world, assetMgr, *device, *cmd, viewProj);
             if (renderer.isPostProcessingEnabled()) {
                 renderer.renderPostProcess(*cmd);
-            }
-            if (i == 29 && !captureName.empty()) {
-                cmd->copyTextureToBuffer(renderer.getColorTarget(), rbHandle);
             }
             cmd->end();
             auto endCpu = std::chrono::high_resolution_clock::now();
@@ -225,9 +222,18 @@ int main(int argc, char** argv) {
         }
 
         if (!captureName.empty()) {
-            std::vector<uint8_t> pxBuffer(byteSize, 0);
-            if (device->readBuffer(rbHandle, 0, pxBuffer.data(), byteSize).hasValue()) {
-                savePpm(outDir + "/" + captureName, pxBuffer.data(), width, height);
+            auto cmdRes = device->createCommandList();
+            if (cmdRes.hasValue()) {
+                auto cmd = std::move(cmdRes.value());
+                cmd->begin();
+                cmd->copyTextureToBuffer(renderer.getColorTarget(), rbHandle);
+                cmd->end();
+                std::ignore = device->submit(cmd.get());
+                device->waitIdle();
+                std::vector<uint8_t> pxBuffer(byteSize, 0);
+                if (device->readBuffer(rbHandle, 0, pxBuffer.data(), byteSize).hasValue()) {
+                    savePpm(outDir + "/" + captureName, pxBuffer.data(), width, height);
+                }
             }
         }
 

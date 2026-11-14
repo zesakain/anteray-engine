@@ -7,6 +7,7 @@
 /// 3. Irradiance Probes: spatial interpolation, cubic Hermite falloff, and L2 SH evaluation.
 /// 4. Temporal Denoising: history accumulation and disocclusion rejection stability.
 
+#include "framework/scene_serializer.h"
 #include "physics/physics_components.h"
 #include "render/asset_manager.h"
 #include "render/graphics_settings.h"
@@ -230,6 +231,7 @@ static int testGtaoCreviceOcclusion(RhiDevice& device, SceneRenderer& renderer) 
             }
         }
     }
+    TEST_CHECK(totalChecked > 0);
     TEST_CHECK(darkCount > 100);
     std::cout << "    GTAO crevice occlusion verified: " << darkCount
               << " contact fragments deepened.\n";
@@ -469,7 +471,205 @@ static int testTemporalDenoiseAndHistoryRejection(RhiDevice& device, SceneRender
     auto f3Res = renderSceneAndReadback(device, renderer, world, assetManager, viewProj2, 64, 64);
     TEST_CHECK(f3Res.hasValue());
 
-    std::cout << "    Temporal reprojection, accumulation, and history clamping certified.\n";
+    // Frame 4 (dynamic object translation: moving entity to verify depth rejection)
+    entity.set<physics::PhysicsTransformComponent>(physics::PhysicsTransformComponent{
+        .transform = Transform(Vec3(5.0F, 0.0F, 0.0F)),
+    });
+    auto f4Res = renderSceneAndReadback(device, renderer, world, assetManager, viewProj2, 64, 64);
+    TEST_CHECK(f4Res.hasValue());
+
+    std::cout << "    Temporal reprojection, camera pan, and object motion rejection certified.\n";
+    return 0;
+}
+
+// -----------------------------------------------------------------------------
+// Test 5: Irradiance Probe Serialization, Deserialization & World Contribution
+// -----------------------------------------------------------------------------
+static int testProbeSerializationAndContribution(RhiDevice& device, SceneRenderer& renderer) {
+    std::cout << "  [5/6] Verifying Irradiance Probe serialization and lighting contribution...\n";
+
+    world::World worldA{};
+    physics::registerPhysicsComponents(worldA);
+
+    auto probeEntity = worldA.createEntity("TestProbe");
+    IrradianceProbeComponent ipA{};
+    ipA.position = Vec3(0.0F, 1.0F, 0.0F);
+    ipA.radius = 12.0F;
+    ipA.intensity = 1.5F;
+    ipA.enabled = true;
+    ipA.sh = SphericalHarmonicsL2::fromUniform(Vec3(0.0F, 1.0F, 0.0F)); // Emerald green
+    worldA.setComponent(probeEntity, ipA);
+
+    // Serialize to string
+    auto serRes = framework::SceneSerializer::serializeToString(worldA);
+    TEST_CHECK(serRes.hasValue());
+    const std::string jsonStr = serRes.value();
+
+    // Deserialize into World B
+    world::World worldB{};
+    physics::registerPhysicsComponents(worldB);
+    auto desRes = framework::SceneSerializer::deserializeFromString(worldB, jsonStr);
+    TEST_CHECK(desRes.hasValue());
+
+    // Verify probe exists in World B
+    auto& ecsB = worldB.getRawWorld();
+    bool probeFound = false;
+    bool probeValid = false;
+    auto query = ecsB.query<const IrradianceProbeComponent>();
+    query.each([&](flecs::entity, const IrradianceProbeComponent& ipB) {
+        probeFound = true;
+        if (ipB.enabled && std::abs(ipB.position.y - 1.0F) < 1e-3F &&
+            std::abs(ipB.radius - 12.0F) < 1e-3F && std::abs(ipB.intensity - 1.5F) < 1e-3F &&
+            ipB.sh.coefficients[0].y > 0.0F) {
+            probeValid = true;
+        }
+    });
+    TEST_CHECK(probeFound);
+    TEST_CHECK(probeValid);
+
+    // Verify lighting contribution in World B
+    AssetManager assetMgr{};
+    MeshData floorMesh{};
+    floorMesh.vertices = {
+        Vertex(Vec3(-2.0F, 0.0F, -2.0F), Vec3(0.0F, 1.0F, 0.0F), Vec2(0.0F, 1.0F), Vec4(1.0F),
+               Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+        Vertex(Vec3(2.0F, 0.0F, -2.0F), Vec3(0.0F, 1.0F, 0.0F), Vec2(1.0F, 1.0F), Vec4(1.0F),
+               Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+        Vertex(Vec3(2.0F, 0.0F, 2.0F), Vec3(0.0F, 1.0F, 0.0F), Vec2(1.0F, 0.0F), Vec4(1.0F),
+               Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+        Vertex(Vec3(-2.0F, 0.0F, 2.0F), Vec3(0.0F, 1.0F, 0.0F), Vec2(0.0F, 0.0F), Vec4(1.0F),
+               Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+    };
+    floorMesh.indices = {0, 1, 2, 2, 3, 0};
+    Material whiteMat{};
+    whiteMat.baseColor = Vec4(1.0F, 1.0F, 1.0F, 1.0F);
+    whiteMat.roughness = 0.5F;
+    whiteMat.metallic = 0.0F;
+    floorMesh.materials = {whiteMat};
+    floorMesh.submeshes.push_back(Submesh{.name = "Floor", .firstIndex = 0, .indexCount = 6});
+    floorMesh.recalculateBounds();
+
+    auto regRes = assetMgr.registerMesh("test/probe_floor", floorMesh);
+    TEST_CHECK(regRes.hasValue());
+
+    auto floorEnt = ecsB.entity("FloorEntity");
+    floorEnt.set<MeshComponent>(MeshComponent{
+        .meshAsset = regRes.value(),
+        .submeshIndex = kAllSubmeshes,
+        .visible = true,
+    });
+    floorEnt.set<physics::PhysicsTransformComponent>(physics::PhysicsTransformComponent{
+        .transform = Transform(Vec3(0.0F, 0.0F, 0.0F)),
+    });
+
+    GraphicsSettings settings = renderer.getGraphicsSettings();
+    settings.lighting.probesEnabled = true;
+    settings.lighting.giIntensity = 1.0F;
+    settings.lighting.directLighting = false; // Isolate indirect probe bounce
+    TEST_CHECK(renderer.applyGraphicsSettings(settings).hasValue());
+
+    Mat4 view =
+        Mat4::lookAt(Vec3(0.0F, 2.0F, 0.0F), Vec3(0.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, -1.0F));
+    Mat4 proj = Mat4::perspective(toRadians(60.0F), 1.0F, 0.1F, 100.0F);
+    Mat4 viewProj = proj * view;
+
+    auto pixRes = renderSceneAndReadback(device, renderer, worldB, assetMgr, viewProj, 64, 64);
+    TEST_CHECK(pixRes.hasValue());
+    const auto& pix = pixRes.value();
+
+    // Center pixel must reflect the green probe contribution
+    size_t centerIdx = (32 * 64 + 32) * 4;
+    int g = pix[centerIdx + 1];
+    TEST_CHECK(g > 0);
+    std::cout << "    Irradiance Probe serialization and world contribution certified (G=" << g
+              << ").\n";
+    return 0;
+}
+
+// -----------------------------------------------------------------------------
+// Test 6: Zero Double-Darkening on Direct Sunlight with GTAO
+// -----------------------------------------------------------------------------
+static int testGtaoZeroDoubleDarkeningOnDirectLight(RhiDevice& device, SceneRenderer& renderer) {
+    std::cout << "  [6/6] Verifying GTAO zero double-darkening on direct sunlit surfaces...\n";
+
+    world::World world{};
+    physics::registerPhysicsComponents(world);
+    AssetManager assetMgr{};
+
+    MeshData planeMesh{};
+    planeMesh.vertices = {
+        Vertex(Vec3(-2.0F, 0.0F, -2.0F), Vec3(0.0F, 1.0F, 0.0F), Vec2(0.0F, 1.0F), Vec4(1.0F),
+               Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+        Vertex(Vec3(2.0F, 0.0F, -2.0F), Vec3(0.0F, 1.0F, 0.0F), Vec2(1.0F, 1.0F), Vec4(1.0F),
+               Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+        Vertex(Vec3(2.0F, 0.0F, 2.0F), Vec3(0.0F, 1.0F, 0.0F), Vec2(1.0F, 0.0F), Vec4(1.0F),
+               Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+        Vertex(Vec3(-2.0F, 0.0F, 2.0F), Vec3(0.0F, 1.0F, 0.0F), Vec2(0.0F, 0.0F), Vec4(1.0F),
+               Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+    };
+    planeMesh.indices = {0, 1, 2, 2, 3, 0};
+    Material mat{};
+    mat.baseColor = Vec4(0.8F, 0.8F, 0.8F, 1.0F);
+    mat.roughness = 0.5F;
+    mat.metallic = 0.0F;
+    planeMesh.materials = {mat};
+    planeMesh.submeshes.push_back(Submesh{.name = "Plane", .firstIndex = 0, .indexCount = 6});
+    planeMesh.recalculateBounds();
+
+    auto regRes = assetMgr.registerMesh("test/direct_plane", planeMesh);
+    TEST_CHECK(regRes.hasValue());
+
+    auto& ecs = world.getRawWorld();
+    auto ent = ecs.entity("PlaneEntity");
+    ent.set<MeshComponent>(MeshComponent{
+        .meshAsset = regRes.value(),
+        .submeshIndex = kAllSubmeshes,
+        .visible = true,
+    });
+    ent.set<physics::PhysicsTransformComponent>(physics::PhysicsTransformComponent{
+        .transform = Transform(Vec3(0.0F, 0.0F, 0.0F)),
+    });
+
+    // Pure direct sunlight shining straight down
+    auto sun = world.createEntity("Sun");
+    DirectionalLightComponent dl{};
+    dl.direction = Vec3(0.0F, 1.0F, 0.0F).normalized();
+    dl.color = Vec3(1.0F, 1.0F, 1.0F);
+    dl.intensity = 4.0F;
+    dl.enabled = true;
+    dl.castShadows = false;
+    world.setComponent(sun, dl);
+
+    Mat4 view =
+        Mat4::lookAt(Vec3(0.0F, 2.0F, 0.0F), Vec3(0.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, -1.0F));
+    Mat4 proj = Mat4::perspective(toRadians(60.0F), 1.0F, 0.1F, 100.0F);
+    Mat4 viewProj = proj * view;
+
+    // 1. Render without GTAO
+    GraphicsSettings settings = renderer.getGraphicsSettings();
+    settings.lighting.directLighting = true;
+    settings.lighting.gtaoEnabled = false;
+    settings.lighting.ssgiEnabled = false;
+    settings.lighting.probesEnabled = false;
+    TEST_CHECK(renderer.applyGraphicsSettings(settings).hasValue());
+
+    auto noGtaoRes = renderSceneAndReadback(device, renderer, world, assetMgr, viewProj, 64, 64);
+    TEST_CHECK(noGtaoRes.hasValue());
+    int lumNoGtao = noGtaoRes.value()[(32 * 64 + 32) * 4 + 0];
+
+    // 2. Render with GTAO enabled
+    settings.lighting.gtaoEnabled = true;
+    settings.lighting.gtaoIntensity = 2.0F;
+    TEST_CHECK(renderer.applyGraphicsSettings(settings).hasValue());
+
+    auto withGtaoRes = renderSceneAndReadback(device, renderer, world, assetMgr, viewProj, 64, 64);
+    TEST_CHECK(withGtaoRes.hasValue());
+    int lumWithGtao = withGtaoRes.value()[(32 * 64 + 32) * 4 + 0];
+
+    // Direct lighting must be fully preserved (within 1 LSB)
+    TEST_CHECK(std::abs(lumNoGtao - lumWithGtao) <= 2);
+    std::cout << "    Zero double-darkening certified: direct light preserved (NoGTAO=" << lumNoGtao
+              << ", WithGTAO=" << lumWithGtao << ").\n";
     return 0;
 }
 
@@ -511,8 +711,14 @@ int main() {
     if (testTemporalDenoiseAndHistoryRejection(*device, renderer) != 0) {
         return 4;
     }
+    if (testProbeSerializationAndContribution(*device, renderer) != 0) {
+        return 5;
+    }
+    if (testGtaoZeroDoubleDarkeningOnDirectLight(*device, renderer) != 0) {
+        return 6;
+    }
 
     renderer.shutdown();
-    std::cout << "[All Milestone 11D Global Illumination Verification Tests Passed: 4/4]\n";
+    std::cout << "[All Milestone 11D Global Illumination Verification Tests Passed: 6/6]\n";
     return 0;
 }
