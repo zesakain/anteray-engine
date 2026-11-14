@@ -181,11 +181,13 @@ int main(int argc, char** argv) {
             }
 
             cmd->end();
-            (void)device->submit(cmd.get());
-            device->waitIdle();
 
+            // CPU frame recording completed before submission
             Timestamp cpuEnd = Timestamp::now();
             lastCpuDuration = cpuEnd - cpuStart;
+
+            (void)device->submit(cmd.get());
+            device->waitIdle();
         }
 
         const auto& tel = editor.getTelemetryTracker();
@@ -249,6 +251,17 @@ int main(int argc, char** argv) {
                                                    nullptr, &editor.getSceneRenderer());
             renderAndCaptureWorkload("Damaged Helmet Benchmark", 60,
                                      "telemetry_damaged_helmet.ppm");
+        }
+    }
+
+    // 5. Amazon Lumberyard Bistro Benchmark Scene
+    {
+        const char* bistroPath = "assets/benchmark-scenes/Bistro_Benchmark.hikari";
+        if (std::filesystem::exists(bistroPath)) {
+            editor.getWorkspaceManager().openScene(world, bistroPath, &editor.getSelectionModel(),
+                                                   nullptr, &editor.getSceneRenderer());
+            renderAndCaptureWorkload("Amazon Lumberyard Bistro Benchmark", 60,
+                                     "telemetry_bistro_benchmark.ppm");
         }
     }
 
