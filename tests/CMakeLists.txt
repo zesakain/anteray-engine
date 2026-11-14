@@ -225,6 +225,12 @@ target_link_libraries(lighting_upgrade_test PRIVATE hikari::engine_render hikari
 add_test(NAME lighting_upgrade_test COMMAND lighting_upgrade_test)
 set_tests_properties(lighting_upgrade_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Global Illumination & Indirect Lighting Verification Tests (Milestone 11D)
+add_executable(gi_render_test unit/render/gi_render_test.cpp)
+target_link_libraries(gi_render_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
+add_test(NAME gi_render_test COMMAND gi_render_test)
+set_tests_properties(gi_render_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Physics Unit Tests
 add_executable(physics_test unit/physics/physics_test.cpp)
 target_link_libraries(physics_test PRIVATE hikari::engine_physics)
@@ -263,6 +269,9 @@ if(HIKARI_BUILD_EDITOR)
     add_executable(editor_preferences_test unit/editor/editor_preferences_test.cpp)
     target_link_libraries(editor_preferences_test PRIVATE hikari::editor_lib hikari::engine_framework hikari::engine_world hikari::engine_rhi)
     add_test(NAME editor_preferences_test COMMAND editor_preferences_test)
+
+    add_executable(benchmark_gi_1080p ${CMAKE_SOURCE_DIR}/tools/benchmark_gi_1080p.cpp)
+    target_link_libraries(benchmark_gi_1080p PRIVATE hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi)
 
     add_executable(capture_editor_telemetry ${CMAKE_SOURCE_DIR}/tools/capture_editor_telemetry.cpp)
     target_link_libraries(capture_editor_telemetry PRIVATE hikari::editor_lib hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi imgui_static)
