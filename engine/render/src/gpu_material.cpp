@@ -137,6 +137,8 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
     uboData.occlusionStrength = material.occlusionTexture.strength;
     uboData.alphaMode = static_cast<uint32_t>(material.alphaMode);
     uboData.doubleSided = material.doubleSided ? 1u : 0u;
+    uboData.transmissionFactor = material.transmissionFactor;
+    uboData.ior = material.ior;
 
     const auto baseColorSlot = resolveSlot(material.baseColorTexture, DefaultTextureType::WhiteSRGB,
                                            uboData.hasBaseColorTex);

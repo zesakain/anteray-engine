@@ -353,6 +353,10 @@ private:
     rhi::PipelineHandle hdrPipelineOpaque_{};
     rhi::PipelineHandle pipelineDoubleSided_{};
     rhi::PipelineHandle hdrPipelineDoubleSided_{};
+    rhi::PipelineHandle pipelineTransparent_{};
+    rhi::PipelineHandle pipelineTransparentDoubleSided_{};
+    rhi::PipelineHandle hdrPipelineTransparent_{};
+    rhi::PipelineHandle hdrPipelineTransparentDoubleSided_{};
 
     uint32_t width_{0};
     uint32_t height_{0};
@@ -387,6 +391,7 @@ private:
         float depthSq{0.0F};
         bool isAlphaMasked{false};
         bool isDoubleSided{false};
+        bool isTransparent{false};
     };
 
     struct ShadowCasterItem {

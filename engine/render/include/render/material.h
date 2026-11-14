@@ -73,6 +73,8 @@ struct Material {
     float alphaCutoff{0.5F};
     AlphaMode alphaMode{AlphaMode::Opaque};
     bool doubleSided{false};
+    float transmissionFactor{0.0F}; ///< KHR_materials_transmission factor [0..1]
+    float ior{1.5F};                ///< KHR_materials_ior index of refraction (default 1.5)
 
     // Textures with color space metadata
     TextureInfo baseColorTexture{};         // sRGB
@@ -94,6 +96,8 @@ struct Material {
             .alphaCutoff = 0.5F,
             .alphaMode = AlphaMode::Opaque,
             .doubleSided = false,
+            .transmissionFactor = 0.0F,
+            .ior = 1.5F,
             .baseColorTexture = {},
             .metallicRoughnessTexture = {},
             .normalTexture = {},

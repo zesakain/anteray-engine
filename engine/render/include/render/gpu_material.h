@@ -44,11 +44,15 @@ struct alignas(16) MaterialUniformBufferData {
     uint32_t hasEmissiveTex{0};                                // offset 64..67
     uint32_t alphaMode{0};                                     // offset 68..71
     uint32_t doubleSided{0};                                   // offset 72..75
-    uint32_t padding{0};                                       // offset 76..79
+    float transmissionFactor{0.0F};                            // offset 76..79
+    float ior{1.5F};                                           // offset 80..83
+    float pad0{0.0F};                                          // offset 84..87
+    float pad1{0.0F};                                          // offset 88..91
+    float pad2{0.0F};                                          // offset 92..95
 };
 
-static_assert(sizeof(MaterialUniformBufferData) == 80,
-              "MaterialUniformBufferData must be 80 bytes (std140 alignment)");
+static_assert(sizeof(MaterialUniformBufferData) == 96,
+              "MaterialUniformBufferData must be 96 bytes (std140 alignment)");
 
 /// @brief Generates standard DescriptorSetLayoutDesc for glTF materials (set 0).
 [[nodiscard]] inline rhi::DescriptorSetLayoutDesc createMaterialDescriptorSetLayoutDesc() noexcept {

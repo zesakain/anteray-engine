@@ -161,6 +161,10 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
     other.hdrPipelineOpaque_ = {};
     other.pipelineDoubleSided_ = {};
     other.hdrPipelineDoubleSided_ = {};
+    other.pipelineTransparent_ = {};
+    other.pipelineTransparentDoubleSided_ = {};
+    other.hdrPipelineTransparent_ = {};
+    other.hdrPipelineTransparentDoubleSided_ = {};
     other.wireframePipeline_ = {};
     other.wireframeLdrPipeline_ = {};
     other.width_ = 0;
@@ -231,6 +235,10 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         hdrPipelineOpaque_ = other.hdrPipelineOpaque_;
         pipelineDoubleSided_ = other.pipelineDoubleSided_;
         hdrPipelineDoubleSided_ = other.hdrPipelineDoubleSided_;
+        pipelineTransparent_ = other.pipelineTransparent_;
+        pipelineTransparentDoubleSided_ = other.pipelineTransparentDoubleSided_;
+        hdrPipelineTransparent_ = other.hdrPipelineTransparent_;
+        hdrPipelineTransparentDoubleSided_ = other.hdrPipelineTransparentDoubleSided_;
         settings_ = other.settings_;
         wireframePipeline_ = other.wireframePipeline_;
         wireframeLdrPipeline_ = other.wireframeLdrPipeline_;
@@ -287,6 +295,10 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         other.hdrPipelineOpaque_ = {};
         other.pipelineDoubleSided_ = {};
         other.hdrPipelineDoubleSided_ = {};
+        other.pipelineTransparent_ = {};
+        other.pipelineTransparentDoubleSided_ = {};
+        other.hdrPipelineTransparent_ = {};
+        other.hdrPipelineTransparentDoubleSided_ = {};
         other.wireframePipeline_ = {};
         other.wireframeLdrPipeline_ = {};
         other.width_ = 0;
@@ -675,6 +687,69 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         hdrPipelineDoubleSided_ = pipelineDoubleSided_;
     }
 
+    // 6d. Build Transparent Pipelines (BlendEnable = true, DepthWriteEnable = false, CompareOp =
+    // LessOrEqual)
+    auto pipeTransDesc = pipeDesc;
+    pipeTransDesc.depthStencil.depthTestEnable = true;
+    pipeTransDesc.depthStencil.depthWriteEnable = false;
+    pipeTransDesc.depthStencil.depthCompareOp = rhi::CompareOp::LessOrEqual;
+    pipeTransDesc.colorBlendAttachments = {{
+        .blendEnable = true,
+        .srcColorBlendFactor = rhi::BlendFactor::SrcAlpha,
+        .dstColorBlendFactor = rhi::BlendFactor::OneMinusSrcAlpha,
+        .colorBlendOp = rhi::BlendOp::Add,
+        .srcAlphaBlendFactor = rhi::BlendFactor::One,
+        .dstAlphaBlendFactor = rhi::BlendFactor::OneMinusSrcAlpha,
+        .alphaBlendOp = rhi::BlendOp::Add,
+        .colorWriteMask = rhi::ColorComponentFlags::All,
+    }};
+    pipeTransDesc.colorAttachmentFormats = {colorFormat_};
+    pipeTransDesc.debugName = "MeshGraphicsPipelineTransparent";
+    auto pipeTransRes = device_->createGraphicsPipeline(pipeTransDesc);
+    if (!pipeTransRes.hasValue()) {
+        shutdown();
+        return pipeTransRes.error();
+    }
+    pipelineTransparent_ = pipeTransRes.value();
+
+    if (hdrFormat_ != colorFormat_) {
+        pipeTransDesc.colorAttachmentFormats = {hdrFormat_};
+        pipeTransDesc.debugName = "MeshHdrGraphicsPipelineTransparent";
+        auto hdrPipeTransRes = device_->createGraphicsPipeline(pipeTransDesc);
+        if (!hdrPipeTransRes.hasValue()) {
+            shutdown();
+            return hdrPipeTransRes.error();
+        }
+        hdrPipelineTransparent_ = hdrPipeTransRes.value();
+    } else {
+        hdrPipelineTransparent_ = pipelineTransparent_;
+    }
+
+    // 6e. Build Transparent Double-Sided Pipelines
+    auto pipeTransDoubleDesc = pipeTransDesc;
+    pipeTransDoubleDesc.rasterization.cullMode = rhi::CullMode::None;
+    pipeTransDoubleDesc.colorAttachmentFormats = {colorFormat_};
+    pipeTransDoubleDesc.debugName = "MeshGraphicsPipelineTransparentDoubleSided";
+    auto pipeTransDoubleRes = device_->createGraphicsPipeline(pipeTransDoubleDesc);
+    if (!pipeTransDoubleRes.hasValue()) {
+        shutdown();
+        return pipeTransDoubleRes.error();
+    }
+    pipelineTransparentDoubleSided_ = pipeTransDoubleRes.value();
+
+    if (hdrFormat_ != colorFormat_) {
+        pipeTransDoubleDesc.colorAttachmentFormats = {hdrFormat_};
+        pipeTransDoubleDesc.debugName = "MeshHdrGraphicsPipelineTransparentDoubleSided";
+        auto hdrPipeTransDoubleRes = device_->createGraphicsPipeline(pipeTransDoubleDesc);
+        if (!hdrPipeTransDoubleRes.hasValue()) {
+            shutdown();
+            return hdrPipeTransDoubleRes.error();
+        }
+        hdrPipelineTransparentDoubleSided_ = hdrPipeTransDoubleRes.value();
+    } else {
+        hdrPipelineTransparentDoubleSided_ = pipelineTransparentDoubleSided_;
+    }
+
     // Optional wireframe rasterization pipelines (requires fillModeNonSolid GPU feature)
     if (device_->getCaps().features.fillModeNonSolid) {
         auto wireDesc = pipeDesc;
@@ -938,6 +1013,27 @@ void SceneRenderer::shutdown() {
         if (pipelineDoubleSided_.isValid()) {
             device_->destroyGraphicsPipeline(pipelineDoubleSided_);
             pipelineDoubleSided_ = {};
+        }
+
+        if (hdrPipelineTransparentDoubleSided_.isValid() &&
+            hdrPipelineTransparentDoubleSided_ != pipelineTransparentDoubleSided_) {
+            device_->destroyGraphicsPipeline(hdrPipelineTransparentDoubleSided_);
+        }
+        hdrPipelineTransparentDoubleSided_ = {};
+
+        if (pipelineTransparentDoubleSided_.isValid()) {
+            device_->destroyGraphicsPipeline(pipelineTransparentDoubleSided_);
+            pipelineTransparentDoubleSided_ = {};
+        }
+
+        if (hdrPipelineTransparent_.isValid() && hdrPipelineTransparent_ != pipelineTransparent_) {
+            device_->destroyGraphicsPipeline(hdrPipelineTransparent_);
+        }
+        hdrPipelineTransparent_ = {};
+
+        if (pipelineTransparent_.isValid()) {
+            device_->destroyGraphicsPipeline(pipelineTransparent_);
+            pipelineTransparent_ = {};
         }
 
         if (wireframePipeline_.isValid()) {
@@ -1456,6 +1552,19 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
             return;
         }
 
+        const auto& shadowSubmeshes = gpuMesh->getSubmeshes();
+        const uint32_t shadowMatIdx = (meshComp.submeshIndex < shadowSubmeshes.size())
+                                          ? shadowSubmeshes[meshComp.submeshIndex].materialIndex
+                                          : 0;
+        GpuMaterial* shadowMat = currentAssetManager_->getGpuMaterial(meshId, shadowMatIdx);
+        if (shadowMat != nullptr) {
+            const auto& u = shadowMat->getUniformData();
+            if (u.alphaMode == 2 || u.transmissionFactor > 0.5F) {
+                lastRenderStats_.culledPrimitives++;
+                return; // Transparent / transmissive glass does not cast opaque shadows
+            }
+        }
+
         Mat4 model = Mat4::identity();
         if (e.has<world::WorldTransformComponent>()) {
             const auto* wt = e.get<world::WorldTransformComponent>();
@@ -1618,8 +1727,9 @@ void SceneRenderer::recordDepthPrepass(rhi::RhiCommandList& cmdList) {
                               ? submeshes[meshComp.submeshIndex].materialIndex
                               : 0;
         GpuMaterial* mat = currentAssetManager_->getGpuMaterial(meshId, matIdx);
-        if (mat != nullptr && mat->getUniformData().alphaMode != 0) {
-            return; // Skip alpha masked geometry in depth prepass
+        if (mat != nullptr && (mat->getUniformData().alphaMode != 0 ||
+                               mat->getUniformData().transmissionFactor > 0.0F)) {
+            return; // Skip alpha masked and transparent geometry in depth prepass
         }
 
         Mat4 model = Mat4::identity();
@@ -1840,7 +1950,7 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
         const float depthSq = (closestPoint - currentCameraPos_).lengthSq();
 
         auto resolveMaterial =
-            [&](uint32_t matIndex) -> std::tuple<rhi::DescriptorSetHandle, bool, bool> {
+            [&](uint32_t matIndex) -> std::tuple<rhi::DescriptorSetHandle, bool, bool, bool> {
             if (pipelineLayout_.isValid() && materialDescriptorSetLayout_.isValid()) {
                 GpuMaterial* mat = currentAssetManager_->getGpuMaterial(meshId, matIndex);
                 if (mat == nullptr) {
@@ -1857,17 +1967,19 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                     }
                 }
                 if (mat != nullptr && mat->isValid()) {
-                    const bool isMasked = (mat->getUniformData().alphaMode != 0);
-                    const bool isDoubleSided = (mat->getUniformData().doubleSided != 0);
-                    return {mat->getDescriptorSet(), isMasked, isDoubleSided};
+                    const auto& u = mat->getUniformData();
+                    const bool isMasked = (u.alphaMode == 1);
+                    const bool isDoubleSided = (u.doubleSided != 0);
+                    const bool isTransparent = (u.alphaMode == 2) || (u.transmissionFactor > 0.0F);
+                    return {mat->getDescriptorSet(), isMasked, isDoubleSided, isTransparent};
                 }
             }
-            return {{}, false, false};
+            return {{}, false, false, false};
         };
 
         const auto& submeshes = gpuMesh->getSubmeshes();
         if (meshComp.submeshIndex < submeshes.size()) {
-            const auto [matSet, isMasked, isDoubleSided] =
+            const auto [matSet, isMasked, isDoubleSided, isTransparent] =
                 resolveMaterial(submeshes[meshComp.submeshIndex].materialIndex);
             visibleItems_.push_back({
                 .gpuMesh = gpuMesh,
@@ -1877,9 +1989,10 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                 .depthSq = depthSq,
                 .isAlphaMasked = isMasked,
                 .isDoubleSided = isDoubleSided,
+                .isTransparent = isTransparent,
             });
         } else if (submeshes.empty()) {
-            const auto [matSet, isMasked, isDoubleSided] = resolveMaterial(0);
+            const auto [matSet, isMasked, isDoubleSided, isTransparent] = resolveMaterial(0);
             visibleItems_.push_back({
                 .gpuMesh = gpuMesh,
                 .materialSet = matSet,
@@ -1888,10 +2001,11 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                 .depthSq = depthSq,
                 .isAlphaMasked = isMasked,
                 .isDoubleSided = isDoubleSided,
+                .isTransparent = isTransparent,
             });
         } else {
             for (uint32_t sIdx = 0; sIdx < submeshes.size(); ++sIdx) {
-                const auto [matSet, isMasked, isDoubleSided] =
+                const auto [matSet, isMasked, isDoubleSided, isTransparent] =
                     resolveMaterial(submeshes[sIdx].materialIndex);
                 visibleItems_.push_back({
                     .gpuMesh = gpuMesh,
@@ -1901,6 +2015,7 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                     .depthSq = depthSq,
                     .isAlphaMasked = isMasked,
                     .isDoubleSided = isDoubleSided,
+                    .isTransparent = isTransparent,
                 });
             }
         }
@@ -1908,14 +2023,21 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
         lastRenderStats_.meshesRendered++;
     });
 
-    // Sort visible submeshes: Opaque items front-to-back for Early-Z rejection; Alpha-masked items
-    // last
+    // Sort visible submeshes:
+    // 1. Opaque & Alpha-masked first (front-to-back for Early-Z rejection)
+    // 2. Transparent & Transmissive last (back-to-front for proper alpha blending)
     std::sort(visibleItems_.begin(), visibleItems_.end(),
               [](const VisibleMeshItem& a, const VisibleMeshItem& b) {
-                  if (a.isAlphaMasked != b.isAlphaMasked) {
-                      return !a.isAlphaMasked; // Opaque first
+                  if (a.isTransparent != b.isTransparent) {
+                      return !a.isTransparent; // Opaque / Masked first, Transparent last
                   }
-                  return a.depthSq < b.depthSq; // Front-to-back
+                  if (a.isTransparent) {
+                      return a.depthSq > b.depthSq; // Transparent back-to-front
+                  }
+                  if (a.isAlphaMasked != b.isAlphaMasked) {
+                      return !a.isAlphaMasked; // Opaque first, Masked second
+                  }
+                  return a.depthSq < b.depthSq; // Front-to-back for Early-Z
               });
 
     rhi::PipelineHandle lastBoundPipeline = scenePipeline;
@@ -1928,10 +2050,17 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
     const bool isWireframe = (settings_.debug.viewMode == DebugViewMode::Wireframe);
 
     for (const auto& item : visibleItems_) {
-        // Bind pipeline based on opaque vs alpha-masked
+        // Bind pipeline based on opaque vs alpha-masked vs transparent
         rhi::PipelineHandle targetPipeline = scenePipeline;
         if (!isWireframe) {
-            if (item.isDoubleSided) {
+            if (item.isTransparent) {
+                if (item.isDoubleSided) {
+                    targetPipeline = useHdr ? hdrPipelineTransparentDoubleSided_
+                                            : pipelineTransparentDoubleSided_;
+                } else {
+                    targetPipeline = useHdr ? hdrPipelineTransparent_ : pipelineTransparent_;
+                }
+            } else if (item.isDoubleSided) {
                 targetPipeline = useHdr ? hdrPipelineDoubleSided_ : pipelineDoubleSided_;
             } else if (useDepthPrepass) {
                 targetPipeline =

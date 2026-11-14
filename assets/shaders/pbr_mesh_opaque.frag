@@ -31,18 +31,23 @@ layout(std140, set = 0, binding = 5) uniform MaterialData {
     uint hasEmissiveTex;
     uint alphaMode;
     uint doubleSided;
-    uint _pad;
-} material;
+    float transmissionFactor;
+    float ior;
+    float pad0;
+    float pad1;
+    float pad2;
+}
+material;
 
 // Set 1: Scene Lighting and Shadow Map
 struct GpuDirectionalLight {
     vec4 directionAndCastShadow; // xyz: dir, w: castShadows
-    vec4 colorAndIntensity;     // rgb: color, a: intensity
+    vec4 colorAndIntensity;      // rgb: color, a: intensity
 };
 
 struct GpuPointLight {
-    vec4 positionAndRange;      // xyz: pos, w: range
-    vec4 colorAndIntensity;     // rgb: color, a: intensity
+    vec4 positionAndRange;  // xyz: pos, w: range
+    vec4 colorAndIntensity; // rgb: color, a: intensity
 };
 
 struct GpuSpotLight {
@@ -63,8 +68,10 @@ layout(std140, set = 1, binding = 0) uniform LightingData {
     uint numSpotLights;
     uint dirLightActive;
     uint shadowPackedParams;
-    vec4 iblParams; // x: hasIbl (1.0 = true, 0.0 = false), y: intensity, z: maxPrefilterMipLevel, w: unused
-} uLighting;
+    vec4 iblParams; // x: hasIbl (1.0 = true, 0.0 = false), y: intensity, z: maxPrefilterMipLevel,
+                    // w: unused
+}
+uLighting;
 
 layout(set = 1, binding = 1) uniform sampler2DShadow uShadowMap;
 layout(set = 1, binding = 2) uniform samplerCube uIrradianceMap;
@@ -90,7 +97,8 @@ vec3 fresnelSchlickRoughness(float NdotV, vec3 F0, float roughness) {
 }
 
 // Fused Cook-Torrance BRDF (Single-Division Karis Smith-GGX + GGX NDF)
-vec3 evaluateDirectLight(vec3 L, vec3 radiance, vec3 N, vec3 V, vec3 albedo, float metallic, float roughness, vec3 F0, float NdotL) {
+vec3 evaluateDirectLight(vec3 L, vec3 radiance, vec3 N, vec3 V, vec3 albedo, float metallic,
+                         float roughness, vec3 F0, float NdotL) {
     vec3 H = normalize(V + L);
     float NdotV = max(dot(N, V), 0.0001);
     float NdotH = max(dot(N, H), 0.0);
@@ -119,8 +127,7 @@ vec3 evaluateDirectLight(vec3 L, vec3 radiance, vec3 N, vec3 V, vec3 albedo, flo
 const float GOLDEN_ANGLE = 2.39996323;
 
 float calculateShadow(vec3 shadowCoord, float NdotL, float baseBias, vec2 screenPos) {
-    if (shadowCoord.z > 1.0 || shadowCoord.z < 0.0 ||
-        shadowCoord.x < 0.0 || shadowCoord.x > 1.0 ||
+    if (shadowCoord.z > 1.0 || shadowCoord.z < 0.0 || shadowCoord.x < 0.0 || shadowCoord.x > 1.0 ||
         shadowCoord.y < 0.0 || shadowCoord.y > 1.0) {
         return 1.0;
     }
@@ -217,11 +224,14 @@ void main() {
         if (NdotL > 0.0) {
             float shadow = 1.0;
             if (uLighting.dirLight.directionAndCastShadow.w > 0.5) {
-                shadow = calculateShadow(inShadowCoord, NdotL, uLighting.ambientColorAndShadowBias.w, gl_FragCoord.xy);
+                shadow = calculateShadow(inShadowCoord, NdotL,
+                                         uLighting.ambientColorAndShadowBias.w, gl_FragCoord.xy);
             }
             if (shadow > 0.001) {
-                vec3 radiance = uLighting.dirLight.colorAndIntensity.rgb * uLighting.dirLight.colorAndIntensity.w;
-                directLighting += shadow * evaluateDirectLight(L, radiance, N, V, baseColor.rgb, metallic, roughness, F0, NdotL);
+                vec3 radiance = uLighting.dirLight.colorAndIntensity.rgb *
+                                uLighting.dirLight.colorAndIntensity.w;
+                directLighting += shadow * evaluateDirectLight(L, radiance, N, V, baseColor.rgb,
+                                                               metallic, roughness, F0, NdotL);
             }
         }
     }
@@ -245,7 +255,8 @@ void main() {
 
                     vec3 radiance = uLighting.pointLights[i].colorAndIntensity.rgb *
                                     uLighting.pointLights[i].colorAndIntensity.w * atten;
-                    directLighting += evaluateDirectLight(L, radiance, N, V, baseColor.rgb, metallic, roughness, F0, NdotL);
+                    directLighting += evaluateDirectLight(L, radiance, N, V, baseColor.rgb,
+                                                          metallic, roughness, F0, NdotL);
                 }
             }
         }
@@ -267,7 +278,8 @@ void main() {
                     float cosInner = uLighting.spotLights[i].coneAngles.x;
                     float cosOuter = uLighting.spotLights[i].coneAngles.y;
 
-                    float spotAtten = clamp((cosAngle - cosOuter) / max(cosInner - cosOuter, 0.0001), 0.0, 1.0);
+                    float spotAtten =
+                        clamp((cosAngle - cosOuter) / max(cosInner - cosOuter, 0.0001), 0.0, 1.0);
                     spotAtten = spotAtten * spotAtten;
 
                     if (spotAtten > 0.0) {
@@ -280,7 +292,8 @@ void main() {
                         vec3 radiance = uLighting.spotLights[i].colorAndCastShadow.rgb *
                                         uLighting.spotLights[i].directionAndIntensity.w *
                                         distAtten * spotAtten;
-                        directLighting += evaluateDirectLight(L, radiance, N, V, baseColor.rgb, metallic, roughness, F0, NdotL);
+                        directLighting += evaluateDirectLight(L, radiance, N, V, baseColor.rgb,
+                                                              metallic, roughness, F0, NdotL);
                     }
                 }
             }
@@ -325,7 +338,8 @@ void main() {
     vec3 emissive = vec3(0.0);
     if (material.hasEmissiveTex != 0u) {
         emissive = material.emissiveFactorAndAlphaCutoff.xyz * texture(uEmissiveMap, inUV).rgb;
-    } else if (dot(material.emissiveFactorAndAlphaCutoff.xyz, material.emissiveFactorAndAlphaCutoff.xyz) > 0.0) {
+    } else if (dot(material.emissiveFactorAndAlphaCutoff.xyz,
+                   material.emissiveFactorAndAlphaCutoff.xyz) > 0.0) {
         emissive = material.emissiveFactorAndAlphaCutoff.xyz;
     }
 

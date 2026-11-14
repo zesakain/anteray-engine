@@ -198,6 +198,13 @@ parseTextureInfo(const cgltf_data* data, const cgltf_texture_view& view, std::st
         mat.alphaMode = AlphaMode::Opaque;
     }
 
+    if (cgMat.has_transmission) {
+        mat.transmissionFactor = cgMat.transmission.transmission_factor;
+    }
+    if (cgMat.has_ior) {
+        mat.ior = cgMat.ior.ior;
+    }
+
     return mat;
 }
 
