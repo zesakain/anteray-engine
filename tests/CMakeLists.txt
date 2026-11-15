@@ -189,6 +189,12 @@ target_link_libraries(sampler_and_texture_quality_test PRIVATE hikari::engine_re
 add_test(NAME sampler_and_texture_quality_test COMMAND sampler_and_texture_quality_test)
 set_tests_properties(sampler_and_texture_quality_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# glTF Material Extensions Unit Tests (Milestone 11F Phase 3)
+add_executable(gltf_material_extensions_test unit/render/gltf_material_extensions_test.cpp)
+target_link_libraries(gltf_material_extensions_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
+add_test(NAME gltf_material_extensions_test COMMAND gltf_material_extensions_test)
+set_tests_properties(gltf_material_extensions_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Full glTF Metallic-Roughness PBR Verification Tests (Milestone 10D)
 add_executable(pbr_render_test unit/render/pbr_render_test.cpp)
 target_link_libraries(pbr_render_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)

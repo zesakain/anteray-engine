@@ -1,0 +1,217 @@
+{
+  "asset": {
+    "version": "2.0",
+    "generator": "Hikari Test Suite - glTF Advanced Extensions"
+  },
+  "extensionsUsed": [
+    "KHR_materials_clearcoat",
+    "KHR_materials_transmission",
+    "KHR_materials_volume",
+    "KHR_materials_ior",
+    "KHR_materials_specular"
+  ],
+  "buffers": [
+    {
+      "uri": "triangle.bin",
+      "byteLength": 104
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 96,
+      "byteStride": 32,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 96,
+      "byteLength": 6,
+      "target": 34963
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "byteOffset": 0,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3",
+      "max": [1.0, 1.0, 0.0],
+      "min": [0.0, 0.0, 0.0]
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 12,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 0,
+      "byteOffset": 24,
+      "componentType": 5126,
+      "count": 3,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 1,
+      "byteOffset": 0,
+      "componentType": 5123,
+      "count": 3,
+      "type": "SCALAR",
+      "max": [2],
+      "min": [0]
+    }
+  ],
+  "materials": [
+    {
+      "name": "ClearcoatMaterial",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.5
+      },
+      "extensions": {
+        "KHR_materials_clearcoat": {
+          "clearcoatFactor": 0.85,
+          "clearcoatRoughnessFactor": 0.15
+        }
+      }
+    },
+    {
+      "name": "TransmissionMaterial",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.1
+      },
+      "extensions": {
+        "KHR_materials_transmission": {
+          "transmissionFactor": 0.95
+        }
+      }
+    },
+    {
+      "name": "VolumeMaterial",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.0
+      },
+      "extensions": {
+        "KHR_materials_transmission": {
+          "transmissionFactor": 1.0
+        },
+        "KHR_materials_volume": {
+          "thicknessFactor": 2.5,
+          "attenuationDistance": 10.0,
+          "attenuationColor": [0.2, 0.7, 0.9]
+        }
+      }
+    },
+    {
+      "name": "IorMaterial",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [0.8, 0.8, 0.8, 1.0],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.3
+      },
+      "extensions": {
+        "KHR_materials_ior": {
+          "ior": 1.333
+        }
+      }
+    },
+    {
+      "name": "SpecularMaterial",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [0.9, 0.9, 0.9, 1.0],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.4
+      },
+      "extensions": {
+        "KHR_materials_specular": {
+          "specularFactor": 0.5,
+          "specularColorFactor": [0.8, 0.6, 0.4]
+        }
+      }
+    },
+    {
+      "name": "FullAdvancedMaterial",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [0.5, 0.6, 0.7, 1.0],
+        "metallicFactor": 0.1,
+        "roughnessFactor": 0.2
+      },
+      "extensions": {
+        "KHR_materials_clearcoat": {
+          "clearcoatFactor": 0.7,
+          "clearcoatRoughnessFactor": 0.3
+        },
+        "KHR_materials_transmission": {
+          "transmissionFactor": 0.8
+        },
+        "KHR_materials_volume": {
+          "thicknessFactor": 1.2,
+          "attenuationDistance": 4.0,
+          "attenuationColor": [0.9, 0.3, 0.1]
+        },
+        "KHR_materials_ior": {
+          "ior": 1.77
+        },
+        "KHR_materials_specular": {
+          "specularFactor": 0.85,
+          "specularColorFactor": [0.95, 0.9, 0.85]
+        }
+      }
+    },
+    {
+      "name": "DefaultExtensionsMaterial",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
+        "metallicFactor": 0.0,
+        "roughnessFactor": 0.5
+      },
+      "extensions": {
+        "KHR_materials_clearcoat": {},
+        "KHR_materials_transmission": {},
+        "KHR_materials_volume": {},
+        "KHR_materials_ior": {},
+        "KHR_materials_specular": {}
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "TriangleMesh",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "name": "TriangleNode"
+    }
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ]
+}
