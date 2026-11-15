@@ -33,11 +33,29 @@ layout(std140, set = 0, binding = 5) uniform MaterialData {
     uint doubleSided;
     float transmissionFactor;
     float ior;
-    float pad0;
-    float pad1;
-    float pad2;
+    float clearcoatFactor;
+    float clearcoatRoughness;
+    float clearcoatNormalScale;
+    uint hasClearcoatTex;
+    uint hasClearcoatRoughnessTex;
+    uint hasClearcoatNormalTex;
+    uint hasTransmissionTex;
+    float thicknessFactor;
+    float attenuationDistance;
+    uint hasThicknessTex;
+    float specularFactor;
+    vec4 attenuationColorAndHasSpecTex;
+    vec4 specularColorFactorAndHasColorTex;
 }
 material;
+
+layout(set = 0, binding = 6) uniform sampler2D uClearcoatMap;
+layout(set = 0, binding = 7) uniform sampler2D uClearcoatRoughnessMap;
+layout(set = 0, binding = 8) uniform sampler2D uClearcoatNormalMap;
+layout(set = 0, binding = 9) uniform sampler2D uTransmissionMap;
+layout(set = 0, binding = 10) uniform sampler2D uThicknessMap;
+layout(set = 0, binding = 11) uniform sampler2D uSpecularMap;
+layout(set = 0, binding = 12) uniform sampler2D uSpecularColorMap;
 
 // Set 1: Scene Lighting and Shadow Map
 struct GpuDirectionalLight {
@@ -134,9 +152,33 @@ vec3 fresnelSchlickRoughness(float NdotV, vec3 F0, float roughness) {
     return F0 + (max(vec3(1.0 - roughness), F0) - F0) * fc5;
 }
 
-// Fused Cook-Torrance BRDF (Single-Division Karis Smith-GGX + GGX NDF)
+// Clearcoat specular evaluation (Cook-Torrance GGX with fixed F0 = 0.04)
+vec3 evaluateClearcoat(vec3 L, vec3 radiance, vec3 Nc, vec3 V, float clearcoatRoughness,
+                       out vec3 Fc_out) {
+    vec3 H = normalize(V + L);
+    float NdotL = max(dot(Nc, L), 0.0);
+    float NdotV = max(dot(Nc, V), 0.0001);
+    float NdotH = max(dot(Nc, H), 0.0);
+    float VdotH = max(dot(V, H), 0.0);
+
+    float a = clearcoatRoughness * clearcoatRoughness;
+    float a2 = a * a;
+    float NdotH2 = NdotH * NdotH;
+    float denom = NdotH2 * (a2 - 1.0) + 1.0;
+
+    float k = (clearcoatRoughness + 1.0) * (clearcoatRoughness + 1.0) * 0.125;
+    float gv = NdotV * (1.0 - k) + k;
+    float gl = NdotL * (1.0 - k) + k;
+
+    float specScalar = (0.5 * INV_PI * a2) / max(denom * denom * gv * gl, 0.0000001);
+    Fc_out = fresnelSchlick(VdotH, vec3(0.04));
+    return specScalar * Fc_out * radiance * NdotL;
+}
+
+// Fused Cook-Torrance BRDF (Single-Division Karis Smith-GGX + GGX NDF) with Clearcoat
 vec3 evaluateDirectLight(vec3 L, vec3 radiance, vec3 N, vec3 V, vec3 albedo, float metallic,
-                         float roughness, vec3 F0, float NdotL) {
+                         float roughness, vec3 F0, float NdotL, vec3 Nc, float clearcoat,
+                         float clearcoatRoughness) {
     vec3 H = normalize(V + L);
     float NdotV = max(dot(N, V), 0.0001);
     float NdotH = max(dot(N, H), 0.0);
@@ -158,7 +200,14 @@ vec3 evaluateDirectLight(vec3 L, vec3 radiance, vec3 N, vec3 V, vec3 albedo, flo
     vec3 diffTerm = kD * (albedo * INV_PI);
     vec3 specTerm = specScalar * F;
 
-    return (diffTerm + specTerm) * radiance * NdotL;
+    vec3 baseDirect = (diffTerm + specTerm) * radiance * NdotL;
+
+    if (clearcoat > 0.001) {
+        vec3 Fc;
+        vec3 coatDirect = evaluateClearcoat(L, radiance, Nc, V, clearcoatRoughness, Fc);
+        return baseDirect * (vec3(1.0) - clearcoat * Fc) + coatDirect * clearcoat;
+    }
+    return baseDirect;
 }
 
 // Sample directional shadow map with rotated Vogel-disc PCF and slope-scaled depth bias
@@ -340,14 +389,56 @@ void main() {
         N = -N;
     }
 
-    // 4. View vector and Specular F0
+    // 4. View vector, IOR, Specular and Clearcoat
     vec3 V = normalize(uLighting.cameraPosAndAmbientIntensity.xyz - inWorldPos);
+
+    // 4a. KHR_materials_clearcoat
+    float clearcoat = clamp(material.clearcoatFactor, 0.0, 1.0);
+    if (material.hasClearcoatTex != 0u) {
+        clearcoat *= texture(uClearcoatMap, inUV).r;
+    }
+    float clearcoatRoughness = clamp(material.clearcoatRoughness, 0.045, 1.0);
+    if (material.hasClearcoatRoughnessTex != 0u) {
+        clearcoatRoughness =
+            clamp(clearcoatRoughness * texture(uClearcoatRoughnessMap, inUV).g, 0.045, 1.0);
+    }
+    vec3 Nc = N;
+    if (clearcoat > 0.001 && material.hasClearcoatNormalTex != 0u) {
+        vec3 coatNormalSample = texture(uClearcoatNormalMap, inUV).xyz * 2.0 - 1.0;
+        coatNormalSample.xy *= material.clearcoatNormalScale;
+        float cLenSq = dot(coatNormalSample, coatNormalSample);
+        if (cLenSq > 1e-10) {
+            coatNormalSample *= inversesqrt(cLenSq);
+        } else {
+            coatNormalSample = vec3(0.0, 0.0, 1.0);
+        }
+        vec3 perturbedNc = tbn * coatNormalSample;
+        float pNcLenSq = dot(perturbedNc, perturbedNc);
+        Nc = (pNcLenSq > 1e-10) ? (perturbedNc * inversesqrt(pNcLenSq)) : N;
+        if (material.doubleSided != 0u && !gl_FrontFacing) {
+            Nc = -Nc;
+        }
+    }
+
+    // 4b. KHR_materials_ior
     float dielectricF0 = 0.04;
     if (material.ior > 0.0) {
         float f0Sqrt = (material.ior - 1.0) / (material.ior + 1.0);
         dielectricF0 = clamp(f0Sqrt * f0Sqrt, 0.0, 1.0);
     }
-    vec3 F0 = mix(vec3(dielectricF0), baseColor.rgb, metallic);
+
+    // 4c. KHR_materials_specular
+    float specFactor = material.specularFactor;
+    if (material.attenuationColorAndHasSpecTex.w > 0.5) {
+        specFactor *= texture(uSpecularMap, inUV).a;
+    }
+    vec3 specColorFactor = material.specularColorFactorAndHasColorTex.rgb;
+    if (material.specularColorFactorAndHasColorTex.w > 0.5) {
+        specColorFactor *= texture(uSpecularColorMap, inUV).rgb;
+    }
+    vec3 dielectricF0Color =
+        clamp(vec3(dielectricF0) * specFactor * specColorFactor, vec3(0.0), vec3(1.0));
+    vec3 F0 = mix(dielectricF0Color, baseColor.rgb, metallic);
 
     // 5. Direct Light Accumulation
     vec3 directLighting = vec3(0.0);
@@ -374,7 +465,8 @@ void main() {
                 vec3 radiance = uLighting.dirLight.colorAndIntensity.rgb *
                                 uLighting.dirLight.colorAndIntensity.w;
                 directLighting += shadow * evaluateDirectLight(L, radiance, N, V, baseColor.rgb,
-                                                               metallic, roughness, F0, NdotL);
+                                                               metallic, roughness, F0, NdotL,
+                                                               Nc, clearcoat, clearcoatRoughness);
             }
         }
     }
@@ -399,7 +491,8 @@ void main() {
                     vec3 radiance = uLighting.pointLights[i].colorAndIntensity.rgb *
                                     uLighting.pointLights[i].colorAndIntensity.w * atten;
                     directLighting += evaluateDirectLight(L, radiance, N, V, baseColor.rgb,
-                                                          metallic, roughness, F0, NdotL);
+                                                          metallic, roughness, F0, NdotL,
+                                                          Nc, clearcoat, clearcoatRoughness);
                 }
             }
         }
@@ -436,7 +529,8 @@ void main() {
                                         uLighting.spotLights[i].directionAndIntensity.w *
                                         distAtten * spotAtten;
                         directLighting += evaluateDirectLight(L, radiance, N, V, baseColor.rgb,
-                                                              metallic, roughness, F0, NdotL);
+                                                              metallic, roughness, F0, NdotL,
+                                                              Nc, clearcoat, clearcoatRoughness);
                     }
                 }
             }
@@ -489,6 +583,18 @@ void main() {
         vec3 ambientDiffuse = baseColor.rgb * (1.0 - metallic) * diffuseRadiance;
         vec3 ambientSpecular = mix(F0, baseColor.rgb, metallic) * (1.0 - roughness) * ambLight;
         ambient = ambientDiffuse + ambientSpecular;
+    }
+
+    // Clearcoat IBL specular
+    if (clearcoat > 0.001) {
+        vec3 R_c = reflect(-V, Nc);
+        float NdotV_c = max(dot(Nc, V), 0.0);
+        float prefilteredLod = clearcoatRoughness * 4.0;
+        vec3 prefilteredColor = textureLod(uPrefilteredEnvMap, R_c, prefilteredLod).rgb;
+        vec2 envBrdf = texture(uBrdfLut, vec2(NdotV_c, clearcoatRoughness)).rg;
+        vec3 Fc_ibl = fresnelSchlickRoughness(NdotV_c, vec3(0.04), clearcoatRoughness);
+        vec3 clearcoatAmbient = clearcoat * prefilteredColor * (Fc_ibl * envBrdf.x + envBrdf.y);
+        ambient = ambient * (vec3(1.0) - clearcoat * Fc_ibl) + clearcoatAmbient;
     }
 
     // 8. Emissive Term
