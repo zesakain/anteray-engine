@@ -709,6 +709,7 @@ private:
     std::array<Mat4, 4> lastCascadeViewProj_{};
     bool shadowDirty_{true};
     bool staticShadowDirty_{true};
+    bool staticCastersListDirty_{true};
     Vec3 lastLightDir_{Vec3::zero()};
     AtmosphereParameters atmosphereParams_{AtmosphereParameters::createDaylight()};
     Mat4 lastLightSpaceMatrix_{Mat4::identity()};

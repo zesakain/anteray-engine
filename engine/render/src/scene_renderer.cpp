@@ -1828,6 +1828,8 @@ Result<void> SceneRenderer::applyGraphicsSettings(const GraphicsSettings& newSet
 
     if (!(settings_.shadows == validated.shadows)) {
         shadowDirty_ = true;
+        staticShadowDirty_ = true;
+        staticCastersListDirty_ = true;
     }
 
     if (settings_.quality.antiAliasing != validated.quality.antiAliasing ||
@@ -2215,13 +2217,21 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
         cmdList.writeTimestamp(currentBaseQuery_ + 2, rhi::GpuTimestampStage::TopOfPipe);
     }
 
-    staticShadowCasters_.clear();
+    if (staticCastersListDirty_) {
+        staticShadowCasters_.clear();
+    }
     dynamicShadowCasters_.clear();
     auto& ecs = currentWorld_->getRawWorld();
     auto shadowMeshQuery = ecs.query<const MeshComponent>();
     shadowMeshQuery.each([&](flecs::entity e, const MeshComponent& meshComp) {
         if (!meshComp.visible || !meshComp.castShadows) {
             lastRenderStats_.culledPrimitives++;
+            return;
+        }
+        const bool isDynamic = (!meshComp.isStatic) ||
+                               e.has<physics::PhysicsTransformComponent>() ||
+                               e.has<physics::RigidBodyComponent>();
+        if (!isDynamic && !staticCastersListDirty_) {
             return;
         }
         AssetId meshId = meshComp.meshAsset;
@@ -2283,9 +2293,6 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
 
         const Vec3 center = (worldBounds.minBound + worldBounds.maxBound) * 0.5F;
         const float distToLight = Vec3::dot(center, currentLightDir_);
-        const bool isDynamic = (!meshComp.isStatic) ||
-                               e.has<physics::PhysicsTransformComponent>() ||
-                               e.has<physics::RigidBodyComponent>();
 
         ShadowCasterItem item{
             .gpuMesh = gpuMesh,
@@ -2306,7 +2313,10 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
     auto sortFrontToBack = [](const ShadowCasterItem& a, const ShadowCasterItem& b) {
         return a.distanceToLight > b.distanceToLight;
     };
-    std::sort(staticShadowCasters_.begin(), staticShadowCasters_.end(), sortFrontToBack);
+    if (staticCastersListDirty_) {
+        std::sort(staticShadowCasters_.begin(), staticShadowCasters_.end(), sortFrontToBack);
+        staticCastersListDirty_ = false;
+    }
     std::sort(dynamicShadowCasters_.begin(), dynamicShadowCasters_.end(), sortFrontToBack);
 
     if (staticShadowTarget_.isValid()) {
@@ -3425,9 +3435,14 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         }
     }
 
-    if (&world != lastWorld_ || staticCasterCount != lastStaticCasterCount_ ||
-        currentStaticChecksum != lastStaticCasterChecksum_ || !dir.isNearlyEqual(lastLightDir_) ||
-        cascadesChanged) {
+    const bool staticCastersChanged =
+        (&world != lastWorld_ || staticCasterCount != lastStaticCasterCount_ ||
+         currentStaticChecksum != lastStaticCasterChecksum_ || !dir.isNearlyEqual(lastLightDir_));
+    if (staticCastersChanged) {
+        staticCastersListDirty_ = true;
+        staticShadowDirty_ = true;
+        shadowDirty_ = true;
+    } else if (cascadesChanged) {
         staticShadowDirty_ = true;
         shadowDirty_ = true;
     } else if (dynamicCasterCount != lastDynamicCasterCount_ ||

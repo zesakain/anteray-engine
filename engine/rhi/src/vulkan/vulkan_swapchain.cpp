@@ -128,11 +128,19 @@ Result<void> VulkanSwapchain::recreate(uint32_t newWidth, uint32_t newHeight, bo
 
     VkPresentModeKHR selectedMode = VK_PRESENT_MODE_FIFO_KHR; // Guaranteed support by spec (VSync)
     if (!vsync_) {
+        bool hasMailbox = false;
+        bool hasImmediate = false;
         for (const auto& mode : presentModes) {
             if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
-                selectedMode = VK_PRESENT_MODE_MAILBOX_KHR;
-                break;
+                hasMailbox = true;
+            } else if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+                hasImmediate = true;
             }
+        }
+        if (hasMailbox) {
+            selectedMode = VK_PRESENT_MODE_MAILBOX_KHR;
+        } else if (hasImmediate) {
+            selectedMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
         }
     }
 
