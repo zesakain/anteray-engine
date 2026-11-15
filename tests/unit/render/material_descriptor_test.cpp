@@ -37,8 +37,8 @@ static int testMaterialDescriptorSetLayoutCreation() {
     TEST_CHECK(layout.isValid());
 
     const auto sceneLayoutDesc = createSceneDescriptorSetLayoutDesc();
-    TEST_CHECK(sceneLayoutDesc.bindings.size() == 7);
-    TEST_CHECK(sizeof(GpuLightingData) == 2240);
+    TEST_CHECK(sceneLayoutDesc.bindings.size() == 8);
+    TEST_CHECK(sizeof(GpuLightingData) == 2304);
 
     auto sceneLayoutRes = device.createDescriptorSetLayout(sceneLayoutDesc);
     TEST_CHECK(sceneLayoutRes.hasValue());

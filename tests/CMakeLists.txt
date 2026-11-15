@@ -261,6 +261,12 @@ target_link_libraries(gi_render_test PRIVATE hikari::engine_render hikari::engin
 add_test(NAME gi_render_test COMMAND gi_render_test)
 set_tests_properties(gi_render_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Reflection Quality & Temporal Stability Verification Tests (Milestone 11G)
+add_executable(reflection_and_temporal_test unit/render/reflection_and_temporal_test.cpp)
+target_link_libraries(reflection_and_temporal_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
+add_test(NAME reflection_and_temporal_test COMMAND reflection_and_temporal_test)
+set_tests_properties(reflection_and_temporal_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Physics Unit Tests
 add_executable(physics_test unit/physics/physics_test.cpp)
 target_link_libraries(physics_test PRIVATE hikari::engine_physics)

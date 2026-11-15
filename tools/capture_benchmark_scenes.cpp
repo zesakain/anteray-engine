@@ -78,6 +78,9 @@ struct SceneBenchmarkTelemetry {
     double avgPbrPassMs{0.0};
     double avgShadowPassMs{0.0};
     double avgDepthPrepassMs{0.0};
+    double avgGtaoPassMs{0.0};
+    double avgSsrPassMs{0.0};
+    double avgTemporalMs{0.0};
     double avgToneMappingMs{0.0};
     double avgBloomMs{0.0};
     size_t residentGpuBytes{0};
@@ -136,245 +139,270 @@ int main(int argc, char** argv) {
 
     std::vector<SceneBenchmarkTelemetry> benchmarkSummary;
 
-    auto benchmarkAndCapture =
-        [&](const std::string& sceneName, const std::string& scenePath, const Mat4& view,
-            float fovDeg, float nearP, float farP, const std::string& primaryCaptureFilename,
-            const std::vector<std::pair<Mat4, std::string>>& extraViews = {}) {
-            std::cout << "\n>>> Benchmarking & Capturing Scene: " << sceneName << " (" << scenePath
-                      << ")\n";
+    auto benchmarkAndCapture = [&](const std::string& sceneName, const std::string& scenePath,
+                                   const Mat4& view, float fovDeg, float nearP, float farP,
+                                   const std::string& primaryCaptureFilename,
+                                   const std::vector<std::pair<Mat4, std::string>>& extraViews = {},
+                                   bool enableSsr = false) {
+        std::cout << "\n>>> Benchmarking & Capturing Scene: " << sceneName << " (" << scenePath
+                  << ")" << (enableSsr ? " [SSR ON]" : " [SSR OFF]") << "\n";
 
-            world::World world;
-            render::AssetManager assetMgr;
+        world::World world;
+        render::AssetManager assetMgr;
 
-            auto desRes = framework::SceneSerializer::deserializeFromFile(world, scenePath);
-            if (!desRes.hasValue()) {
-                std::cerr << "Failed to deserialize scene: " << desRes.error().message << '\n';
-                return;
+        auto desRes = framework::SceneSerializer::deserializeFromFile(world, scenePath);
+        if (!desRes.hasValue()) {
+            std::cerr << "Failed to deserialize scene: " << desRes.error().message << '\n';
+            return;
+        }
+
+        uint32_t entityCount = static_cast<uint32_t>(desRes.value().entitiesLoaded);
+        std::cout << "  Loaded " << entityCount << " entities from scene graph.\n";
+
+        // Enable standard high-quality PBR settings
+        render::GraphicsSettings settings = renderer.getGraphicsSettings();
+        settings.postProcess.enabled = true;
+        settings.lighting.directLighting = true;
+        settings.lighting.iblEnabled = true;
+        settings.lighting.probesEnabled = true;
+        settings.lighting.reflectionProbeBlending = true;
+        settings.lighting.ssrEnabled = enableSsr;
+        settings.shadows.enabled = true;
+        (void)renderer.applyGraphicsSettings(settings);
+
+        if (desRes.value().postProcessSettings.has_value()) {
+            renderer.setPostProcessSettings(*desRes.value().postProcessSettings);
+        }
+
+        Mat4 proj = Mat4::perspective(toRadians(fovDeg), aspect, nearP, farP);
+        Mat4 primaryViewProj = proj * view;
+
+        // Warm up 15 frames
+        for (int i = 0; i < 15; ++i) {
+            auto cmdRes = device->createCommandList();
+            if (!cmdRes.hasValue())
+                break;
+            auto cmd = std::move(cmdRes.value());
+            cmd->begin();
+            renderer.renderScene(world, assetMgr, *device, *cmd, primaryViewProj);
+            if (renderer.isPostProcessingEnabled()) {
+                renderer.renderPostProcess(*cmd);
             }
+            cmd->end();
+            (void)device->submit(cmd.get());
+            device->waitIdle();
+            renderer.updateGpuTimings(*device);
+        }
 
-            uint32_t entityCount = static_cast<uint32_t>(desRes.value().entitiesLoaded);
-            std::cout << "  Loaded " << entityCount << " entities from scene graph.\n";
+        // Benchmark 50 frames
+        constexpr int kBenchFrames = 50;
+        std::vector<double> frameTimes;
+        std::vector<double> cpuRecordTimes;
+        std::vector<double> gpuTotalTimes;
+        std::vector<double> pbrPassTimes;
+        std::vector<double> shadowPassTimes;
+        std::vector<double> depthPrepassTimes;
+        std::vector<double> gtaoPassTimes;
+        std::vector<double> ssrPassTimes;
+        std::vector<double> temporalTimes;
+        std::vector<double> toneMappingTimes;
+        std::vector<double> bloomTimes;
 
-            // Enable standard high-quality PBR settings
-            render::GraphicsSettings settings = renderer.getGraphicsSettings();
-            settings.postProcess.enabled = true;
-            settings.lighting.directLighting = true;
-            settings.lighting.iblEnabled = true;
-            settings.shadows.enabled = true;
-            (void)renderer.applyGraphicsSettings(settings);
+        frameTimes.reserve(kBenchFrames);
+        cpuRecordTimes.reserve(kBenchFrames);
+        gpuTotalTimes.reserve(kBenchFrames);
 
-            if (desRes.value().postProcessSettings.has_value()) {
-                renderer.setPostProcessSettings(*desRes.value().postProcessSettings);
+        for (int i = 0; i < kBenchFrames; ++i) {
+            auto startFrame = std::chrono::high_resolution_clock::now();
+
+            auto startCpu = std::chrono::high_resolution_clock::now();
+            auto cmdRes = device->createCommandList();
+            if (!cmdRes.hasValue())
+                break;
+            auto cmd = std::move(cmdRes.value());
+
+            cmd->begin();
+            renderer.renderScene(world, assetMgr, *device, *cmd, primaryViewProj);
+            if (renderer.isPostProcessingEnabled()) {
+                renderer.renderPostProcess(*cmd);
             }
+            cmd->end();
+            auto endCpu = std::chrono::high_resolution_clock::now();
+            double cpuMs = std::chrono::duration<double, std::milli>(endCpu - startCpu).count();
+            cpuRecordTimes.push_back(cpuMs);
 
-            Mat4 proj = Mat4::perspective(toRadians(fovDeg), aspect, nearP, farP);
-            Mat4 primaryViewProj = proj * view;
+            (void)device->submit(cmd.get());
+            device->waitIdle();
 
-            // Warm up 15 frames
-            for (int i = 0; i < 15; ++i) {
-                auto cmdRes = device->createCommandList();
-                if (!cmdRes.hasValue())
-                    break;
+            auto endFrame = std::chrono::high_resolution_clock::now();
+            double frameMs =
+                std::chrono::duration<double, std::milli>(endFrame - startFrame).count();
+            frameTimes.push_back(frameMs);
+
+            renderer.updateGpuTimings(*device);
+            const auto& timings = renderer.getGpuPassTimings();
+            if (timings.valid) {
+                gpuTotalTimes.push_back(timings.totalSceneMs);
+                pbrPassTimes.push_back(timings.mainPbrPassMs);
+                shadowPassTimes.push_back(timings.shadowPassMs);
+                depthPrepassTimes.push_back(timings.depthPrepassMs);
+                gtaoPassTimes.push_back(timings.gtaoPassMs);
+                ssrPassTimes.push_back(timings.ssrPassMs);
+                temporalTimes.push_back(timings.temporalDenoiseMs);
+                toneMappingTimes.push_back(timings.toneMappingMs);
+                bloomTimes.push_back(timings.bloomDownsampleMs + timings.bloomUpsampleMs);
+            }
+        }
+
+        // Capture primary view to readback buffer and write PPM
+        {
+            auto cmdRes = device->createCommandList();
+            if (cmdRes.hasValue()) {
                 auto cmd = std::move(cmdRes.value());
                 cmd->begin();
                 renderer.renderScene(world, assetMgr, *device, *cmd, primaryViewProj);
                 if (renderer.isPostProcessingEnabled()) {
                     renderer.renderPostProcess(*cmd);
                 }
+                rhi::TextureHandle colorTarget = renderer.getColorTarget();
+                cmd->copyTextureToBuffer(colorTarget, rbHandle);
                 cmd->end();
                 (void)device->submit(cmd.get());
                 device->waitIdle();
-                renderer.updateGpuTimings(*device);
+
+                std::vector<uint8_t> pxBuffer(byteSize, 0);
+                auto copyRes = device->readBuffer(rbHandle, 0, pxBuffer.data(), byteSize);
+                if (copyRes.hasValue()) {
+                    savePpm(outDir + "/" + primaryCaptureFilename, pxBuffer.data(), width, height);
+                }
             }
+        }
 
-            // Benchmark 50 frames
-            constexpr int kBenchFrames = 50;
-            std::vector<double> frameTimes;
-            std::vector<double> cpuRecordTimes;
-            std::vector<double> gpuTotalTimes;
-            std::vector<double> pbrPassTimes;
-            std::vector<double> shadowPassTimes;
-            std::vector<double> depthPrepassTimes;
-            std::vector<double> toneMappingTimes;
-            std::vector<double> bloomTimes;
-
-            frameTimes.reserve(kBenchFrames);
-            cpuRecordTimes.reserve(kBenchFrames);
-            gpuTotalTimes.reserve(kBenchFrames);
-
-            for (int i = 0; i < kBenchFrames; ++i) {
-                auto startFrame = std::chrono::high_resolution_clock::now();
-
-                auto startCpu = std::chrono::high_resolution_clock::now();
-                auto cmdRes = device->createCommandList();
-                if (!cmdRes.hasValue())
-                    break;
+        // Capture extra views if requested
+        for (const auto& [extraView, extraFilename] : extraViews) {
+            Mat4 extraViewProj = proj * extraView;
+            auto cmdRes = device->createCommandList();
+            if (cmdRes.hasValue()) {
                 auto cmd = std::move(cmdRes.value());
-
                 cmd->begin();
-                renderer.renderScene(world, assetMgr, *device, *cmd, primaryViewProj);
+                renderer.renderScene(world, assetMgr, *device, *cmd, extraViewProj);
                 if (renderer.isPostProcessingEnabled()) {
                     renderer.renderPostProcess(*cmd);
                 }
+                rhi::TextureHandle colorTarget = renderer.getColorTarget();
+                cmd->copyTextureToBuffer(colorTarget, rbHandle);
                 cmd->end();
-                auto endCpu = std::chrono::high_resolution_clock::now();
-                double cpuMs = std::chrono::duration<double, std::milli>(endCpu - startCpu).count();
-                cpuRecordTimes.push_back(cpuMs);
-
                 (void)device->submit(cmd.get());
                 device->waitIdle();
 
-                auto endFrame = std::chrono::high_resolution_clock::now();
-                double frameMs =
-                    std::chrono::duration<double, std::milli>(endFrame - startFrame).count();
-                frameTimes.push_back(frameMs);
-
-                renderer.updateGpuTimings(*device);
-                const auto& timings = renderer.getGpuPassTimings();
-                if (timings.valid) {
-                    gpuTotalTimes.push_back(timings.totalSceneMs);
-                    pbrPassTimes.push_back(timings.mainPbrPassMs);
-                    shadowPassTimes.push_back(timings.shadowPassMs);
-                    depthPrepassTimes.push_back(timings.depthPrepassMs);
-                    toneMappingTimes.push_back(timings.toneMappingMs);
-                    bloomTimes.push_back(timings.bloomDownsampleMs + timings.bloomUpsampleMs);
+                std::vector<uint8_t> pxBuffer(byteSize, 0);
+                auto copyRes = device->readBuffer(rbHandle, 0, pxBuffer.data(), byteSize);
+                if (copyRes.hasValue()) {
+                    savePpm(outDir + "/" + extraFilename, pxBuffer.data(), width, height);
                 }
             }
+        }
 
-            // Capture primary view to readback buffer and write PPM
-            {
-                auto cmdRes = device->createCommandList();
-                if (cmdRes.hasValue()) {
-                    auto cmd = std::move(cmdRes.value());
-                    cmd->begin();
-                    renderer.renderScene(world, assetMgr, *device, *cmd, primaryViewProj);
-                    if (renderer.isPostProcessingEnabled()) {
-                        renderer.renderPostProcess(*cmd);
-                    }
-                    rhi::TextureHandle colorTarget = renderer.getColorTarget();
-                    cmd->copyTextureToBuffer(colorTarget, rbHandle);
-                    cmd->end();
-                    (void)device->submit(cmd.get());
-                    device->waitIdle();
+        // Calculate statistics
+        std::sort(frameTimes.begin(), frameTimes.end());
+        double avgFrame = std::accumulate(frameTimes.begin(), frameTimes.end(), 0.0) /
+                          static_cast<double>(frameTimes.size());
+        double medianFrame = frameTimes[frameTimes.size() / 2];
+        size_t p95Idx = static_cast<size_t>(static_cast<double>(frameTimes.size()) * 0.95);
+        double p95Frame = frameTimes[std::min(p95Idx, frameTimes.size() - 1)];
+        size_t p99Idx = static_cast<size_t>(static_cast<double>(frameTimes.size()) * 0.99);
+        double p99Frame = frameTimes[std::min(p99Idx, frameTimes.size() - 1)];
+        double maxFrame = frameTimes.back();
 
-                    std::vector<uint8_t> pxBuffer(byteSize, 0);
-                    auto copyRes = device->readBuffer(rbHandle, 0, pxBuffer.data(), byteSize);
-                    if (copyRes.hasValue()) {
-                        savePpm(outDir + "/" + primaryCaptureFilename, pxBuffer.data(), width,
-                                height);
-                    }
-                }
-            }
+        double avgCpu = std::accumulate(cpuRecordTimes.begin(), cpuRecordTimes.end(), 0.0) /
+                        static_cast<double>(cpuRecordTimes.size());
+        double avgGpu = gpuTotalTimes.empty()
+                            ? 0.0
+                            : (std::accumulate(gpuTotalTimes.begin(), gpuTotalTimes.end(), 0.0) /
+                               static_cast<double>(gpuTotalTimes.size()));
+        double avgPbr = pbrPassTimes.empty()
+                            ? 0.0
+                            : (std::accumulate(pbrPassTimes.begin(), pbrPassTimes.end(), 0.0) /
+                               static_cast<double>(pbrPassTimes.size()));
+        double avgShadow =
+            shadowPassTimes.empty()
+                ? 0.0
+                : (std::accumulate(shadowPassTimes.begin(), shadowPassTimes.end(), 0.0) /
+                   static_cast<double>(shadowPassTimes.size()));
+        double avgDepth =
+            depthPrepassTimes.empty()
+                ? 0.0
+                : (std::accumulate(depthPrepassTimes.begin(), depthPrepassTimes.end(), 0.0) /
+                   static_cast<double>(depthPrepassTimes.size()));
+        double avgGtao = gtaoPassTimes.empty()
+                             ? 0.0
+                             : (std::accumulate(gtaoPassTimes.begin(), gtaoPassTimes.end(), 0.0) /
+                                static_cast<double>(gtaoPassTimes.size()));
+        double avgSsr = ssrPassTimes.empty()
+                            ? 0.0
+                            : (std::accumulate(ssrPassTimes.begin(), ssrPassTimes.end(), 0.0) /
+                               static_cast<double>(ssrPassTimes.size()));
+        double avgTemporal =
+            temporalTimes.empty()
+                ? 0.0
+                : (std::accumulate(temporalTimes.begin(), temporalTimes.end(), 0.0) /
+                   static_cast<double>(temporalTimes.size()));
+        double avgTone =
+            toneMappingTimes.empty()
+                ? 0.0
+                : (std::accumulate(toneMappingTimes.begin(), toneMappingTimes.end(), 0.0) /
+                   static_cast<double>(toneMappingTimes.size()));
+        double avgBloom = bloomTimes.empty()
+                              ? 0.0
+                              : (std::accumulate(bloomTimes.begin(), bloomTimes.end(), 0.0) /
+                                 static_cast<double>(bloomTimes.size()));
 
-            // Capture extra views if requested
-            for (const auto& [extraView, extraFilename] : extraViews) {
-                Mat4 extraViewProj = proj * extraView;
-                auto cmdRes = device->createCommandList();
-                if (cmdRes.hasValue()) {
-                    auto cmd = std::move(cmdRes.value());
-                    cmd->begin();
-                    renderer.renderScene(world, assetMgr, *device, *cmd, extraViewProj);
-                    if (renderer.isPostProcessingEnabled()) {
-                        renderer.renderPostProcess(*cmd);
-                    }
-                    rhi::TextureHandle colorTarget = renderer.getColorTarget();
-                    cmd->copyTextureToBuffer(colorTarget, rbHandle);
-                    cmd->end();
-                    (void)device->submit(cmd.get());
-                    device->waitIdle();
+        const auto& memMetrics = assetMgr.getTextureMemoryMetrics();
 
-                    std::vector<uint8_t> pxBuffer(byteSize, 0);
-                    auto copyRes = device->readBuffer(rbHandle, 0, pxBuffer.data(), byteSize);
-                    if (copyRes.hasValue()) {
-                        savePpm(outDir + "/" + extraFilename, pxBuffer.data(), width, height);
-                    }
-                }
-            }
-
-            // Calculate statistics
-            std::sort(frameTimes.begin(), frameTimes.end());
-            double avgFrame = std::accumulate(frameTimes.begin(), frameTimes.end(), 0.0) /
-                              static_cast<double>(frameTimes.size());
-            double medianFrame = frameTimes[frameTimes.size() / 2];
-            size_t p95Idx = static_cast<size_t>(static_cast<double>(frameTimes.size()) * 0.95);
-            double p95Frame = frameTimes[std::min(p95Idx, frameTimes.size() - 1)];
-            size_t p99Idx = static_cast<size_t>(static_cast<double>(frameTimes.size()) * 0.99);
-            double p99Frame = frameTimes[std::min(p99Idx, frameTimes.size() - 1)];
-            double maxFrame = frameTimes.back();
-
-            double avgCpu = std::accumulate(cpuRecordTimes.begin(), cpuRecordTimes.end(), 0.0) /
-                            static_cast<double>(cpuRecordTimes.size());
-            double avgGpu =
-                gpuTotalTimes.empty()
-                    ? 0.0
-                    : (std::accumulate(gpuTotalTimes.begin(), gpuTotalTimes.end(), 0.0) /
-                       static_cast<double>(gpuTotalTimes.size()));
-            double avgPbr = pbrPassTimes.empty()
-                                ? 0.0
-                                : (std::accumulate(pbrPassTimes.begin(), pbrPassTimes.end(), 0.0) /
-                                   static_cast<double>(pbrPassTimes.size()));
-            double avgShadow =
-                shadowPassTimes.empty()
-                    ? 0.0
-                    : (std::accumulate(shadowPassTimes.begin(), shadowPassTimes.end(), 0.0) /
-                       static_cast<double>(shadowPassTimes.size()));
-            double avgDepth =
-                depthPrepassTimes.empty()
-                    ? 0.0
-                    : (std::accumulate(depthPrepassTimes.begin(), depthPrepassTimes.end(), 0.0) /
-                       static_cast<double>(depthPrepassTimes.size()));
-            double avgTone =
-                toneMappingTimes.empty()
-                    ? 0.0
-                    : (std::accumulate(toneMappingTimes.begin(), toneMappingTimes.end(), 0.0) /
-                       static_cast<double>(toneMappingTimes.size()));
-            double avgBloom = bloomTimes.empty()
-                                  ? 0.0
-                                  : (std::accumulate(bloomTimes.begin(), bloomTimes.end(), 0.0) /
-                                     static_cast<double>(bloomTimes.size()));
-
-            const auto& memMetrics = assetMgr.getTextureMemoryMetrics();
-
-            SceneBenchmarkTelemetry t{
-                .sceneName = sceneName,
-                .entities = entityCount,
-                .avgFrameMs = avgFrame,
-                .medianFrameMs = medianFrame,
-                .p95FrameMs = p95Frame,
-                .p99FrameMs = p99Frame,
-                .maxFrameMs = maxFrame,
-                .avgFps = (avgFrame > 0.0) ? (1000.0 / avgFrame) : 0.0,
-                .avgCpuRecordMs = avgCpu,
-                .avgGpuTotalMs = avgGpu,
-                .avgPbrPassMs = avgPbr,
-                .avgShadowPassMs = avgShadow,
-                .avgDepthPrepassMs = avgDepth,
-                .avgToneMappingMs = avgTone,
-                .avgBloomMs = avgBloom,
-                .residentGpuBytes = memMetrics.residentGpuMemoryBytes,
-                .totalGpuBytes = memMetrics.estimatedTotalGpuMemoryBytes,
-                .residentTextures = memMetrics.residentTextureCount,
-                .evictionCount = memMetrics.evictionCountLifetime,
-            };
-
-            std::cout << std::fixed << std::setprecision(2);
-            std::cout << "  [PERF] Avg: " << t.avgFrameMs << " ms (" << t.avgFps
-                      << " FPS) | Median: " << t.medianFrameMs << " ms | P95: " << t.p95FrameMs
-                      << " ms | P99: " << t.p99FrameMs << " ms | Max: " << t.maxFrameMs << " ms\n";
-            std::cout << "  [PASSES] CPU Record: " << t.avgCpuRecordMs
-                      << " ms | GPU Total: " << t.avgGpuTotalMs << " ms | PBR: " << t.avgPbrPassMs
-                      << " ms | Shadow: " << t.avgShadowPassMs
-                      << " ms | Depth: " << t.avgDepthPrepassMs
-                      << " ms | ToneMap: " << t.avgToneMappingMs << " ms | Bloom: " << t.avgBloomMs
-                      << " ms\n";
-            std::cout << "  [TEXTURE RESIDENCY] Resident: "
-                      << (static_cast<double>(t.residentGpuBytes) / (1024.0 * 1024.0)) << " MB ("
-                      << t.residentTextures << " textures) | Total Allocated: "
-                      << (static_cast<double>(t.totalGpuBytes) / (1024.0 * 1024.0))
-                      << " MB | Lifetime Evictions: " << t.evictionCount << "\n";
-
-            benchmarkSummary.push_back(t);
+        SceneBenchmarkTelemetry t{
+            .sceneName = sceneName,
+            .entities = entityCount,
+            .avgFrameMs = avgFrame,
+            .medianFrameMs = medianFrame,
+            .p95FrameMs = p95Frame,
+            .p99FrameMs = p99Frame,
+            .maxFrameMs = maxFrame,
+            .avgFps = (avgFrame > 0.0) ? (1000.0 / avgFrame) : 0.0,
+            .avgCpuRecordMs = avgCpu,
+            .avgGpuTotalMs = avgGpu,
+            .avgPbrPassMs = avgPbr,
+            .avgShadowPassMs = avgShadow,
+            .avgDepthPrepassMs = avgDepth,
+            .avgGtaoPassMs = avgGtao,
+            .avgSsrPassMs = avgSsr,
+            .avgTemporalMs = avgTemporal,
+            .avgToneMappingMs = avgTone,
+            .avgBloomMs = avgBloom,
+            .residentGpuBytes = memMetrics.residentGpuMemoryBytes,
+            .totalGpuBytes = memMetrics.estimatedTotalGpuMemoryBytes,
+            .residentTextures = memMetrics.residentTextureCount,
+            .evictionCount = memMetrics.evictionCountLifetime,
         };
+
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "  [PERF] Avg: " << t.avgFrameMs << " ms (" << t.avgFps
+                  << " FPS) | Median: " << t.medianFrameMs << " ms | P95: " << t.p95FrameMs
+                  << " ms | P99: " << t.p99FrameMs << " ms | Max: " << t.maxFrameMs << " ms\n";
+        std::cout << "  [PASSES] CPU Record: " << t.avgCpuRecordMs
+                  << " ms | GPU Total: " << t.avgGpuTotalMs << " ms | PBR: " << t.avgPbrPassMs
+                  << " ms | Shadow: " << t.avgShadowPassMs << " ms | Depth: " << t.avgDepthPrepassMs
+                  << " ms | GTAO: " << t.avgGtaoPassMs << " ms | SSR: " << t.avgSsrPassMs
+                  << " ms | Temporal: " << t.avgTemporalMs
+                  << " ms | ToneMap: " << t.avgToneMappingMs << " ms | Bloom: " << t.avgBloomMs
+                  << " ms\n";
+        std::cout << "  [TEXTURE RESIDENCY] Resident: "
+                  << (static_cast<double>(t.residentGpuBytes) / (1024.0 * 1024.0)) << " MB ("
+                  << t.residentTextures << " textures) | Total Allocated: "
+                  << (static_cast<double>(t.totalGpuBytes) / (1024.0 * 1024.0))
+                  << " MB | Lifetime Evictions: " << t.evictionCount << "\n";
+
+        benchmarkSummary.push_back(t);
+    };
 
     // 1. Sponza
     {
@@ -439,6 +467,16 @@ int main(int argc, char** argv) {
                              {viewMetals, "material_lab_metals.ppm"},
                              {viewClearcoatSheen, "material_lab_clearcoat_sheen.ppm"},
                              {viewAnisoTrans, "material_lab_anisotropy_transmission.ppm"}});
+    }
+
+    // 5. MaterialLab with Screen-Space Reflections (SSR Comparison)
+    {
+        Mat4 viewGrid =
+            Mat4::lookAt(Vec3(0.0F, 3.8F, 7.2F), Vec3(0.0F, 0.45F, 0.0F), Vec3::unitY());
+
+        benchmarkAndCapture("MaterialLab_SSR",
+                            "assets/benchmark-scenes/MaterialLab_Benchmark.hikari", viewGrid, 50.0F,
+                            0.1F, 500.0F, "material_lab_1080p_ssr.ppm", {}, true);
     }
 
     // Final Consolidated Report
