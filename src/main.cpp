@@ -326,25 +326,15 @@ body {
                          "EditorEngine successfully initialized and bound to World & Conductor");
 
             if (!scenePath.empty()) {
-                if (scenePath.ends_with(".gltf") || scenePath.ends_with(".glb")) {
-                    bool ok = editorEngine.getWorkspaceManager().loadBenchmarkScene(
-                        world, scenePath.c_str(), &editorEngine.getSelectionModel(),
-                        &editorEngine.getAssetManager(), nullptr, &editorEngine.getSceneRenderer());
-                    if (ok) {
-                        ENG_LOG_INFO("Core",
-                                     "Successfully imported glTF startup scene: " + scenePath);
-                    } else {
-                        ENG_LOG_WARN("Core", "Failed to import glTF startup scene: " + scenePath);
-                    }
+                bool ok = editorEngine.getWorkspaceManager().loadSceneAsync(
+                    world, scenePath.c_str(), &editorEngine.getSelectionModel(), nullptr,
+                    &editorEngine.getSceneRenderer(), &editorEngine.getAssetManager(), &jobSystem);
+                if (ok) {
+                    ENG_LOG_INFO("Core",
+                                 "Initiated asynchronous load of startup scene: " + scenePath);
                 } else {
-                    bool ok = editorEngine.getWorkspaceManager().openScene(
-                        world, scenePath.c_str(), &editorEngine.getSelectionModel(), nullptr,
-                        &editorEngine.getSceneRenderer());
-                    if (ok) {
-                        ENG_LOG_INFO("Core", "Successfully loaded startup scene: " + scenePath);
-                    } else {
-                        ENG_LOG_WARN("Core", "Failed to load startup scene: " + scenePath);
-                    }
+                    ENG_LOG_WARN("Core", "Failed to start asynchronous load of startup scene: " +
+                                             scenePath);
                 }
             }
         }

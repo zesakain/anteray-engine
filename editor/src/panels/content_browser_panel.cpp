@@ -501,9 +501,9 @@ void ContentBrowserPanel::drawListView(EditorContext& ctx) {
                 }
                 if (item.type == ContentItemType::Scene && ctx.editorEngine != nullptr &&
                     ctx.world != nullptr) {
-                    ctx.editorEngine->getWorkspaceManager().openScene(
+                    ctx.editorEngine->getWorkspaceManager().loadSceneAsync(
                         *ctx.world, item.fullPath.string().c_str(), ctx.selection, ctx.editorCamera,
-                        ctx.sceneRenderer);
+                        ctx.sceneRenderer, ctx.assetManager, ctx.jobSystem);
                     break;
                 }
                 if (ExternalEditorService::isSupportedScriptFile(item.fullPath)) {
@@ -536,9 +536,10 @@ void ContentBrowserPanel::drawListView(EditorContext& ctx) {
                 if (item.type == ContentItemType::Scene) {
                     if (ImGui::MenuItem("Open Scene")) {
                         if (ctx.editorEngine != nullptr && ctx.world != nullptr) {
-                            ctx.editorEngine->getWorkspaceManager().openScene(
+                            ctx.editorEngine->getWorkspaceManager().loadSceneAsync(
                                 *ctx.world, item.fullPath.string().c_str(), ctx.selection,
-                                ctx.editorCamera, ctx.sceneRenderer);
+                                ctx.editorCamera, ctx.sceneRenderer, ctx.assetManager,
+                                ctx.jobSystem);
                         }
                     }
                     ImGui::Separator();
@@ -738,9 +739,9 @@ void ContentBrowserPanel::drawGridView(EditorContext& ctx) {
             }
             if (item.type == ContentItemType::Scene && ctx.editorEngine != nullptr &&
                 ctx.world != nullptr) {
-                ctx.editorEngine->getWorkspaceManager().openScene(
+                ctx.editorEngine->getWorkspaceManager().loadSceneAsync(
                     *ctx.world, item.fullPath.string().c_str(), ctx.selection, ctx.editorCamera,
-                    ctx.sceneRenderer);
+                    ctx.sceneRenderer, ctx.assetManager, ctx.jobSystem);
                 ImGui::PopID();
                 break;
             }
@@ -799,9 +800,9 @@ void ContentBrowserPanel::drawGridView(EditorContext& ctx) {
             if (item.type == ContentItemType::Scene) {
                 if (ImGui::MenuItem("Open Scene")) {
                     if (ctx.editorEngine != nullptr && ctx.world != nullptr) {
-                        ctx.editorEngine->getWorkspaceManager().openScene(
+                        ctx.editorEngine->getWorkspaceManager().loadSceneAsync(
                             *ctx.world, item.fullPath.string().c_str(), ctx.selection,
-                            ctx.editorCamera, ctx.sceneRenderer);
+                            ctx.editorCamera, ctx.sceneRenderer, ctx.assetManager, ctx.jobSystem);
                     }
                 }
                 ImGui::Separator();

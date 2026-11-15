@@ -30,6 +30,7 @@
 #include "world/hierarchy_systems.h"
 #include "world/world.h"
 
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -69,6 +70,7 @@ struct WorkspaceManager::Impl {
     bool isAsyncLoading{false};
     bool showLoadingModal{false};
     bool shouldCloseLoadingModal{false};
+    int completionFramesRemaining{0};
     std::string asyncLoadingScenePath{""};
     std::string asyncLoadingSceneName{""};
     world::World* asyncTargetWorld{nullptr};
@@ -330,6 +332,17 @@ struct WorkspaceManager::Impl {
             return;
         }
 
+        if (completionFramesRemaining > 0) {
+            completionFramesRemaining--;
+            if (completionFramesRemaining == 0) {
+                isAsyncLoading = false;
+                showLoadingModal = false;
+                shouldCloseLoadingModal = true;
+                asyncLoader.reset();
+            }
+            return;
+        }
+
         if (ctx.rhiDevice != nullptr) {
             asyncLoader.update(*ctx.rhiDevice, 3.0F);
         }
@@ -357,14 +370,21 @@ struct WorkspaceManager::Impl {
                         }
                     }
 
-                    if (asyncTargetRenderer != nullptr &&
-                        actRes.value().postProcessSettings.has_value()) {
-                        asyncTargetRenderer->setPostProcessSettings(
-                            *actRes.value().postProcessSettings);
+                    if (asyncTargetRenderer != nullptr) {
+                        if (actRes.value().postProcessSettings.has_value()) {
+                            asyncTargetRenderer->setPostProcessSettings(
+                                *actRes.value().postProcessSettings);
+                        }
+                        asyncTargetRenderer->invalidateTaaHistory();
                     }
 
                     ENG_LOG_INFO("Editor",
                                  "Scene successfully loaded asynchronously: " + currentScenePath);
+
+                    // Smooth transition: brief presentation of completed loading screen (approx
+                    // 300ms)
+                    completionFramesRemaining = 18;
+                    return;
                 } else {
                     lastSceneError =
                         "Failed to activate scene: " + std::string(actRes.error().message);
@@ -406,74 +426,186 @@ struct WorkspaceManager::Impl {
         }
     }
 
-    void drawAsyncLoadingModal() {
+    void drawHikariLoadingScreen(EditorContext& ctx) {
         if (!isAsyncLoading && !shouldCloseLoadingModal) {
             return;
         }
 
         if (showLoadingModal) {
-            ImGui::OpenPopup("Loading Scene##AsyncSceneLoaderModal");
+            ImGui::OpenPopup("Loading Scene##HikariLoadingScreenModal");
             showLoadingModal = false;
         }
 
         ImVec2 center = ImGui::GetMainViewport()->GetCenter();
         ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5F, 0.5F));
-        ImGui::SetNextWindowSize(ImVec2(520.0F, 0.0F));
+        ImGui::SetNextWindowSize(ImVec2(600.0F, 0.0F));
 
-        if (ImGui::BeginPopupModal("Loading Scene##AsyncSceneLoaderModal", nullptr,
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.045F, 0.052F, 0.065F, 0.98F));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.00F, 0.83F, 1.00F, 0.50F));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.5F);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0F, 20.0F));
+
+        if (ImGui::BeginPopupModal("Loading Scene##HikariLoadingScreenModal", nullptr,
                                    ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
                                        ImGuiWindowFlags_NoTitleBar)) {
             const auto progress = asyncLoader.getProgress();
             const auto& telemetry = asyncLoader.getTelemetry();
 
-            ImGui::TextColored(ImVec4(0.38F, 0.74F, 0.98F, 1.0F), "HIKARI ENGINE");
-            ImGui::SameLine();
-            ImGui::TextDisabled("| Asynchronous Scene Loading");
+            // 1. Official Hikari Logo (Centred, authentic aspect ratio 687x1024)
+            const float logoHeight = 160.0F;
+            const float logoWidth = logoHeight * (687.0F / 1024.0F); // ~107.34F
+            const float availWidth = ImGui::GetContentRegionAvail().x;
+            const float logoOffsetX = (availWidth - logoWidth) * 0.5F;
+
+            if (ctx.logoTextureId != nullptr) {
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + logoOffsetX);
+
+                // Subtle ambient cyan pulsing glow around logo
+                const float elapsed = static_cast<float>(telemetry.totalDuration.toSeconds());
+                const float pulse = 0.80F + 0.20F * std::sin(elapsed * 3.0F);
+                ImVec4 tintColor(pulse, 0.85F + 0.15F * pulse, 1.0F, 1.0F);
+
+                ImGui::Image(
+                    static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(ctx.logoTextureId)),
+                    ImVec2(logoWidth, logoHeight), ImVec2(0.0F, 0.0F), ImVec2(1.0F, 1.0F),
+                    tintColor);
+            } else {
+                // Headless/null RHI fallback header
+                ImGui::Spacing();
+                const char* brandText = "H I K A R I   E N G I N E";
+                float textWidth = ImGui::CalcTextSize(brandText).x;
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availWidth - textWidth) * 0.5F);
+                ImGui::TextColored(ImVec4(0.00F, 0.83F, 1.00F, 1.0F), "%s", brandText);
+                ImGui::Spacing();
+            }
+
+            ImGui::Spacing();
+
+            // 2. Title & Scene Header
+            const char* headerTitle = "HIKARI ENGINE";
+            float hWidth = ImGui::CalcTextSize(headerTitle).x;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availWidth - hWidth) * 0.5F);
+            ImGui::TextColored(ImVec4(0.00F, 0.83F, 1.00F, 1.0F), "%s", headerTitle);
+
+            std::string subTitle = "Loading Scene: " + asyncLoadingSceneName;
+            float subWidth = ImGui::CalcTextSize(subTitle.c_str()).x;
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availWidth - subWidth) * 0.5F);
+            ImGui::TextUnformatted(subTitle.c_str());
+
+            ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
 
-            ImGui::Text("Scene: %s", asyncLoadingSceneName.c_str());
-            ImGui::Spacing();
+            // 3. Phase Name & Operation Detail
+            const char* phaseTitle = framework::toPhaseDisplayName(progress.state).data();
+            ImGui::TextColored(ImVec4(0.30F, 0.85F, 1.00F, 1.0F), "%s", phaseTitle);
 
-            const char* stateStr = framework::toString(progress.state).data();
-            ImGui::TextColored(ImVec4(0.95F, 0.75F, 0.20F, 1.0F), "[Phase] %s", stateStr);
             if (!progress.currentOperation.empty()) {
-                ImGui::TextWrapped("%s", progress.currentOperation.c_str());
+                ImGui::TextDisabled("%s", progress.currentOperation.c_str());
+            } else {
+                ImGui::TextDisabled("Processing assets...");
             }
+
             ImGui::Spacing();
 
+            // 4. Progress Bar
             char overlayBuf[64];
             float pct = progress.overallProgress * 100.0F;
             std::snprintf(overlayBuf, sizeof(overlayBuf), "%.1f%%", pct);
-            ImGui::ProgressBar(progress.overallProgress, ImVec2(-1.0F, 24.0F), overlayBuf);
+
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.00F, 0.65F, 0.95F, 1.0F));
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.10F, 0.12F, 0.16F, 1.0F));
+            ImGui::ProgressBar(progress.overallProgress, ImVec2(-1.0F, 26.0F), overlayBuf);
+            ImGui::PopStyleColor(2);
+
+            ImGui::Spacing();
             ImGui::Spacing();
 
-            ImGui::TextDisabled("Entities Discovered: %u", progress.entitiesDiscovered);
-            ImGui::TextDisabled("Textures: %u / %u decoded | %u / %u uploaded (%u failed)",
-                                progress.texturesDecoded, progress.texturesTotal,
-                                progress.texturesUploaded, progress.texturesTotal,
-                                progress.texturesFailed);
+            // 5. Four Statistics Dashboard Cards (2 columns x 2 rows)
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.07F, 0.08F, 0.11F, 0.80F));
+            ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0F);
+
+            const float colWidth = (availWidth - 12.0F) * 0.5F;
+            const float cardHeight = 46.0F;
+
+            // Card 1: Entities
+            ImGui::BeginChild("##LoadingStatEntities", ImVec2(colWidth, cardHeight), true);
+            ImGui::TextDisabled("Entities");
+            if (progress.entitiesLoaded > 0) {
+                ImGui::TextColored(ImVec4(0.9F, 0.9F, 0.9F, 1.0F), "%u Committed",
+                                   progress.entitiesLoaded);
+            } else {
+                ImGui::TextColored(ImVec4(0.9F, 0.9F, 0.9F, 1.0F), "%u Discovered",
+                                   progress.entitiesDiscovered);
+            }
+            ImGui::EndChild();
+
+            ImGui::SameLine(0.0F, 12.0F);
+
+            // Card 2: Meshes & Materials
+            ImGui::BeginChild("##LoadingStatMeshes", ImVec2(colWidth, cardHeight), true);
+            ImGui::TextDisabled("Meshes / Materials");
+            ImGui::TextColored(ImVec4(0.9F, 0.9F, 0.9F, 1.0F), "%u Meshes | %u Materials",
+                               progress.meshesTotal, progress.materialsTotal);
+            ImGui::EndChild();
+
+            ImGui::Spacing();
+
+            // Card 3: Textures (Decoded, Uploaded, Failed)
+            ImGui::BeginChild("##LoadingStatTextures", ImVec2(colWidth, cardHeight), true);
+            ImGui::TextDisabled("Textures");
+            if (progress.texturesFailed > 0) {
+                ImGui::TextColored(ImVec4(1.0F, 0.45F, 0.45F, 1.0F), "%u / %u (Failed: %u)",
+                                   progress.texturesUploaded, progress.texturesTotal,
+                                   progress.texturesFailed);
+            } else {
+                ImGui::TextColored(ImVec4(0.9F, 0.9F, 0.9F, 1.0F), "%u Decoded | %u Uploaded",
+                                   progress.texturesDecoded, progress.texturesUploaded);
+            }
+            ImGui::EndChild();
+
+            ImGui::SameLine(0.0F, 12.0F);
+
+            // Card 4: Memory & Elapsed Time
+            ImGui::BeginChild("##LoadingStatMemory", ImVec2(colWidth, cardHeight), true);
+            ImGui::TextDisabled("Memory & Time");
             float stagedMb = static_cast<float>(progress.peakRamBytes) / (1024.0F * 1024.0F);
-            float uploadedMb = static_cast<float>(progress.peakVramBytes) / (1024.0F * 1024.0F);
-            ImGui::TextDisabled("Memory: Staged %.2f MB | VRAM %.2f MB", stagedMb, uploadedMb);
-            ImGui::TextDisabled("Elapsed Time: %.2f s",
-                                static_cast<float>(telemetry.totalDuration.toSeconds()));
+            float vramMb = static_cast<float>(progress.peakVramBytes) / (1024.0F * 1024.0F);
+            float elapsedSec = static_cast<float>(telemetry.totalDuration.toSeconds());
+            ImGui::TextColored(ImVec4(0.9F, 0.9F, 0.9F, 1.0F),
+                               "RAM: %.1f MB | VRAM: %.1f MB (%.1fs)", stagedMb, vramMb,
+                               elapsedSec);
+            ImGui::EndChild();
+
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor();
+
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
 
-            if (progress.state == framework::AsyncLoadState::ReadingFile ||
-                progress.state == framework::AsyncLoadState::DiscoveringAssets ||
-                progress.state == framework::AsyncLoadState::DecodingAssets ||
-                progress.state == framework::AsyncLoadState::UploadingGpu ||
-                progress.state == framework::AsyncLoadState::Validating ||
-                progress.state == framework::AsyncLoadState::ReadyToActivate) {
-                if (ImGui::Button("Cancel Loading", ImVec2(140.0F, 28.0F))) {
+            // 6. Action Button (Cancel Loading or Complete)
+            if (progress.state == framework::AsyncLoadState::SceneReady ||
+                progress.state == framework::AsyncLoadState::Completed) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0F, 0.55F, 0.35F, 1.0F));
+                if (ImGui::Button("Scene Ready", ImVec2(-1.0F, 30.0F))) {
+                    shouldCloseLoadingModal = true;
+                    completionFramesRemaining = 0;
+                }
+                ImGui::PopStyleColor();
+            } else if (progress.state != framework::AsyncLoadState::Cancelled &&
+                       progress.state != framework::AsyncLoadState::Failed) {
+                const float btnWidth = 150.0F;
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availWidth - btnWidth) * 0.5F);
+                if (ImGui::Button("Cancel Loading", ImVec2(btnWidth, 28.0F))) {
                     asyncLoader.cancel();
                 }
             } else {
+                const float btnWidth = 150.0F;
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availWidth - btnWidth) * 0.5F);
                 ImGui::BeginDisabled();
-                ImGui::Button("Cancelling...", ImVec2(140.0F, 28.0F));
+                ImGui::Button("Cancelling...", ImVec2(btnWidth, 28.0F));
                 ImGui::EndDisabled();
             }
 
@@ -483,6 +615,9 @@ struct WorkspaceManager::Impl {
             }
             ImGui::EndPopup();
         }
+
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(2);
     }
 
     void buildDefaultLayout(ImGuiID dockspaceId, int preset = 0) {
@@ -1145,7 +1280,7 @@ struct WorkspaceManager::Impl {
             ImGui::EndPopup();
         }
 
-        drawAsyncLoadingModal();
+        drawHikariLoadingScreen(ctx);
     }
 
     void drawToolbar(EditorContext& ctx) {
