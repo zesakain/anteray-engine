@@ -279,6 +279,28 @@ float calculateCascadedShadow(vec3 worldPos, float NdotL, float baseBias, vec2 s
     return shadow;
 }
 
+// Orthonormal TBN basis reconstruction with degeneracy fallbacks and Gram-Schmidt projection
+mat3 constructTBN(vec3 inN, vec4 inT) {
+    float nLenSq = dot(inN, inN);
+    vec3 N = (nLenSq > 1e-10) ? (inN * inversesqrt(nLenSq)) : vec3(0.0, 1.0, 0.0);
+
+    vec3 T_proj = inT.xyz - dot(inT.xyz, N) * N;
+    float tLenSq = dot(T_proj, T_proj);
+
+    vec3 T;
+    if (tLenSq > 1e-10) {
+        T = T_proj * inversesqrt(tLenSq);
+    } else {
+        vec3 up = (abs(N.z) < 0.999) ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+        T = normalize(cross(up, N));
+    }
+
+    float handedness = (inT.w < 0.0) ? -1.0 : 1.0;
+    vec3 B = cross(N, T) * handedness;
+
+    return mat3(T, B, N);
+}
+
 void main() {
     // 1. Base Color & Alpha
     vec4 baseColor = material.baseColorFactor * inColor;
@@ -304,14 +326,21 @@ void main() {
     metallic = clamp(metallic, 0.0, 1.0);
     roughness = clamp(roughness, 0.045, 1.0);
 
-    // 3. Normal Mapping & TBN Basis
-    vec3 N = normalize(inNormal);
+    // 3. Normal Mapping & Robust Orthonormal TBN Basis
+    mat3 tbn = constructTBN(inNormal, inTangent);
+    vec3 N = tbn[2];
     if (material.hasNormalTex != 0u) {
-        vec3 T = normalize(inTangent.xyz - dot(inTangent.xyz, N) * N);
-        vec3 B = cross(N, T) * inTangent.w;
         vec3 normalSample = texture(uNormalMap, inUV).xyz * 2.0 - 1.0;
         normalSample.xy *= material.normalScale;
-        N = normalize(mat3(T, B, N) * normalSample);
+        float sampleLenSq = dot(normalSample, normalSample);
+        if (sampleLenSq > 1e-10) {
+            normalSample *= inversesqrt(sampleLenSq);
+        } else {
+            normalSample = vec3(0.0, 0.0, 1.0);
+        }
+        vec3 perturbedN = tbn * normalSample;
+        float pLenSq = dot(perturbedN, perturbedN);
+        N = (pLenSq > 1e-10) ? (perturbedN * inversesqrt(pLenSq)) : tbn[2];
     }
     if (material.doubleSided != 0u && !gl_FrontFacing) {
         N = -N;

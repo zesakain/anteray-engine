@@ -26,15 +26,22 @@ void main() {
     gl_Position = pc.mvp * vec4(inPosition, 1.0);
     vec4 worldPos = pc.model * vec4(inPosition, 1.0);
 
-    mat3 normalMatrix = mat3(pc.model);
+    mat3 m = mat3(pc.model);
+    float det = determinant(m);
+    mat3 normalMatrix = (abs(det) > 1e-7) ? transpose(inverse(m)) : m;
+
     outWorldPos = worldPos.xyz;
-    outNormal = normalize(normalMatrix * inNormal);
+    vec3 worldNorm = normalMatrix * inNormal;
+    float normLen = length(worldNorm);
+    outNormal = (normLen > 1e-6) ? (worldNorm / normLen) : vec3(0.0, 1.0, 0.0);
     outUV = inUV;
     outColor = inColor;
 
-    // Transform tangent vector by model matrix (excluding translation)
-    vec3 worldTan = normalize(normalMatrix * inTangent.xyz);
-    outTangent = vec4(worldTan, inTangent.w);
+    // Transform surface tangent vectors via model linear transform
+    vec3 worldTan = m * inTangent.xyz;
+    float tanLen = length(worldTan);
+    outTangent = vec4(tanLen > 1e-6 ? (worldTan / tanLen) : vec3(1.0, 0.0, 0.0),
+                      inTangent.w * (det < 0.0 ? -1.0 : 1.0));
 
     // Compute light-space coordinates for primary directional cascade
     vec4 lpos = uLighting.cascadeLightSpaceMatrices[0] * worldPos;
