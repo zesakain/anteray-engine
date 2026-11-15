@@ -66,6 +66,28 @@ enum class AntiAliasingMode : uint8_t {
     MSAA4x = 4, ///< Hardware Multi-Sample 4x
 };
 
+/// @enum TaaJitterSequence
+/// @brief Projection subpixel jitter sequence length.
+enum class TaaJitterSequence : uint8_t {
+    Halton8 = 0,  ///< 8-phase Halton(2, 3) sequence
+    Halton16 = 1, ///< 16-phase Halton(2, 3) sequence
+    Halton32 = 2, ///< 32-phase Halton(2, 3) sequence
+};
+
+/// @struct TaaSettings
+/// @brief Runtime configuration for Temporal Anti-Aliasing, motion vectors, and sharpening.
+struct TaaSettings {
+    bool enabled{false};
+    float historyWeight{0.90F}; ///< Exponential history accumulation factor [0.80, 0.98]
+    float varianceGamma{1.25F}; ///< Statistical variance clipping multiplier [0.5, 2.5]
+    TaaJitterSequence jitterSequence{TaaJitterSequence::Halton16}; ///< Sequence phase count
+    bool sharpeningEnabled{true};     ///< Post-accumulation contrast-adaptive sharpening
+    float sharpeningIntensity{0.50F}; ///< Sharpening strength in range [0.0, 1.0]
+    bool useMotionVectors{true};      ///< Screen-space velocity buffer reprojection
+
+    bool operator==(const TaaSettings& other) const noexcept = default;
+};
+
 /// @enum ShadowPcfQuality
 /// @brief Percentage-Closer Filtering kernel quality for directional shadow sampling.
 enum class ShadowPcfQuality : uint8_t {
@@ -106,6 +128,7 @@ struct QualitySettings {
     AnisotropicFiltering anisotropicFiltering{AnisotropicFiltering::X16};
     AntiAliasingMode antiAliasing{AntiAliasingMode::None};
     TextureQuality textureQuality{TextureQuality::High};
+    TaaSettings taa{};
 
     bool operator==(const QualitySettings& other) const noexcept = default;
 };

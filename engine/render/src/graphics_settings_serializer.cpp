@@ -103,6 +103,26 @@ AntiAliasingMode stringToAntiAliasing(std::string_view s) noexcept {
     return AntiAliasingMode::None;
 }
 
+std::string_view taaJitterToString(TaaJitterSequence s) noexcept {
+    switch (s) {
+    case TaaJitterSequence::Halton8:
+        return "Halton8";
+    case TaaJitterSequence::Halton16:
+        return "Halton16";
+    case TaaJitterSequence::Halton32:
+        return "Halton32";
+    }
+    return "Halton16";
+}
+
+TaaJitterSequence stringToTaaJitter(std::string_view s) noexcept {
+    if (s == "Halton8" || s == "8")
+        return TaaJitterSequence::Halton8;
+    if (s == "Halton32" || s == "32")
+        return TaaJitterSequence::Halton32;
+    return TaaJitterSequence::Halton16;
+}
+
 std::string_view pcfToString(ShadowPcfQuality q) noexcept {
     switch (q) {
     case ShadowPcfQuality::Hard:
@@ -234,6 +254,18 @@ Result<std::string> GraphicsSettingsSerializer::serializeToString(const Graphics
     qualityObj.set("antiAliasing", JsonValue(aaToString(settings.quality.antiAliasing)));
     qualityObj.set("textureQuality",
                    JsonValue(textureQualityToString(settings.quality.textureQuality)));
+
+    JsonValue taaObj = JsonValue::makeObject();
+    taaObj.set("enabled", JsonValue(settings.quality.taa.enabled));
+    taaObj.set("historyWeight", JsonValue(static_cast<double>(settings.quality.taa.historyWeight)));
+    taaObj.set("varianceGamma", JsonValue(static_cast<double>(settings.quality.taa.varianceGamma)));
+    taaObj.set("jitterSequence", JsonValue(taaJitterToString(settings.quality.taa.jitterSequence)));
+    taaObj.set("sharpeningEnabled", JsonValue(settings.quality.taa.sharpeningEnabled));
+    taaObj.set("sharpeningIntensity",
+               JsonValue(static_cast<double>(settings.quality.taa.sharpeningIntensity)));
+    taaObj.set("useMotionVectors", JsonValue(settings.quality.taa.useMotionVectors));
+    qualityObj.set("taa", std::move(taaObj));
+
     root.set("quality", std::move(qualityObj));
 
     // Lighting
@@ -420,6 +452,25 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
         if (q->contains("textureQuality")) {
             settings.quality.textureQuality =
                 stringToTextureQuality(q->getString("textureQuality", "High"));
+        }
+        if (const auto* taa = q->find("taa"); taa != nullptr && taa->isObject()) {
+            settings.quality.taa.enabled = taa->getBool("enabled", settings.quality.taa.enabled);
+            settings.quality.taa.historyWeight =
+                taa->getFloat("historyWeight", settings.quality.taa.historyWeight);
+            settings.quality.taa.varianceGamma =
+                taa->getFloat("varianceGamma", settings.quality.taa.varianceGamma);
+            if (taa->contains("jitterSequence")) {
+                settings.quality.taa.jitterSequence =
+                    stringToTaaJitter(taa->getString("jitterSequence", "Halton16"));
+            }
+            settings.quality.taa.sharpeningEnabled =
+                taa->getBool("sharpeningEnabled", settings.quality.taa.sharpeningEnabled);
+            settings.quality.taa.sharpeningIntensity =
+                taa->getFloat("sharpeningIntensity", settings.quality.taa.sharpeningIntensity);
+            settings.quality.taa.useMotionVectors =
+                taa->getBool("useMotionVectors", settings.quality.taa.useMotionVectors);
+        } else if (settings.quality.antiAliasing == AntiAliasingMode::TAA) {
+            settings.quality.taa.enabled = true;
         }
     }
 

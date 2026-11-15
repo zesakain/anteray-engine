@@ -37,6 +37,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.quality.anisotropicFiltering = AnisotropicFiltering::Off;
         s.quality.antiAliasing = AntiAliasingMode::None;
         s.quality.textureQuality = TextureQuality::Low;
+        s.quality.taa.enabled = false;
 
         s.lighting.directLighting = true;
         s.lighting.environmentIntensity = 0.8F;
@@ -60,6 +61,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.quality.anisotropicFiltering = AnisotropicFiltering::X4;
         s.quality.antiAliasing = AntiAliasingMode::None;
         s.quality.textureQuality = TextureQuality::Medium;
+        s.quality.taa.enabled = false;
 
         s.lighting.directLighting = true;
         s.lighting.environmentIntensity = 1.0F;
@@ -84,8 +86,15 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
     case GraphicsQualityPreset::High:
         s.quality.renderScale = 1.0F;
         s.quality.anisotropicFiltering = AnisotropicFiltering::X16;
-        s.quality.antiAliasing = AntiAliasingMode::None;
+        s.quality.antiAliasing = AntiAliasingMode::TAA;
         s.quality.textureQuality = TextureQuality::High;
+        s.quality.taa.enabled = true;
+        s.quality.taa.jitterSequence = TaaJitterSequence::Halton8;
+        s.quality.taa.historyWeight = 0.90F;
+        s.quality.taa.varianceGamma = 1.25F;
+        s.quality.taa.sharpeningEnabled = true;
+        s.quality.taa.sharpeningIntensity = 0.50F;
+        s.quality.taa.useMotionVectors = true;
 
         s.lighting.directLighting = true;
         s.lighting.iblEnabled = true;
@@ -113,8 +122,15 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
     case GraphicsQualityPreset::Ultra:
         s.quality.renderScale = 1.0F;
         s.quality.anisotropicFiltering = AnisotropicFiltering::X16;
-        s.quality.antiAliasing = AntiAliasingMode::None;
+        s.quality.antiAliasing = AntiAliasingMode::TAA;
         s.quality.textureQuality = TextureQuality::Ultra;
+        s.quality.taa.enabled = true;
+        s.quality.taa.jitterSequence = TaaJitterSequence::Halton16;
+        s.quality.taa.historyWeight = 0.92F;
+        s.quality.taa.varianceGamma = 1.25F;
+        s.quality.taa.sharpeningEnabled = true;
+        s.quality.taa.sharpeningIntensity = 0.50F;
+        s.quality.taa.useMotionVectors = true;
 
         s.lighting.directLighting = true;
         s.lighting.iblEnabled = true;
@@ -136,8 +152,15 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
     case GraphicsQualityPreset::Cinematic:
         s.quality.renderScale = 1.25F; // 25% Supersampling
         s.quality.anisotropicFiltering = AnisotropicFiltering::X16;
-        s.quality.antiAliasing = AntiAliasingMode::None;
+        s.quality.antiAliasing = AntiAliasingMode::TAA;
         s.quality.textureQuality = TextureQuality::Ultra;
+        s.quality.taa.enabled = true;
+        s.quality.taa.jitterSequence = TaaJitterSequence::Halton32;
+        s.quality.taa.historyWeight = 0.95F;
+        s.quality.taa.varianceGamma = 1.50F;
+        s.quality.taa.sharpeningEnabled = true;
+        s.quality.taa.sharpeningIntensity = 0.60F;
+        s.quality.taa.useMotionVectors = true;
 
         s.lighting.directLighting = true;
         s.lighting.iblEnabled = true;
@@ -183,6 +206,7 @@ GraphicsQualityPreset GraphicsSettings::detectPreset() const noexcept {
         const bool matchQuality =
             (std::abs(quality.renderScale - ref.quality.renderScale) < 0.01F) &&
             (quality.anisotropicFiltering == ref.quality.anisotropicFiltering) &&
+            (quality.antiAliasing == ref.quality.antiAliasing) &&
             (quality.textureQuality == ref.quality.textureQuality);
 
         const bool matchShadows = (shadows.enabled == ref.shadows.enabled) &&
@@ -286,11 +310,12 @@ GraphicsSettings::computeChangeSeverity(const GraphicsSettings& other) const noe
     }
 
     // Resource allocation required if shadow resolution, cascade count, render scale,
-    // texture quality/anisotropy, or HDR target changed
+    // texture quality/anisotropy, AA mode/TAA settings, or HDR target changed
     if (shadows.resolution != other.shadows.resolution ||
         shadows.cascadeCount != other.shadows.cascadeCount ||
         std::abs(quality.renderScale - other.quality.renderScale) > 1e-4F ||
         quality.anisotropicFiltering != other.quality.anisotropicFiltering ||
+        quality.antiAliasing != other.quality.antiAliasing || quality.taa != other.quality.taa ||
         quality.textureQuality != other.quality.textureQuality ||
         postProcess.enabled != other.postProcess.enabled) {
         return SettingChangeSeverity::RenderResourceRecreation;
