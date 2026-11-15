@@ -85,6 +85,8 @@ struct GpuPassTimings {
     float gtaoPassMs{0.0F};
     /// Duration of Screen-Space Global Illumination (SSGI) pass (milliseconds).
     float ssgiPassMs{0.0F};
+    /// Duration of Screen-Space Reflections (SSR) pass (milliseconds).
+    float ssrPassMs{0.0F};
     /// Duration of temporal accumulation and denoising pass (milliseconds).
     float temporalDenoiseMs{0.0F};
     /// Combined total duration of all Global Illumination passes (milliseconds).
@@ -337,6 +339,15 @@ public:
         float pad0{0.0F};
     };
 
+    struct SsrPushConstants {
+        Mat4 reprojectMat{Mat4::identity()};
+        Vec4 projParams{1.0F, 1.0F, 1.0F, 1.0F};
+        Vec4 ssrParams{10.0F, 16.0F, 0.2F, 0.6F};
+        Vec4 cameraPosAndIntensity{0.0F, 0.0F, 0.0F, 1.0F};
+        Vec2 resolution{960.0F, 540.0F};
+        Vec2 invResolution{1.0F / 960.0F, 1.0F / 540.0F};
+    };
+
     struct TemporalFilterPushConstants {
         Mat4 reprojectMat{Mat4::identity()};
         Vec4 filterParams{0.1F, 0.05F, 0.0F, 0.0F};
@@ -375,7 +386,9 @@ private:
     void recordGtaoPass(rhi::RhiCommandList& cmdList);
     void recordGtaoBlurPass(rhi::RhiCommandList& cmdList);
     void recordSsgiPass(rhi::RhiCommandList& cmdList);
+    void recordSsrPass(rhi::RhiCommandList& cmdList);
     void recordTemporalFilterPass(rhi::RhiCommandList& cmdList);
+    void recordSsrTemporalFilterPass(rhi::RhiCommandList& cmdList);
     void recordHistoryCopyPass(rhi::RhiCommandList& cmdList);
     void recordMainPbrPass(rhi::RhiCommandList& cmdList);
     void recordBloomDownsamplePass(rhi::RhiCommandList& cmdList, size_t level);
@@ -449,15 +462,20 @@ private:
     rhi::TextureHandle ssgiRawTarget_{};
     rhi::TextureHandle ssgiFilteredTarget_{};
     rhi::TextureHandle ssgiHistoryTarget_[2]{};
+    rhi::TextureHandle ssrRawTarget_{};
+    rhi::TextureHandle ssrFilteredTarget_{};
+    rhi::TextureHandle ssrHistoryTarget_[2]{};
     rhi::TextureHandle hdrHistoryTarget_[2]{};
     std::unique_ptr<GpuTexture> defaultAoTexture_{};
     std::unique_ptr<GpuTexture> defaultIndirectTexture_{};
+    std::unique_ptr<GpuTexture> defaultSsrTexture_{};
     rhi::SamplerHandle linearClampSampler_{};
     rhi::SamplerHandle pointClampSampler_{};
 
     rhi::ShaderHandle gtaoFragmentShader_{};
     rhi::ShaderHandle bilateralBlurFragmentShader_{};
     rhi::ShaderHandle ssgiFragmentShader_{};
+    rhi::ShaderHandle ssrFragmentShader_{};
     rhi::ShaderHandle temporalFilterFragmentShader_{};
 
     rhi::DescriptorSetLayoutHandle tripleTextureSetLayout_{};
@@ -465,16 +483,20 @@ private:
     rhi::DescriptorSetHandle gtaoDescriptorSet_{};
     rhi::DescriptorSetHandle gtaoBlurDescriptorSet_{};
     rhi::DescriptorSetHandle ssgiDescriptorSet_{};
+    rhi::DescriptorSetHandle ssrDescriptorSet_{};
     rhi::DescriptorSetHandle temporalFilterDescriptorSet_{};
+    rhi::DescriptorSetHandle ssrTemporalFilterDescriptorSet_{};
 
     rhi::PipelineLayoutHandle gtaoPipelineLayout_{};
     rhi::PipelineLayoutHandle gtaoBlurPipelineLayout_{};
     rhi::PipelineLayoutHandle ssgiPipelineLayout_{};
+    rhi::PipelineLayoutHandle ssrPipelineLayout_{};
     rhi::PipelineLayoutHandle temporalFilterPipelineLayout_{};
 
     rhi::PipelineHandle gtaoPipeline_{};
     rhi::PipelineHandle gtaoBlurPipeline_{};
     rhi::PipelineHandle ssgiPipeline_{};
+    rhi::PipelineHandle ssrPipeline_{};
     rhi::PipelineHandle temporalFilterPipeline_{};
 
     Mat4 prevViewProj_{Mat4::identity()};
