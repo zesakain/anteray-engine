@@ -105,6 +105,50 @@ static inline Vec3 neutralToneMappingCpu(Vec3 color) noexcept {
                 std::clamp(res.z, 0.0F, 1.0F));
 }
 
+static inline Vec3 agxToneMappingCpu(Vec3 color) noexcept {
+    float r = std::max(0.0F, color.x);
+    float g = std::max(0.0F, color.y);
+    float b = std::max(0.0F, color.z);
+
+    float inR = 0.842479062253094F * r + 0.0784335999999992F * g + 0.0792237451977152F * b;
+    float inG = 0.0423282422610123F * r + 0.878468646464646F * g + 0.0792237451977152F * b;
+    float inB = 0.0423756549057051F * r + 0.0784335999999992F * g + 0.879237451977152F * b;
+
+    inR = std::max(inR, 1e-10F);
+    inG = std::max(inG, 1e-10F);
+    inB = std::max(inB, 1e-10F);
+
+    constexpr float minEv = -12.47393F;
+    constexpr float maxEv = 4.026069F;
+    constexpr float evRange = maxEv - minEv;
+
+    auto logMap = [&](float v) {
+        float norm = (std::log2(v) - minEv) / evRange;
+        norm = std::clamp(norm, 0.0F, 1.0F);
+        float x2 = norm * norm;
+        float x4 = x2 * x2;
+        float sig = 15.5F * (x4 * x2) - 40.14F * (x4 * norm) + 31.96F * x4 - 6.868F * (x2 * norm) +
+                    0.4298F * x2 + 0.1191F * norm - 0.00232F;
+        return std::clamp(sig, 0.0F, 1.0F);
+    };
+
+    float sigR = logMap(inR);
+    float sigG = logMap(inG);
+    float sigB = logMap(inB);
+
+    float outR = 1.19687900512017F * sigR - 0.0980208811401368F * sigG - 0.0990297440797205F * sigB;
+    float outG =
+        -0.0528968517574562F * sigR + 1.15190312990417F * sigG - 0.0990297440797205F * sigB;
+    float outB =
+        -0.0529716355178468F * sigR - 0.0980434501171801F * sigG + 1.15107360136118F * sigB;
+
+    outR = std::pow(std::clamp(outR, 0.0F, 1.0F), 2.2F);
+    outG = std::pow(std::clamp(outG, 0.0F, 1.0F), 2.2F);
+    outB = std::pow(std::clamp(outB, 0.0F, 1.0F), 2.2F);
+
+    return Vec3(outR, outG, outB);
+}
+
 static inline float linearToSrgbCpu(float x) noexcept {
     x = std::max(0.0F, x);
     return (x <= 0.0031308F) ? (12.92F * x) : ((1.055F * std::pow(x, 1.0F / 2.4F)) - 0.055F);
@@ -210,14 +254,26 @@ static int testToneMappingMath() {
     Vec3 extremeMapped = neutralToneMappingCpu(Vec3(10000.0F, 5000.0F, 1000.0F));
     TEST_CHECK(extremeMapped.x <= 1.0F && !std::isnan(extremeMapped.x));
 
-    // 4. Distinct Operator Outputs at Mid-Range Radiance (v = 2.0)
+    // 4. AgX Tone Mapping Operator
+    Vec3 agxZero = agxToneMappingCpu(Vec3(0.0F, 0.0F, 0.0F));
+    TEST_CHECK(agxZero.x >= 0.0F && agxZero.x < 0.01F);
+    Vec3 agxMid = agxToneMappingCpu(Vec3(0.18F, 0.18F, 0.18F));
+    TEST_CHECK(agxMid.x > 0.10F && agxMid.x < 0.30F);
+    Vec3 agxHigh = agxToneMappingCpu(Vec3(10.0F, 10.0F, 10.0F));
+    TEST_CHECK(agxHigh.x > agxMid.x && agxHigh.x <= 1.0F);
+    Vec3 agxExtreme = agxToneMappingCpu(Vec3(10000.0F, 10000.0F, 10000.0F));
+    TEST_CHECK(agxExtreme.x <= 1.0F && !std::isnan(agxExtreme.x));
+
+    // 5. Distinct Operator Outputs at Mid-Range Radiance (v = 2.0)
     float vMid = 2.0F;
+    float opAgX = agxToneMappingCpu(Vec3(vMid, vMid, vMid)).x;
     float opAces = acesFittedCurve(vMid);
     float opReinhard = filmicReinhardCurve(vMid, 4.0F);
     float opNeutral = neutralToneMappingCpu(Vec3(vMid, vMid, vMid)).x;
     float opBypass = std::clamp(vMid, 0.0F, 1.0F);
     TEST_CHECK(std::abs(opAces - opReinhard) > 0.05F);
     TEST_CHECK(std::abs(opAces - opNeutral) > 0.02F);
+    TEST_CHECK(std::abs(opAgX - opAces) > 0.02F);
     TEST_CHECK(std::abs(opReinhard - opNeutral) > 0.05F);
     TEST_CHECK(opBypass == 1.0F);
 
@@ -304,6 +360,7 @@ static int testSceneRendererHdrLifecycle() {
     // Verify default post-processing settings state
     TEST_CHECK(!renderer.isPostProcessingEnabled());
     PostProcessSettings ppSettings{};
+    TEST_CHECK(ppSettings.toneMapOp == ToneMapOperator::AgX);
     ppSettings.enabled = true;
     ppSettings.exposure = 1.5F;
     ppSettings.toneMapOp = ToneMapOperator::FilmicReinhard;
@@ -619,7 +676,13 @@ static int testVulkanPostProcessRendering() {
     }
     TEST_CHECK(sumBloomOn >= sumBloomOff);
 
-    // 5. Operator comparisons (Reinhard, Neutral, Bypass)
+    // 5. Operator comparisons (AgX, Reinhard, Neutral, Bypass)
+    PostProcessSettings sAgX = sAcesNormal;
+    sAgX.toneMapOp = ToneMapOperator::AgX;
+    sAgX.bloomEnabled = false;
+    std::vector<uint8_t> pxAgX;
+    TEST_CHECK(capture("postprocess_agx", sAgX, pxAgX) == 0);
+
     PostProcessSettings sReinhard = sAcesNormal;
     sReinhard.toneMapOp = ToneMapOperator::FilmicReinhard;
     sReinhard.bloomEnabled = false;

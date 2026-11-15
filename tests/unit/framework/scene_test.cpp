@@ -485,6 +485,17 @@ int testLightAndCameraSerializationRoundTrip() {
 
     TEST_CHECK(foundSun && foundLamp && foundSpot && foundCam);
 
+    // Test AgX Default tone mapper serialization & deserialization
+    ppSettings.toneMapOp = render::ToneMapOperator::AgX;
+    auto serAgxRes = SceneSerializer::serializeToString(worldA, meta, {}, ppSettings);
+    TEST_CHECK(serAgxRes.hasValue());
+    TEST_CHECK(serAgxRes.value().find("\"AgX\"") != std::string::npos);
+    World worldAgx;
+    auto desAgxRes = SceneSerializer::deserializeFromString(worldAgx, serAgxRes.value(), false);
+    TEST_CHECK(desAgxRes.hasValue());
+    TEST_CHECK(desAgxRes.value().postProcessSettings.has_value());
+    TEST_CHECK(desAgxRes.value().postProcessSettings->toneMapOp == render::ToneMapOperator::AgX);
+
     return 0;
 }
 

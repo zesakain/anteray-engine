@@ -53,11 +53,13 @@ int main() {
         TEST_CHECK(high.shadows.softShadows);
         TEST_CHECK(high.shadows.distance == 50.0F);
         TEST_CHECK(high.quality.anisotropicFiltering == AnisotropicFiltering::X16);
+        TEST_CHECK(high.postProcess.toneMapOp == ToneMapOperator::AgX);
 
         auto cinematic = GraphicsSettings::createPreset(GraphicsQualityPreset::Cinematic);
         TEST_CHECK(cinematic.quality.preset == GraphicsQualityPreset::Cinematic);
         TEST_CHECK(cinematic.quality.renderScale == 1.25F);
         TEST_CHECK(cinematic.shadows.resolution == 4096);
+        TEST_CHECK(cinematic.postProcess.toneMapOp == ToneMapOperator::AgX);
         TEST_CHECK(cinematic.shadows.distance == 100.0F);
     }
 
@@ -164,7 +166,18 @@ int main() {
         TEST_CHECK(parsed.shadows.resolution == original.shadows.resolution);
         TEST_CHECK(parsed.lighting.directLighting == original.lighting.directLighting);
         TEST_CHECK(std::abs(parsed.postProcess.exposure - original.postProcess.exposure) < 1e-4F);
+        TEST_CHECK(parsed.postProcess.toneMapOp == original.postProcess.toneMapOp);
+        TEST_CHECK(parsed.postProcess.toneMapOp == ToneMapOperator::AgX);
         TEST_CHECK(parsed.debug.viewMode == original.debug.viewMode);
+
+        // Explicit ACES backwards compatibility test
+        auto acesConfig = original;
+        acesConfig.postProcess.toneMapOp = ToneMapOperator::AcesFitted;
+        auto acesJson = GraphicsSettingsSerializer::serializeToString(acesConfig, false);
+        TEST_CHECK(acesJson.hasValue());
+        auto parsedAces = GraphicsSettingsSerializer::deserializeFromString(acesJson.value());
+        TEST_CHECK(parsedAces.hasValue());
+        TEST_CHECK(parsedAces.value().postProcess.toneMapOp == ToneMapOperator::AcesFitted);
     }
 
     // =========================================================================
@@ -178,6 +191,8 @@ int main() {
 
         // Empty JSON object should gracefully use defaults without crashing
         auto emptyRes = GraphicsSettingsSerializer::deserializeFromString("{}");
+        TEST_CHECK(emptyRes.hasValue());
+        TEST_CHECK(emptyRes.value().postProcess.toneMapOp == ToneMapOperator::AgX);
         TEST_CHECK(emptyRes.hasValue());
         const auto& def = emptyRes.value();
         TEST_CHECK(def.quality.renderScale == 1.0F);
