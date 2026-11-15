@@ -20,6 +20,21 @@
 #include <memory>
 #include <vector>
 
+#if defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define HIKARI_HAS_ASAN 1
+#endif
+#endif
+#if defined(__SANITIZE_ADDRESS__)
+#define HIKARI_HAS_ASAN 1
+#endif
+
+#if defined(HIKARI_HAS_ASAN)
+extern "C" const char* __lsan_default_suppressions() {
+    return "leak:libdbus-1\nleak:libvulkan\nleak:nvidia\nleak:libwayland\n";
+}
+#endif
+
 using namespace eng;
 using namespace eng::render;
 using namespace eng::rhi;
