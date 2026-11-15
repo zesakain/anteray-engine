@@ -18,6 +18,11 @@ shader_mappings = [
     ("kSsgiFragmentShaderSpirv", "assets/shaders/ssgi.frag"),
     ("kSsrFragmentShaderSpirv", "assets/shaders/ssr.frag"),
     ("kTemporalFilterFragmentShaderSpirv", "assets/shaders/temporal_filter.frag"),
+    ("kVelocityFragmentShaderSpirv", "assets/shaders/velocity.frag"),
+    ("kMeshVelocityVertexShaderSpirv", "assets/shaders/mesh_velocity.vert"),
+    ("kMeshVelocityFragmentShaderSpirv", "assets/shaders/mesh_velocity.frag"),
+    ("kTaaFragmentShaderSpirv", "assets/shaders/taa.frag"),
+    ("kSharpenFragmentShaderSpirv", "assets/shaders/sharpen.frag"),
 ]
 
 output_header = "engine/render/include/render/mesh_shader_spirv.h"
