@@ -7,8 +7,6 @@ layout(location = 1) out vec4 outPrevClip;
 layout(push_constant) uniform MeshVelocityPushConstants {
     mat4 curMvp;     // unjitteredViewProj * curModel
     mat4 prevMvp;    // unjitteredPrevViewProj * prevModel
-    uint isValid;
-    float pad0, pad1, pad2;
 } pc;
 
 void main() {

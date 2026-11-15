@@ -7,8 +7,6 @@ layout(location = 0) out vec4 outVelocity;
 layout(push_constant) uniform MeshVelocityPushConstants {
     mat4 curMvp;
     mat4 prevMvp;
-    uint isValid;
-    float pad0, pad1, pad2;
 } pc;
 
 void main() {
@@ -19,5 +17,5 @@ void main() {
     vec2 curUV = (inCurClip.xy / inCurClip.w) * 0.5 + 0.5;
     vec2 prevUV = (inPrevClip.xy / inPrevClip.w) * 0.5 + 0.5;
     vec2 vel = curUV - prevUV;
-    outVelocity = vec4(vel, gl_FragCoord.z, pc.isValid != 0u ? 1.0 : 0.0);
+    outVelocity = vec4(vel, gl_FragCoord.z, 1.0);
 }

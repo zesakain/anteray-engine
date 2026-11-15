@@ -471,6 +471,8 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
                 taa->getBool("useMotionVectors", settings.quality.taa.useMotionVectors);
         } else if (settings.quality.antiAliasing == AntiAliasingMode::TAA) {
             settings.quality.taa.enabled = true;
+        } else {
+            settings.quality.taa.enabled = false;
         }
     }
 

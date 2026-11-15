@@ -320,7 +320,8 @@ public:
         return hdrHistoryTarget_[frameSlotIndex_ % 2];
     }
     [[nodiscard]] bool isTaaEnabled() const noexcept {
-        return settings_.quality.antiAliasing == AntiAliasingMode::TAA &&
+        return postProcessSettings_.enabled && hdrTarget_.isValid() &&
+               settings_.quality.antiAliasing == AntiAliasingMode::TAA &&
                settings_.quality.taa.enabled;
     }
     /// Invalidates temporal history accumulation (e.g. upon camera cuts, teleports, or resize).
@@ -375,8 +376,7 @@ public:
 
     // Milestone 11H: Motion Vectors, TAA, and Sharpening Push Constants
     struct VelocityPushConstants {
-        Mat4 unjitteredInvViewProj{Mat4::identity()};
-        Mat4 unjitteredPrevViewProj{Mat4::identity()};
+        Mat4 reprojectMatrix{Mat4::identity()}; // unjitteredPrevViewProj * unjitteredInvViewProj
         Vec2 resolution{1920.0F, 1080.0F};
         Vec2 invResolution{1.0F / 1920.0F, 1.0F / 1080.0F};
         uint32_t hasHistory{0};
@@ -384,19 +384,15 @@ public:
         float pad1{0.0F};
         float pad2{0.0F};
     };
-    static_assert(sizeof(VelocityPushConstants) == 160,
-                  "VelocityPushConstants must be exactly 160 bytes");
+    static_assert(sizeof(VelocityPushConstants) == 96,
+                  "VelocityPushConstants must be exactly 96 bytes");
 
     struct MeshVelocityPushConstants {
         Mat4 curMvp{Mat4::identity()};
         Mat4 prevMvp{Mat4::identity()};
-        uint32_t isValid{0};
-        float pad0{0.0F};
-        float pad1{0.0F};
-        float pad2{0.0F};
     };
-    static_assert(sizeof(MeshVelocityPushConstants) == 144,
-                  "MeshVelocityPushConstants must be exactly 144 bytes");
+    static_assert(sizeof(MeshVelocityPushConstants) == 128,
+                  "MeshVelocityPushConstants must be exactly 128 bytes");
 
     struct TaaPushConstants {
         Vec4 taaParams{0.90F, 1.25F, 0.0F, 0.0F}; // historyWeight, varianceGamma, pad, pad

@@ -6,8 +6,7 @@ layout(location = 0) out vec4 outVelocity;
 layout(set = 0, binding = 0) uniform sampler2D uDepthMap;
 
 layout(push_constant) uniform VelocityPushConstants {
-    mat4 unjitteredInvViewProj;
-    mat4 unjitteredPrevViewProj;
+    mat4 reprojectMatrix;
     vec2 resolution;
     vec2 invResolution;
     uint hasHistory;
@@ -24,10 +23,7 @@ void main() {
     }
 
     vec4 ndc = vec4(inUV.x * 2.0 - 1.0, inUV.y * 2.0 - 1.0, depth, 1.0);
-    vec4 worldPos = pc.unjitteredInvViewProj * ndc;
-    worldPos /= worldPos.w;
-
-    vec4 prevClip = pc.unjitteredPrevViewProj * worldPos;
+    vec4 prevClip = pc.reprojectMatrix * ndc;
     if (prevClip.w <= 1e-5) {
         outVelocity = vec4(0.0, 0.0, depth, 0.0);
         return;

@@ -1843,46 +1843,58 @@ void SceneRenderer::buildRenderGraph() {
         useTaa ? hdrRawTarget_ : (useHdr ? hdrTarget_ : colorTarget_);
 
     GraphTextureId colorId{};
-    if (sceneColorTarget.isValid()) {
+    const bool hasColorTarget = sceneColorTarget.isValid();
+    if (hasColorTarget) {
         colorId = renderGraph_.importTexture("SceneColorTarget", sceneColorTarget);
     }
     GraphTextureId depthId{};
-    if (depthTarget_.isValid()) {
+    const bool hasDepthTarget = depthTarget_.isValid();
+    if (hasDepthTarget) {
         depthId = renderGraph_.importTexture("DepthTarget", depthTarget_);
     }
 
     GraphTextureId velocityId{};
+    bool hasVelocityTarget = false;
     GraphTextureId currHistoryId{};
+    bool hasCurrHistory = false;
     GraphTextureId prevHistoryId{};
+    bool hasPrevHistory = false;
     GraphTextureId finalHdrId{};
+    bool hasFinalHdr = false;
     if (useTaa) {
         if (velocityTarget_.isValid()) {
             velocityId = renderGraph_.importTexture("VelocityTarget", velocityTarget_);
+            hasVelocityTarget = true;
         }
         const uint32_t currSlot = frameSlotIndex_ % 2;
         const uint32_t prevSlot = (frameSlotIndex_ + 1) % 2;
         if (hdrHistoryTarget_[currSlot].isValid()) {
             currHistoryId =
                 renderGraph_.importTexture("TaaCurrentHistoryTarget", hdrHistoryTarget_[currSlot]);
+            hasCurrHistory = true;
         }
         if (hdrHistoryTarget_[prevSlot].isValid()) {
             prevHistoryId =
                 renderGraph_.importTexture("TaaPreviousHistoryTarget", hdrHistoryTarget_[prevSlot]);
+            hasPrevHistory = true;
         }
         if (hdrTarget_.isValid()) {
             finalHdrId = renderGraph_.importTexture("HdrAntiAliasedTarget", hdrTarget_);
+            hasFinalHdr = true;
         }
     }
 
     const bool hasShadowPass =
         settings_.shadows.enabled && shadowDepthTarget_.isValid() && shadowPipeline_.isValid();
     GraphTextureId shadowId{};
+    const bool hasShadowTarget = hasShadowPass;
     if (hasShadowPass) {
         shadowId = renderGraph_.importTexture("ShadowDepthTarget", shadowDepthTarget_);
     }
 
     GraphBufferId lightBufId{};
-    if (lightingUniformBuffer_.isValid()) {
+    const bool hasLightBuf = lightingUniformBuffer_.isValid();
+    if (hasLightBuf) {
         lightBufId = renderGraph_.importBuffer("LightingBuffer", lightingUniformBuffer_);
     }
 
@@ -2009,13 +2021,13 @@ void SceneRenderer::buildRenderGraph() {
     // 5. Main PBR Scene Pass
     renderGraph_.addPass(
         "MainPbrPass",
-        [hasShadowPass, shadowId, lightBufId, colorId, depthId, hasDepthPrepass, hasGtao,
-         gtaoFilteredId, hasSsgi, ssgiFilteredId, hasSsr,
+        [hasShadowTarget, shadowId, hasLightBuf, lightBufId, hasColorTarget, colorId, hasDepthTarget,
+         depthId, hasDepthPrepass, hasGtao, gtaoFilteredId, hasSsgi, ssgiFilteredId, hasSsr,
          ssrFilteredId](RenderPassBuilder& builder) {
-            if (hasShadowPass && shadowId.isValid()) {
+            if (hasShadowTarget) {
                 builder.readTexture(shadowId, rhi::TextureUsageFlags::Sampled);
             }
-            if (lightBufId.isValid()) {
+            if (hasLightBuf) {
                 builder.readBuffer(lightBufId, rhi::BufferUsageFlags::Uniform);
             }
             if (hasGtao && gtaoFilteredId.isValid()) {
@@ -2027,10 +2039,10 @@ void SceneRenderer::buildRenderGraph() {
             if (hasSsr && ssrFilteredId.isValid()) {
                 builder.readTexture(ssrFilteredId, rhi::TextureUsageFlags::Sampled);
             }
-            if (colorId.isValid()) {
+            if (hasColorTarget) {
                 builder.writeTexture(colorId, rhi::TextureUsageFlags::ColorAttachment);
             }
-            if (depthId.isValid()) {
+            if (hasDepthTarget) {
                 if (hasDepthPrepass) {
                     builder.readTexture(depthId, rhi::TextureUsageFlags::DepthStencilAttachment);
                 } else {
@@ -2041,7 +2053,7 @@ void SceneRenderer::buildRenderGraph() {
         [this](rhi::RhiCommandList& cmdList) { recordMainPbrPass(cmdList); });
 
     // 6. Velocity / Motion Vector Pass (Milestone 11H)
-    if (useTaa && velocityId.isValid() && depthId.isValid()) {
+    if (useTaa && hasVelocityTarget && hasDepthTarget) {
         renderGraph_.addPass(
             "VelocityPass",
             [depthId, velocityId](RenderPassBuilder& builder) {
@@ -2052,8 +2064,8 @@ void SceneRenderer::buildRenderGraph() {
     }
 
     // 7. Temporal Anti-Aliasing (TAA) Accumulation Pass (Milestone 11H)
-    if (useTaa && colorId.isValid() && prevHistoryId.isValid() && velocityId.isValid() &&
-        depthId.isValid() && currHistoryId.isValid()) {
+    if (useTaa && hasColorTarget && hasPrevHistory && hasVelocityTarget && hasDepthTarget &&
+        hasCurrHistory) {
         renderGraph_.addPass(
             "TaaPass",
             [colorId, prevHistoryId, velocityId, depthId,
@@ -2068,7 +2080,7 @@ void SceneRenderer::buildRenderGraph() {
     }
 
     // 8. Contrast-Adaptive Sharpening (RCAS) Pass (Milestone 11H)
-    if (useTaa && currHistoryId.isValid() && finalHdrId.isValid()) {
+    if (useTaa && hasCurrHistory && hasFinalHdr) {
         renderGraph_.addPass(
             "SharpenPass",
             [currHistoryId, finalHdrId](RenderPassBuilder& builder) {
@@ -4972,9 +4984,9 @@ void SceneRenderer::recordVelocityPass(rhi::RhiCommandList& cmdList) {
     const std::array<rhi::DescriptorSetHandle, 1> sets{velocityDescriptorSet_};
     cmdList.bindDescriptorSets(velocityPipelineLayout_, 0, sets);
 
+    Mat4 invViewProj = unjitteredViewProj_.inverse().value_or(Mat4::identity());
     VelocityPushConstants pc{
-        .unjitteredInvViewProj = unjitteredViewProj_.inverse().value_or(Mat4::identity()),
-        .unjitteredPrevViewProj = unjitteredPrevViewProj_,
+        .reprojectMatrix = unjitteredPrevViewProj_ * invViewProj,
         .resolution = Vec2(static_cast<float>(width_), static_cast<float>(height_)),
         .invResolution =
             Vec2(1.0F / static_cast<float>(width_), 1.0F / static_cast<float>(height_)),
@@ -5021,10 +5033,6 @@ void SceneRenderer::recordVelocityPass(rhi::RhiCommandList& cmdList) {
             MeshVelocityPushConstants mpc{
                 .curMvp = unjitteredViewProj_ * item.model,
                 .prevMvp = unjitteredPrevViewProj_ * item.prevModel,
-                .isValid = 1U,
-                .pad0 = 0.0F,
-                .pad1 = 0.0F,
-                .pad2 = 0.0F,
             };
             cmdList.pushConstants(
                 meshVelocityPipelineLayout_,
