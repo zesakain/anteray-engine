@@ -494,6 +494,69 @@ int testPhaseCancellationSafety() {
     return 0;
 }
 
+int testRapidCancelRestartWithJobSystem() {
+    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+        return 0;
+    }
+
+    JobSystemConfig jobConfig{.workerCount = 2, .maxJobs = 128};
+    size_t bytes = JobSystem::requiredBytes(jobConfig);
+    std::vector<std::byte> storage(bytes);
+    JobSystem jobSystem(storage, jobConfig);
+
+    auto nullDevRes = rhi::createNullDevice();
+    TEST_CHECK(nullDevRes.hasValue());
+    auto nullDevice = std::move(nullDevRes.value());
+
+    render::AssetManager assetManager;
+    World world;
+    auto baselineEntity = world.createEntity("BaselineEntity");
+    const size_t initialEntities = world.getAllEntities().size();
+
+    AsyncSceneLoader loader;
+    loader.bindJobSystem(&jobSystem);
+    loader.bindAssetManager(&assetManager);
+
+    // Rapidly start, tick briefly, and cancel across multiple cycles to exercise
+    // worker-local staging cleanup and cancellation safety under JobSystem concurrency.
+    for (int cycle = 0; cycle < 5; ++cycle) {
+        auto startRes = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+        TEST_CHECK(startRes.hasValue());
+
+        for (int tick = 0; tick < (cycle % 3) + 1; ++tick) {
+            loader.update(*nullDevice, 1.0F);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        loader.cancel();
+        int drainFrames = 200;
+        while (loader.isLoading() && drainFrames-- > 0) {
+            loader.update(*nullDevice, 2.0F);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        TEST_CHECK(loader.isCancelled());
+        TEST_CHECK(world.getAllEntities().size() == initialEntities);
+        TEST_CHECK(world.isAlive(baselineEntity));
+        loader.reset();
+    }
+
+    // Verify a subsequent full load completes and activates cleanly.
+    auto finalStart = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    TEST_CHECK(finalStart.hasValue());
+    int maxFrames = 1000;
+    while (loader.isLoading() && maxFrames-- > 0) {
+        loader.update(*nullDevice, 5.0F);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    TEST_CHECK(loader.isReadyToActivate());
+    TEST_CHECK(loader.activate(world).hasValue());
+    TEST_CHECK(loader.isCompleted());
+    TEST_CHECK(!world.getAllEntities().empty());
+
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -558,6 +621,12 @@ int main() {
         return 1;
     }
     std::cout << "PASS: testPhaseCancellationSafety\n";
+
+    if (testRapidCancelRestartWithJobSystem() != 0) {
+        std::cerr << "FAIL: testRapidCancelRestartWithJobSystem\n";
+        return 1;
+    }
+    std::cout << "PASS: testRapidCancelRestartWithJobSystem\n";
 
     if (testBistroBenchmarkSceneLoading() != 0) {
         std::cerr << "FAIL: testBistroBenchmarkSceneLoading\n";
