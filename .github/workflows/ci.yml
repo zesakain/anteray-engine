@@ -27,7 +27,7 @@ jobs:
 
       - name: Verify Code Formatting (clang-format)
         run: |
-          find engine editor src tests -name '*.cpp' -o -name '*.h' | grep -v 'engine/script/src/lua' | grep -v 'engine/world/src/flecs' | xargs clang-format --dry-run --Werror
+          find engine editor src tests -name '*.cpp' -o -name '*.h' | grep -v 'engine/script/src/lua' | grep -v 'engine/world/src/flecs' | grep -v 'engine/render/src/cgltf' | grep -v 'engine/render/src/stb' | xargs clang-format --dry-run --Werror
 
   build-and-test:
     name: Build & Test (${{ matrix.preset }})

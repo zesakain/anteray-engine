@@ -74,6 +74,13 @@ if(HIKARI_SANITIZER)
         target_link_options(hikari_compiler_flags INTERFACE
             -fsanitize=${HIKARI_SANITIZER}
         )
+        if(HIKARI_SANITIZER MATCHES "thread")
+            # GCC 12+ emits -Wtsan (which turns into an error under -Werror) on atomic_thread_fence calls
+            # inlined from third-party synchronization primitives (e.g. Jolt Physics).
+            target_compile_options(hikari_compiler_flags INTERFACE
+                $<$<CXX_COMPILER_ID:GNU>:-Wno-tsan>
+            )
+        endif()
     endif()
 endif()
 

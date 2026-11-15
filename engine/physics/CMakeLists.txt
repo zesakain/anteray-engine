@@ -42,6 +42,11 @@ if(TARGET Jolt)
             target_link_options(Jolt PRIVATE
                 -fsanitize=${HIKARI_SANITIZER}
             )
+            if(HIKARI_SANITIZER MATCHES "thread")
+                target_compile_options(Jolt PUBLIC
+                    $<$<CXX_COMPILER_ID:GNU>:-Wno-tsan>
+                )
+            endif()
         endif()
     endif()
 endif()
