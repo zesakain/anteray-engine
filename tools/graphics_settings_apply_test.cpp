@@ -81,6 +81,7 @@ int main() {
 
     // Execute 15 frames testing various graphics settings apply operations mid-frame
     for (uint32_t frame = 0; frame < 15; ++frame) {
+        platform->pollEvents();
         (void)device->acquireNextImage();
         editor.beginFrame(Duration::fromMilliseconds(16), 1280, 720);
 
