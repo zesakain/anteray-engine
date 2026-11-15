@@ -114,9 +114,42 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
                 }
             }
             if (assetManager.isLoaded(texId)) {
-                rhi::SamplerDesc smp = toRhiSamplerDesc(info.sampler);
+                uint32_t mipLevels = 1;
+                const auto* img = assetManager.getImageData(texId);
+                if (img != nullptr) {
+                    const uint32_t maxDim = std::max(img->width, img->height);
+                    mipLevels =
+                        static_cast<uint32_t>(std::floor(std::log2(static_cast<double>(maxDim)))) +
+                        1U;
+                }
+                const auto& quality = assetManager.getQualitySettings();
+                const auto& caps = device.getCaps();
+                float minLod = 0.0F;
+                if (quality.textureQuality == TextureQuality::Medium) {
+                    minLod = (mipLevels > 1) ? 1.0F : 0.0F;
+                } else if (quality.textureQuality == TextureQuality::Low) {
+                    minLod = (mipLevels > 2) ? 2.0F : ((mipLevels > 1) ? 1.0F : 0.0F);
+                }
+                const float maxLod = static_cast<float>(mipLevels);
+                const float maxCapsAniso =
+                    caps.features.samplerAnisotropy ? caps.limits.maxSamplerAnisotropy : 1.0F;
+                const AnisotropicFiltering effectiveAniso = caps.features.samplerAnisotropy
+                                                                ? quality.anisotropicFiltering
+                                                                : AnisotropicFiltering::Off;
+
+                rhi::SamplerDesc smp =
+                    toRhiSamplerDesc(info.sampler, effectiveAniso, maxCapsAniso, minLod, maxLod);
+                auto smpRes = assetManager.getSamplerCache().getOrCreate(device, smp);
+                rhi::SamplerHandle cachedSampler{};
+                if (smpRes.hasValue()) {
+                    cachedSampler = smpRes.value();
+                }
+
                 auto upRes = assetManager.uploadTexture(texId, device, true, &smp);
                 if (upRes.hasValue() && upRes.value() != nullptr && upRes.value()->isValid()) {
+                    if (cachedSampler.isValid()) {
+                        upRes.value()->setSharedSampler(cachedSampler);
+                    }
                     outHasTex = 1u;
                     return {upRes.value()->getTexture(), upRes.value()->getSampler()};
                 }
@@ -197,6 +230,20 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
 
     return Result<std::unique_ptr<GpuMaterial>>::success(std::unique_ptr<GpuMaterial>(
         new GpuMaterial(device, poolHandle, setHandle, uboHandle, uboData)));
+}
+
+void GpuMaterial::updateTextureDescriptors(
+    rhi::RhiDevice& device,
+    const std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 5>& textureSlots) {
+    if (!descriptorSet_.isValid()) {
+        return;
+    }
+    std::array<rhi::DescriptorWrite, 5> writes{};
+    for (uint32_t b = 0; b < 5; ++b) {
+        writes[b] = rhi::DescriptorWrite::makeCombinedImageSampler(b, textureSlots[b].first,
+                                                                   textureSlots[b].second);
+    }
+    std::ignore = device.updateDescriptorSet(descriptorSet_, writes);
 }
 
 } // namespace eng::render

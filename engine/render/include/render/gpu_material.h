@@ -16,11 +16,13 @@
 #include "core/error.h"
 #include "core/math.h"
 #include "core/result.h"
+#include "render/graphics_settings.h"
 #include "render/material.h"
 #include "rhi/descriptor.h"
 #include "rhi/rhi_device.h"
 #include "rhi/sampler.h"
 
+#include <algorithm>
 #include <array>
 #include <memory>
 
@@ -99,8 +101,13 @@ static_assert(sizeof(MaterialUniformBufferData) == 96,
     return desc;
 }
 
-/// @brief Converts high-level TextureSamplerDesc to concrete RHI SamplerDesc.
-[[nodiscard]] inline rhi::SamplerDesc toRhiSamplerDesc(const TextureSamplerDesc& desc) noexcept {
+/// @brief Converts high-level TextureSamplerDesc to concrete RHI SamplerDesc with
+/// hardware-validated anisotropic filtering and mip clamping.
+[[nodiscard]] inline rhi::SamplerDesc
+toRhiSamplerDesc(const TextureSamplerDesc& desc,
+                 AnisotropicFiltering aniso = AnisotropicFiltering::X16,
+                 float maxCapsAnisotropy = 16.0F, float minLod = 0.0F, float maxLod = 1000.0F,
+                 float mipLodBias = 0.0F) noexcept {
     rhi::SamplerDesc rhiDesc{};
     auto mapFilter = [](TextureSamplerDesc::Filter f) noexcept {
         return (f == TextureSamplerDesc::Filter::Nearest) ? rhi::Filter::Nearest
@@ -121,6 +128,21 @@ static_assert(sizeof(MaterialUniformBufferData) == 96,
     rhiDesc.addressU = mapWrap(desc.wrapS);
     rhiDesc.addressV = mapWrap(desc.wrapT);
     rhiDesc.addressW = rhi::SamplerAddressMode::Repeat;
+
+    const bool isLinear =
+        (rhiDesc.minFilter == rhi::Filter::Linear && rhiDesc.magFilter == rhi::Filter::Linear);
+    if (aniso != AnisotropicFiltering::Off && isLinear && maxCapsAnisotropy >= 1.0F) {
+        rhiDesc.anisotropyEnable = true;
+        const float reqAniso = static_cast<float>(static_cast<uint8_t>(aniso));
+        rhiDesc.maxAnisotropy = std::clamp(reqAniso, 1.0F, maxCapsAnisotropy);
+    } else {
+        rhiDesc.anisotropyEnable = false;
+        rhiDesc.maxAnisotropy = 1.0F;
+    }
+
+    rhiDesc.minLod = std::clamp(minLod, 0.0F, maxLod);
+    rhiDesc.maxLod = std::max(rhiDesc.minLod, maxLod);
+    rhiDesc.mipLodBias = mipLodBias;
     return rhiDesc;
 }
 
@@ -150,6 +172,11 @@ public:
     [[nodiscard]] bool isValid() const noexcept {
         return descriptorSet_.isValid() && uniformBuffer_.isValid();
     }
+
+    /// @brief Rebinds material descriptor set texture bindings (0..4) with updated handles.
+    void updateTextureDescriptors(
+        rhi::RhiDevice& device,
+        const std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 5>& textureSlots);
 
 private:
     GpuMaterial(rhi::RhiDevice& device, rhi::DescriptorPoolHandle pool,
