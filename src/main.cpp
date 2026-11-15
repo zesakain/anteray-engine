@@ -12,6 +12,7 @@
 #include "platform/platform.h"
 #include "render/asset_manager.h"
 #include "render/gltf_scene_importer.h"
+#include "render/image.h"
 #include "render/light_components.h"
 #include "render/mesh_component.h"
 #include "render/render_graph.h"
@@ -209,6 +210,38 @@ int main(int argc, char* argv[]) {
                                                                   .vulkan = true});
         if (winRes.hasValue()) {
             window = std::move(winRes.value());
+            if (std::filesystem::exists("assets/textures/branding/hikari_logo.jpg")) {
+                auto iconRes = render::ImageDecoder::decodeFromFile(
+                    "assets/textures/branding/hikari_logo.jpg", 4, true);
+                if (iconRes.hasValue() && iconRes.value().width > 0 && iconRes.value().height > 0) {
+                    const auto& img = iconRes.value();
+                    const uint32_t side = std::max(img.width, img.height);
+                    std::vector<uint8_t> squarePixels(
+                        static_cast<size_t>(side) * static_cast<size_t>(side) * 4ULL, 0U);
+                    // Fill square canvas with canonical logo background edge pixel to preserve
+                    // original aspect ratio without stretching on OS taskbars.
+                    const uint8_t bgR = img.pixels[0];
+                    const uint8_t bgG = img.pixels[1];
+                    const uint8_t bgB = img.pixels[2];
+                    for (size_t i = 0; i < squarePixels.size(); i += 4) {
+                        squarePixels[i] = bgR;
+                        squarePixels[i + 1] = bgG;
+                        squarePixels[i + 2] = bgB;
+                        squarePixels[i + 3] = 255U;
+                    }
+                    const uint32_t offsetX = (side - img.width) / 2U;
+                    const uint32_t offsetY = (side - img.height) / 2U;
+                    for (uint32_t y = 0; y < img.height; ++y) {
+                        const uint8_t* srcRow =
+                            img.pixels.data() + (static_cast<size_t>(y) * img.width * 4ULL);
+                        uint8_t* dstRow =
+                            squarePixels.data() +
+                            ((static_cast<size_t>(y + offsetY) * side + offsetX) * 4ULL);
+                        std::memcpy(dstRow, srcRow, static_cast<size_t>(img.width) * 4ULL);
+                    }
+                    window->setIcon(squarePixels.data(), side, side);
+                }
+            }
             rhi::VulkanDeviceDesc vkDesc{.windowHandle = window->getNativeHandle(),
                                          .enableValidation = false};
             auto devRes = rhi::createVulkanDevice(vkDesc);

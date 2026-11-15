@@ -46,6 +46,7 @@ public:
     [[nodiscard]] bool shouldClose() const noexcept override;
     void setShouldClose(bool close) noexcept override;
     void setTitle(std::string_view title) override;
+    void setIcon(const uint8_t* rgbaPixels, uint32_t width, uint32_t height) override;
     void setSize(uint32_t width, uint32_t height) override;
     [[nodiscard]] void* getNativeHandle() const noexcept override;
     void startTextInput() override;

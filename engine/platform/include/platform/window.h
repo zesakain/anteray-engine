@@ -75,6 +75,13 @@ public:
     /// Updates window title bar string.
     virtual void setTitle(std::string_view title) = 0;
 
+    /// Sets the OS window/taskbar icon from raw tightly-packed RGBA8 pixels.
+    /// @param rgbaPixels Pointer to width * height * 4 bytes of RGBA8 image data.
+    /// @param width Icon width in pixels.
+    /// @param height Icon height in pixels.
+    virtual void setIcon(const uint8_t* /*rgbaPixels*/, uint32_t /*width*/, uint32_t /*height*/) {
+    }
+
     /// Resizes the window client area.
     /// @param width Width in pixels (must be > 0).
     /// @param height Height in pixels (must be > 0).

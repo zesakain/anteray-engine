@@ -460,16 +460,24 @@ struct WorkspaceManager::Impl {
 
             if (ctx.logoTextureId != nullptr) {
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + logoOffsetX);
+                const ImVec2 logoTopLeft = ImGui::GetCursorScreenPos();
+                const ImVec2 logoBottomRight(logoTopLeft.x + logoWidth, logoTopLeft.y + logoHeight);
 
-                // Subtle ambient cyan pulsing glow around logo
-                const float elapsed = static_cast<float>(telemetry.totalDuration.toSeconds());
-                const float pulse = 0.80F + 0.20F * std::sin(elapsed * 3.0F);
-                ImVec4 tintColor(pulse, 0.85F + 0.15F * pulse, 1.0F, 1.0F);
-
+                // Render canonical Hikari logo with pure un-tinted colors (no recoloring).
                 ImGui::Image(
                     static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(ctx.logoTextureId)),
                     ImVec2(logoWidth, logoHeight), ImVec2(0.0F, 0.0F), ImVec2(1.0F, 1.0F),
-                    tintColor);
+                    ImVec4(1.0F, 1.0F, 1.0F, 1.0F));
+
+                // Subtle ambient cyan pulsing aura around the logo frame
+                const float elapsed = static_cast<float>(telemetry.totalDuration.toSeconds());
+                const float pulseAlpha = 0.28F + 0.22F * std::sin(elapsed * 3.0F);
+                const ImU32 glowCol = ImGui::ColorConvertFloat4ToU32(
+                    ImVec4(0.00F, 0.83F, 1.00F, pulseAlpha));
+                ImGui::GetWindowDrawList()->AddRect(
+                    ImVec2(logoTopLeft.x - 3.0F, logoTopLeft.y - 3.0F),
+                    ImVec2(logoBottomRight.x + 3.0F, logoBottomRight.y + 3.0F), glowCol, 6.0F, 0,
+                    1.5F);
             } else {
                 // Headless/null RHI fallback header
                 ImGui::Spacing();
@@ -1133,9 +1141,22 @@ struct WorkspaceManager::Impl {
         }
         if (ImGui::BeginPopupModal("About Hikari Editor", nullptr,
                                    ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextColored(ImVec4(0.38F, 0.74F, 0.98F, 1.0F), "Hikari Machine - Studio Editor");
+            if (ctx.logoTextureId != nullptr) {
+                const float logoHeight = 112.0F;
+                const float logoWidth = logoHeight * (687.0F / 1024.0F);
+                const float avail = ImGui::GetContentRegionAvail().x;
+                if (avail > logoWidth) {
+                    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail - logoWidth) * 0.5F);
+                }
+                ImGui::Image(
+                    static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(ctx.logoTextureId)),
+                    ImVec2(logoWidth, logoHeight), ImVec2(0.0F, 0.0F), ImVec2(1.0F, 1.0F),
+                    ImVec4(1.0F, 1.0F, 1.0F, 1.0F));
+                ImGui::Spacing();
+            }
+            ImGui::TextColored(ImVec4(0.00F, 0.83F, 1.00F, 1.0F), "Hikari Machine - Studio Editor");
             ImGui::Text("Architecture: Two-State Conductor over Single Shared World");
-            ImGui::Text("Version: 0.1.0 (Milestone 1.5 Professional Experience)");
+            ImGui::Text("Version: 0.1.0 (Stabilization & Brand Consistency)");
             ImGui::Separator();
             ImGui::Text("Graphics RHI: Vulkan 1.3 Dynamic Rendering");
             ImGui::Text("UI Subsystems: Dear ImGui (Editor) & RmlUi (Runtime)");
