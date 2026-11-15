@@ -91,6 +91,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.lighting.iblEnabled = true;
         s.lighting.environmentIntensity = 1.0F;
         s.lighting.exposure = 1.0F;
+        s.lighting.ssrEnabled = false;
 
         s.shadows.enabled = true;
         s.shadows.resolution = 2048;
@@ -119,6 +120,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.lighting.iblEnabled = true;
         s.lighting.environmentIntensity = 1.0F;
         s.lighting.exposure = 1.0F;
+        s.lighting.ssrEnabled = true;
 
         s.shadows.enabled = true;
         s.shadows.resolution = 4096;
@@ -141,6 +143,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.lighting.iblEnabled = true;
         s.lighting.environmentIntensity = 1.0F;
         s.lighting.exposure = 1.0F;
+        s.lighting.ssrEnabled = true;
 
         s.shadows.enabled = true;
         s.shadows.resolution = 4096;

@@ -132,6 +132,14 @@ struct LightingSettings {
     bool temporalDenoise{true}; ///< Multi-frame temporal accumulation and history clamping
     bool probesEnabled{false};  ///< Scene-aware Spherical Harmonics irradiance probes
 
+    // Milestone 11G: Screen-Space Reflections & Temporal Stability
+    bool ssrEnabled{false};         ///< Screen-Space Reflections (Milestone 11G)
+    float ssrRoughnessCutoff{0.6F}; ///< Roughness cutoff threshold for SSR ray marching [0.1, 1.0]
+    float ssrMaxDistance{10.0F};    ///< Maximum ray traversal distance in meters [1.0, 50.0]
+    float ssrIntensity{1.0F};       ///< SSR specular reflection intensity multiplier [0.0, 5.0]
+    bool reflectionProbeBlending{
+        true}; ///< Smooth spatial blending between multiple reflection probes
+
     bool operator==(const LightingSettings& other) const noexcept = default;
 };
 

@@ -246,6 +246,14 @@ Result<std::string> GraphicsSettingsSerializer::serializeToString(const Graphics
     lightingObj.set("giIntensity", JsonValue(static_cast<double>(settings.lighting.giIntensity)));
     lightingObj.set("temporalDenoise", JsonValue(settings.lighting.temporalDenoise));
     lightingObj.set("probesEnabled", JsonValue(settings.lighting.probesEnabled));
+    lightingObj.set("ssrEnabled", JsonValue(settings.lighting.ssrEnabled));
+    lightingObj.set("ssrRoughnessCutoff",
+                    JsonValue(static_cast<double>(settings.lighting.ssrRoughnessCutoff)));
+    lightingObj.set("ssrMaxDistance",
+                    JsonValue(static_cast<double>(settings.lighting.ssrMaxDistance)));
+    lightingObj.set("ssrIntensity", JsonValue(static_cast<double>(settings.lighting.ssrIntensity)));
+    lightingObj.set("reflectionProbeBlending",
+                    JsonValue(settings.lighting.reflectionProbeBlending));
     lightingObj.set("exposure", JsonValue(static_cast<double>(settings.lighting.exposure)));
     lightingObj.set("whiteBalance", JsonValue(static_cast<double>(settings.lighting.whiteBalance)));
     lightingObj.set("timeOfDay", JsonValue(timeOfDayToString(settings.lighting.timeOfDay)));
@@ -429,6 +437,15 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
             l->getBool("temporalDenoise", settings.lighting.temporalDenoise);
         settings.lighting.probesEnabled =
             l->getBool("probesEnabled", settings.lighting.probesEnabled);
+        settings.lighting.ssrEnabled = l->getBool("ssrEnabled", settings.lighting.ssrEnabled);
+        settings.lighting.ssrRoughnessCutoff =
+            l->getFloat("ssrRoughnessCutoff", settings.lighting.ssrRoughnessCutoff);
+        settings.lighting.ssrMaxDistance =
+            l->getFloat("ssrMaxDistance", settings.lighting.ssrMaxDistance);
+        settings.lighting.ssrIntensity =
+            l->getFloat("ssrIntensity", settings.lighting.ssrIntensity);
+        settings.lighting.reflectionProbeBlending =
+            l->getBool("reflectionProbeBlending", settings.lighting.reflectionProbeBlending);
         settings.lighting.exposure = l->getFloat("exposure", settings.lighting.exposure);
         settings.lighting.whiteBalance =
             l->getFloat("whiteBalance", settings.lighting.whiteBalance);
