@@ -100,9 +100,10 @@ static MeshData createPbrQuad(float minX = -1.0F, float maxX = 1.0F, float minY 
 }
 
 // Helper to render a mesh with a given material and read back rendered center pixel
-static Result<std::vector<uint8_t>> renderAndReadback(RhiDevice& device, SceneRenderer& renderer,
-                                                      const MeshData& meshData, uint32_t width = 64,
-                                                      uint32_t height = 64) {
+static Result<std::vector<uint8_t>>
+renderAndReadback(RhiDevice& device, SceneRenderer& renderer, const MeshData& meshData,
+                  const Transform& transform = Transform(Vec3(0.0F, 0.0F, 0.0F)),
+                  uint32_t width = 64, uint32_t height = 64) {
     world::World world{};
     physics::registerPhysicsComponents(world);
     AssetManager assetManager{};
@@ -121,7 +122,7 @@ static Result<std::vector<uint8_t>> renderAndReadback(RhiDevice& device, SceneRe
         .visible = true,
     });
     entity.set<physics::PhysicsTransformComponent>(physics::PhysicsTransformComponent{
-        .transform = Transform(Vec3(0.0F, 0.0F, 0.0F)),
+        .transform = transform,
     });
 
     const size_t byteSize = width * height * 4;
@@ -742,6 +743,67 @@ static int testGlassTransmission(RhiDevice& device, SceneRenderer& renderer) {
 }
 
 // -----------------------------------------------------------------------------
+// Test 9: Non-Uniform Scaling & Degenerate Tangent Surface Frame Robustness
+// -----------------------------------------------------------------------------
+static int testNonUniformScaleAndDegenerateTangentsRender(RhiDevice& device,
+                                                          SceneRenderer& renderer) {
+    // 1. Non-uniform scale with normal mapping
+    ImageData flatImg{
+        .width = 1,
+        .height = 1,
+        .channels = 4,
+        .pixels = {128, 128, 255, 255},
+    };
+    AssetManager assetManager{};
+    auto regFlatTex =
+        assetManager.registerTexture("procedural/nonuniform_flat_normal#linear", flatImg);
+    TEST_CHECK(regFlatTex.hasValue());
+
+    MeshData scaledMesh = createPbrQuad();
+    Material scaledMat{};
+    scaledMat.baseColor = Vec4(0.8F, 0.4F, 0.2F, 1.0F);
+    scaledMat.metallic = 0.1F;
+    scaledMat.roughness = 0.4F;
+    scaledMat.normalTexture.isPresent = true;
+    scaledMat.normalTexture.textureAsset = regFlatTex.value();
+    scaledMat.normalTexture.uri = "procedural/nonuniform_flat_normal#linear";
+    scaledMat.normalTexture.colorSpace = TextureColorSpace::Linear;
+    scaledMesh.materials = {scaledMat};
+
+    const Transform nonUniformTransform(Vec3(0.0F, 0.0F, 0.0F), Quat::identity(),
+                                        Vec3(2.5F, 0.4F, 1.0F));
+
+    auto scaledRes = renderAndReadback(device, renderer, scaledMesh, nonUniformTransform);
+    TEST_CHECK(scaledRes.hasValue());
+    const auto& scaledPix = scaledRes.value();
+
+    const size_t centerIdx = (32 * 64 + 32) * 4;
+    // Illuminated center pixel under non-uniform scaling must be non-zero and stable
+    TEST_CHECK(scaledPix[centerIdx + 0] > 40);
+    TEST_CHECK(scaledPix[centerIdx + 3] == 255);
+
+    // 2. Mesh with degenerate tangents (all (0,0,0,0))
+    MeshData degenMesh = createPbrQuad();
+    for (auto& v : degenMesh.vertices) {
+        v.tangent = Vec4(0.0F, 0.0F, 0.0F, 0.0F);
+    }
+    degenMesh.materials = {scaledMat};
+
+    auto degenRes = renderAndReadback(device, renderer, degenMesh);
+    TEST_CHECK(degenRes.hasValue());
+    const auto& degenPix = degenRes.value();
+
+    // Shader constructTBN fallback must prevent NaNs and illuminate surface
+    TEST_CHECK(degenPix[centerIdx + 0] > 40);
+    TEST_CHECK(degenPix[centerIdx + 3] == 255);
+
+    std::cout << "[PASS] testNonUniformScaleAndDegenerateTangentsRender (scaled R="
+              << static_cast<int>(scaledPix[centerIdx + 0])
+              << " vs degen R=" << static_cast<int>(degenPix[centerIdx + 0]) << ")\n";
+    return 0;
+}
+
+// -----------------------------------------------------------------------------
 // Main Test Runner
 // -----------------------------------------------------------------------------
 int main() {
@@ -794,8 +856,11 @@ int main() {
     if (testGlassTransmission(*device, renderer) != 0) {
         return 8;
     }
+    if (testNonUniformScaleAndDegenerateTangentsRender(*device, renderer) != 0) {
+        return 9;
+    }
 
     renderer.shutdown();
-    std::cout << "[All PBR Verification Tests Passed: 8/8]\n";
+    std::cout << "[All PBR Verification Tests Passed: 9/9]\n";
     return 0;
 }

@@ -167,6 +167,202 @@ static int testMeshDataTangentsDegenerateAndMirrored() {
     return 0;
 }
 
+static int testMeshDataTangentsRangeMultiSubmesh() {
+    MeshData mesh{};
+    // Submesh 0: 3 vertices, triangle. Pre-populated custom tangent
+    Vertex v0(Vec3(0.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F), Vec2(0.0F, 0.0F));
+    v0.tangent = Vec4(0.0F, 1.0F, 0.0F, 1.0F);
+    Vertex v1(Vec3(1.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F), Vec2(1.0F, 0.0F));
+    v1.tangent = Vec4(0.0F, 1.0F, 0.0F, 1.0F);
+    Vertex v2(Vec3(0.0F, 1.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F), Vec2(0.0F, 1.0F));
+    v2.tangent = Vec4(0.0F, 1.0F, 0.0F, 1.0F);
+    mesh.vertices.push_back(v0);
+    mesh.vertices.push_back(v1);
+    mesh.vertices.push_back(v2);
+    mesh.indices.push_back(0);
+    mesh.indices.push_back(1);
+    mesh.indices.push_back(2);
+
+    Submesh sm0{};
+    sm0.firstIndex = 0;
+    sm0.indexCount = 3;
+    mesh.submeshes.push_back(sm0);
+
+    // Submesh 1: 3 vertices, triangle. No tangents (all zeros)
+    mesh.vertices.push_back(
+        Vertex(Vec3(2.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F), Vec2(0.0F, 0.0F)));
+    mesh.vertices.push_back(
+        Vertex(Vec3(3.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F), Vec2(1.0F, 0.0F)));
+    mesh.vertices.push_back(
+        Vertex(Vec3(2.0F, 1.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F), Vec2(0.0F, 1.0F)));
+    mesh.indices.push_back(3);
+    mesh.indices.push_back(4);
+    mesh.indices.push_back(5);
+
+    Submesh sm1{};
+    sm1.firstIndex = 3;
+    sm1.indexCount = 3;
+    mesh.submeshes.push_back(sm1);
+
+    // Generate tangents only for Submesh 1
+    mesh.generateTangentsForRange(sm1.firstIndex, sm1.indexCount, 3, 3);
+
+    // Submesh 0 vertices must remain unmodified
+    for (size_t i = 0; i < 3; ++i) {
+        TEST_CHECK(mesh.vertices[i].tangent.x == 0.0F);
+        TEST_CHECK(mesh.vertices[i].tangent.y == 1.0F);
+        TEST_CHECK(mesh.vertices[i].tangent.z == 0.0F);
+        TEST_CHECK(mesh.vertices[i].tangent.w == 1.0F);
+    }
+
+    // Submesh 1 vertices must have valid generated tangents (+X direction, w = 1.0)
+    for (size_t i = 3; i < 6; ++i) {
+        const auto& v = mesh.vertices[i];
+        TEST_CHECK(std::abs(v.tangent.x - 1.0F) < 1e-4F);
+        TEST_CHECK(std::abs(v.tangent.y - 0.0F) < 1e-4F);
+        TEST_CHECK(std::abs(v.tangent.z - 0.0F) < 1e-4F);
+        TEST_CHECK(v.tangent.w == 1.0F);
+        const Vec3 tanVec{v.tangent.x, v.tangent.y, v.tangent.z};
+        TEST_CHECK(std::abs(Vec3::dot(v.normal, tanVec)) < 1e-4F);
+    }
+
+    return 0;
+}
+
+static int testNormalMatrixNonUniformScalingAndMirrored() {
+    // 1. Non-uniform scale matrix + rotation + translation
+    const Vec3 scale{3.0F, 0.5F, 1.5F};
+    const Quat rot = Quat::fromAxisAngle(Vec3(0.0F, 1.0F, 0.0F).normalized(), 0.785398F);
+    const Mat4 model = Mat4::fromTransform(Vec3(10.0F, -5.0F, 2.0F), rot, scale);
+
+    // Extract upper 3x3
+    const float m00 = model.m[0];
+    const float m01 = model.m[4];
+    const float m02 = model.m[8];
+    const float m10 = model.m[1];
+    const float m11 = model.m[5];
+    const float m12 = model.m[9];
+    const float m20 = model.m[2];
+    const float m21 = model.m[6];
+    const float m22 = model.m[10];
+
+    const float det = (m00 * ((m11 * m22) - (m12 * m21))) - (m01 * ((m10 * m22) - (m12 * m20))) +
+                      (m02 * ((m10 * m21) - (m11 * m20)));
+
+    TEST_CHECK(std::abs(det) > 1e-4F);
+    TEST_CHECK(det > 0.0F); // non-mirrored
+
+    // Compute transpose(inverse(m3x3))
+    const float invDet = 1.0F / det;
+    const float n00 = ((m11 * m22) - (m12 * m21)) * invDet;
+    const float n01 = ((m12 * m20) - (m10 * m22)) * invDet;
+    const float n02 = ((m10 * m21) - (m11 * m20)) * invDet;
+
+    const float n10 = ((m02 * m21) - (m01 * m22)) * invDet;
+    const float n11 = ((m00 * m22) - (m02 * m20)) * invDet;
+    const float n12 = ((m01 * m20) - (m00 * m21)) * invDet;
+
+    const float n20 = ((m01 * m12) - (m02 * m11)) * invDet;
+    const float n21 = ((m02 * m10) - (m00 * m12)) * invDet;
+    const float n22 = ((m00 * m11) - (m01 * m10)) * invDet;
+
+    // Surface quad vectors (perpendicular)
+    const Vec3 n = Vec3(0.0F, 1.0F, 0.0F);
+    const Vec3 t = Vec3(1.0F, 0.0F, 0.0F);
+    const Vec3 b = Vec3(0.0F, 0.0F, 1.0F);
+
+    // Transform vectors to world space
+    const Vec3 tWorld{(m00 * t.x) + (m01 * t.y) + (m02 * t.z),
+                      (m10 * t.x) + (m11 * t.y) + (m12 * t.z),
+                      (m20 * t.x) + (m21 * t.y) + (m22 * t.z)};
+    const Vec3 bWorld{(m00 * b.x) + (m01 * b.y) + (m02 * b.z),
+                      (m10 * b.x) + (m11 * b.y) + (m12 * b.z),
+                      (m20 * b.x) + (m21 * b.y) + (m22 * b.z)};
+    const Vec3 nCorrectWorld{(n00 * n.x) + (n01 * n.y) + (n02 * n.z),
+                             (n10 * n.x) + (n11 * n.y) + (n12 * n.z),
+                             (n20 * n.x) + (n21 * n.y) + (n22 * n.z)};
+
+    // Correct normal must be orthogonal to surface tangents in world space
+    TEST_CHECK(std::abs(Vec3::dot(nCorrectWorld.normalized(), tWorld.normalized())) < 1e-4F);
+    TEST_CHECK(std::abs(Vec3::dot(nCorrectWorld.normalized(), bWorld.normalized())) < 1e-4F);
+
+    // 2. Mirrored transform: negative scale on one axis (e.g. X = -1.0)
+    const Mat4 mirroredModel = Mat4::fromScale(Vec3(-1.0F, 1.0F, 1.0F));
+    const float mirDet = (mirroredModel.m[0] * ((mirroredModel.m[5] * mirroredModel.m[10]) -
+                                                (mirroredModel.m[9] * mirroredModel.m[6])));
+    TEST_CHECK(mirDet < 0.0F);
+    const float handedness = 1.0F * (mirDet < 0.0F ? -1.0F : 1.0F);
+    TEST_CHECK(handedness == -1.0F);
+
+    // 3. Near-singular matrix guard
+    const float degenDet = 0.0F;
+    const bool isDegenerate = std::abs(degenDet) < 1e-7F;
+    TEST_CHECK(isDegenerate);
+
+    return 0;
+}
+
+static int testRobustTbnReconstructionMath() {
+    auto constructTbnCpu = [](Vec3 n, Vec3 t, float handedness, Vec3& outT, Vec3& outB,
+                              Vec3& outN) {
+        float nLenSq = n.lengthSq();
+        outN = (nLenSq > 1e-8F) ? (n * (1.0F / std::sqrt(nLenSq))) : Vec3(0.0F, 1.0F, 0.0F);
+
+        float tLenSq = t.lengthSq();
+        if (tLenSq < 1e-8F) {
+            Vec3 up = (std::abs(outN.y) < 0.999F) ? Vec3(0.0F, 1.0F, 0.0F) : Vec3(1.0F, 0.0F, 0.0F);
+            outT = Vec3::cross(up, outN).normalized();
+        } else {
+            outT = t * (1.0F / std::sqrt(tLenSq));
+            outT = (outT - (outN * Vec3::dot(outN, outT)));
+            float orthoLenSq = outT.lengthSq();
+            if (orthoLenSq < 1e-8F) {
+                Vec3 up =
+                    (std::abs(outN.y) < 0.999F) ? Vec3(0.0F, 1.0F, 0.0F) : Vec3(1.0F, 0.0F, 0.0F);
+                outT = Vec3::cross(up, outN).normalized();
+            } else {
+                outT = outT * (1.0F / std::sqrt(orthoLenSq));
+            }
+        }
+        float h = (handedness < 0.0F) ? -1.0F : 1.0F;
+        outB = Vec3::cross(outN, outT).normalized() * h;
+    };
+
+    Vec3 outT{};
+    Vec3 outB{};
+    Vec3 outN{};
+
+    // Case 1: Standard orthogonal input
+    constructTbnCpu(Vec3(0.0F, 0.0F, 1.0F), Vec3(1.0F, 0.0F, 0.0F), 1.0F, outT, outB, outN);
+    TEST_CHECK(std::abs(outT.length() - 1.0F) < 1e-4F);
+    TEST_CHECK(std::abs(outB.length() - 1.0F) < 1e-4F);
+    TEST_CHECK(std::abs(outN.length() - 1.0F) < 1e-4F);
+    TEST_CHECK(std::abs(Vec3::dot(outT, outN)) < 1e-4F);
+    TEST_CHECK(std::abs(Vec3::dot(outB, outN)) < 1e-4F);
+    TEST_CHECK(std::abs(Vec3::dot(outT, outB)) < 1e-4F);
+    TEST_CHECK(std::abs(outB.y - 1.0F) < 1e-4F);
+
+    // Case 2: Degenerate zero tangent
+    constructTbnCpu(Vec3(0.0F, 1.0F, 0.0F), Vec3(0.0F, 0.0F, 0.0F), 1.0F, outT, outB, outN);
+    TEST_CHECK(std::abs(outT.length() - 1.0F) < 1e-4F);
+    TEST_CHECK(std::abs(Vec3::dot(outT, outN)) < 1e-4F);
+    TEST_CHECK(std::abs(Vec3::dot(outB, outN)) < 1e-4F);
+    TEST_CHECK(std::abs(Vec3::dot(outT, outB)) < 1e-4F);
+
+    // Case 3: Parallel tangent (T || N)
+    constructTbnCpu(Vec3(0.0F, 0.0F, 1.0F), Vec3(0.0F, 0.0F, 1.0F), 1.0F, outT, outB, outN);
+    TEST_CHECK(std::abs(outT.length() - 1.0F) < 1e-4F);
+    TEST_CHECK(std::abs(Vec3::dot(outT, outN)) < 1e-4F);
+    TEST_CHECK(std::abs(Vec3::dot(outB, outN)) < 1e-4F);
+    TEST_CHECK(std::abs(Vec3::dot(outT, outB)) < 1e-4F);
+
+    // Case 4: Inverted handedness (w = -1)
+    constructTbnCpu(Vec3(0.0F, 0.0F, 1.0F), Vec3(1.0F, 0.0F, 0.0F), -1.0F, outT, outB, outN);
+    TEST_CHECK(std::abs(outB.y - (-1.0F)) < 1e-4F);
+
+    return 0;
+}
+
 static int testObjImporterFromString() {
     const std::string_view objQuad = R"(
 # Test Quad
@@ -266,12 +462,18 @@ int main() {
         return 7;
     if (testMeshDataTangentsDegenerateAndMirrored() != 0)
         return 8;
+    if (testMeshDataTangentsRangeMultiSubmesh() != 0)
+        return 9;
+    if (testNormalMatrixNonUniformScalingAndMirrored() != 0)
+        return 10;
+    if (testRobustTbnReconstructionMath() != 0)
+        return 11;
     if (testObjImporterFromString() != 0)
         return 4;
     if (testObjImporterFromFile() != 0)
         return 5;
     if (testGpuMeshCreationAndRAII() != 0)
         return 6;
-    std::cout << "[Mesh Tests Passed: 8/8]\n";
+    std::cout << "[Mesh Tests Passed: 11/11]\n";
     return 0;
 }

@@ -61,6 +61,13 @@ void testValidGltfImport() {
     TEST_CHECK(mesh.getVertexCount() == 3);
     TEST_CHECK(mesh.getIndexCount() == 3);
     TEST_CHECK(mesh.getTriangleCount() == 1);
+    // Verify missing tangents were generated as valid orthonormal tangent frames
+    for (const auto& v : mesh.vertices) {
+        const eng::Vec3 t{v.tangent.x, v.tangent.y, v.tangent.z};
+        TEST_CHECK(std::abs(t.length() - 1.0F) < 1e-3F);
+        TEST_CHECK(std::abs(std::abs(v.tangent.w) - 1.0F) < 1e-3F);
+        TEST_CHECK(std::abs(eng::Vec3::dot(v.normal, t)) < 1e-3F);
+    }
     std::cout << "[PASS] testValidGltfImport\n";
 }
 
