@@ -550,13 +550,19 @@ struct Mat4 {
         }
         Mat4 res = *this;
         // In Vulkan NDC, x in [-1, 1] and y in [-1, 1].
-        // For perspective projection, x_clip = m[0]*x_v + m[8]*z_v, w_clip = -z_v.
-        // x_ndc = x_clip / w_clip = (m[0]*x_v) / (-z_v) - m[8].
-        // Shifting x_ndc by +deltaX_ndc requires subtracting deltaX_ndc from m[8].
+        // To offset NDC coordinate by (deltaX, deltaY):
+        // p_clip.x' = p_clip.x + deltaX * p_clip.w
+        // p_clip.y' = p_clip.y + deltaY * p_clip.w
+        // Since p_clip.w = row_3 . p, this is equivalent to:
+        // row_0' = row_0 + deltaX * row_3
+        // row_1' = row_1 + deltaY * row_3
         const float deltaX = (2.0F * jitterXPixels) / screenWidth;
         const float deltaY = (2.0F * jitterYPixels) / screenHeight;
-        res.m[8] -= deltaX;
-        res.m[9] -= deltaY;
+        for (int c = 0; c < 4; ++c) {
+            const float wVal = res.m[c * 4 + 3];
+            res.m[c * 4 + 0] += deltaX * wVal;
+            res.m[c * 4 + 1] += deltaY * wVal;
+        }
         return res;
     }
 
