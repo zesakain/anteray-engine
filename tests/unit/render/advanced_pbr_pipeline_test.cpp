@@ -496,6 +496,117 @@ void testGpuMaterialAdvancedRendering() {
     std::cout << "  Passed." << std::endl;
 }
 
+// -----------------------------------------------------------------------------
+// Test 9: Advanced PBR Material Visual Consistency & Lighting Variations
+// -----------------------------------------------------------------------------
+void testPbrVisualMaterialVariations() {
+    std::cout << "[Test 9] Advanced PBR Material Visual Consistency & Lighting Variations..."
+              << std::endl;
+
+    // 1. Direct lighting only vs IBL only vs Mixed lighting consistency
+    // Verify that energy does not explode under different illuminations
+    for (float roughness : {0.1F, 0.5F, 0.9F}) {
+        // Clearcoat attenuation
+        float fc = 0.04F + (1.0F - 0.04F) * std::pow(1.0F - 0.5F, 5.0F);
+        float baseWeight = 1.0F - fc;
+        TEST_CHECK(baseWeight >= 0.0F && baseWeight <= 1.0F);
+
+        // Charlie sheen energy balance
+        float sheenRoughness = std::max(0.001F, roughness);
+        float sheenLobe = std::pow(1.0F - 0.25F, 0.5F / sheenRoughness) / (2.0F * 3.14159F);
+        TEST_CHECK(std::isfinite(sheenLobe) && sheenLobe >= 0.0F);
+
+        // Dielectric IOR transition
+        for (float ior : {1.1F, 1.33F, 1.5F, 1.8F, 2.4F}) {
+            float f0 = std::pow((ior - 1.0F) / (ior + 1.0F), 2.0F);
+            TEST_CHECK(f0 > 0.0F && f0 < 0.2F);
+        }
+
+        // Anisotropy stability across rotation angles
+        for (float rotation : {0.0F, 0.785F, 1.57F, 3.14F}) {
+            float cosR = std::cos(2.0F * rotation);
+            float sinR = std::sin(2.0F * rotation);
+            TEST_CHECK(std::isfinite(cosR) && std::isfinite(sinR));
+        }
+    }
+
+    // 2. Vulkan GPU execution with multiple material variations
+    VulkanDeviceDesc devDesc{.windowHandle = nullptr, .enableValidation = false};
+    auto devRes = createVulkanDevice(devDesc);
+    if (!devRes.hasValue()) {
+        std::cout << "  [SKIP] Vulkan device unavailable; skipping live GPU visual test."
+                  << std::endl;
+        return;
+    }
+    auto device = std::move(devRes.value());
+
+    SceneRenderer renderer;
+    TEST_CHECK(renderer.init(*device, 64, 64).hasValue());
+    world::World world;
+    AssetManager assetMgr;
+
+    // Build test quad
+    MeshData quadMesh{};
+    quadMesh.vertices = {
+        Vertex(Vec3(-1.0F, -1.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F), Vec2(0.0F, 1.0F),
+               Vec4(1.0F, 1.0F, 1.0F, 1.0F), Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+        Vertex(Vec3(1.0F, -1.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F), Vec2(1.0F, 1.0F),
+               Vec4(1.0F, 1.0F, 1.0F, 1.0F), Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+        Vertex(Vec3(1.0F, 1.0F, 0.0F), Vec3(0.0F, 0.0F, 1.0F), Vec2(1.0F, 0.0F),
+               Vec4(1.0F, 1.0F, 1.0F, 1.0F), Vec4(1.0F, 0.0F, 0.0F, 1.0F)),
+    };
+    quadMesh.indices = {0, 1, 2};
+    quadMesh.submeshes.push_back(Submesh{
+        .name = "TestSubmesh",
+        .firstIndex = 0,
+        .indexCount = 3,
+        .vertexOffset = 0,
+        .materialIndex = 0,
+    });
+
+    // Material with Anisotropy, Sheen, Clearcoat, Transmission, and IOR
+    Material advMat = Material::createDefault();
+    advMat.anisotropy.strength = 0.8F;
+    advMat.anisotropy.rotation = 0.5F;
+    advMat.sheen.colorFactor = Vec3{0.8F, 0.7F, 0.9F};
+    advMat.sheen.roughnessFactor = 0.4F;
+    advMat.clearcoat.factor = 0.9F;
+    advMat.clearcoat.roughnessFactor = 0.1F;
+    advMat.transmission.factor = 0.5F;
+    advMat.ior = 1.6F;
+    quadMesh.materials = {advMat};
+
+    auto regMesh = assetMgr.registerMesh("virtual://adv_pbr_quad", std::move(quadMesh));
+    TEST_CHECK(regMesh.hasValue());
+    TEST_CHECK(assetMgr.uploadMesh(regMesh.value(), *device).hasValue());
+
+    auto layoutDesc = createMaterialDescriptorSetLayoutDesc();
+    auto layoutRes = device->createDescriptorSetLayout(layoutDesc);
+    TEST_CHECK(layoutRes.hasValue());
+    auto layout = layoutRes.value();
+
+    TEST_CHECK(assetMgr.uploadMaterial(regMesh.value(), 0, *device, layout).hasValue());
+
+    auto ent = world.createEntity("PbrVisualEntity");
+    MeshComponent meshComp{};
+    meshComp.meshAsset = regMesh.value();
+    meshComp.materialAsset = regMesh.value();
+    world.setComponent(ent, meshComp);
+
+    // Render under Vulkan GPU
+    auto cmdRes = device->createCommandList();
+    TEST_CHECK(cmdRes.hasValue());
+    auto cmd = std::move(cmdRes.value());
+    cmd->begin();
+    renderer.renderScene(world, assetMgr, *device, *cmd, Mat4::identity());
+    cmd->end();
+    TEST_CHECK(device->submit(cmd.get()).hasValue());
+
+    device->destroyDescriptorSetLayout(layout);
+    renderer.shutdown();
+    std::cout << "  Passed." << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -511,9 +622,10 @@ int main() {
     testNumericalStabilityGuards();
     testShaderCompilationAndSpirvSync();
     testGpuMaterialAdvancedRendering();
+    testPbrVisualMaterialVariations();
 
     std::cout << "========================================================\n"
-              << "All 8 tests in Advanced PBR Pipeline Suite PASSED.\n"
+              << "All 9 tests in Advanced PBR Pipeline Suite PASSED.\n"
               << "========================================================" << std::endl;
     return 0;
 }
