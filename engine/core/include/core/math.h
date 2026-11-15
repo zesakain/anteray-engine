@@ -479,6 +479,11 @@ struct Mat4 {
         return m[(col * 4) + row];
     }
 
+    /// Extracts affine translation vector from column 3 (m[12], m[13], m[14]).
+    [[nodiscard]] constexpr Vec3 getTranslation() const noexcept {
+        return Vec3{m[12], m[13], m[14]};
+    }
+
     [[nodiscard]] bool isNearlyEqual(const Mat4& rhs, float epsilon = 1e-5F) const noexcept {
         for (size_t i = 0; i < 16; ++i) {
             if (std::abs(m[i] - rhs.m[i]) > epsilon) {
