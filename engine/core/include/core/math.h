@@ -536,6 +536,30 @@ struct Mat4 {
         return res;
     }
 
+    /// Returns a copy of a perspective projection matrix with subpixel jitter applied
+    /// for temporal anti-aliasing (TAA).
+    ///
+    /// @param jitterXPixels Subpixel horizontal jitter offset in pixels, typically in [-0.5, 0.5].
+    /// @param jitterYPixels Subpixel vertical jitter offset in pixels, typically in [-0.5, 0.5].
+    /// @param screenWidth Viewport render target width in pixels (must be > 0).
+    /// @param screenHeight Viewport render target height in pixels (must be > 0).
+    [[nodiscard]] Mat4 withJitter(float jitterXPixels, float jitterYPixels, float screenWidth,
+                                  float screenHeight) const noexcept {
+        if (screenWidth <= 1e-4F || screenHeight <= 1e-4F) {
+            return *this;
+        }
+        Mat4 res = *this;
+        // In Vulkan NDC, x in [-1, 1] and y in [-1, 1].
+        // For perspective projection, x_clip = m[0]*x_v + m[8]*z_v, w_clip = -z_v.
+        // x_ndc = x_clip / w_clip = (m[0]*x_v) / (-z_v) - m[8].
+        // Shifting x_ndc by +deltaX_ndc requires subtracting deltaX_ndc from m[8].
+        const float deltaX = (2.0F * jitterXPixels) / screenWidth;
+        const float deltaY = (2.0F * jitterYPixels) / screenHeight;
+        res.m[8] -= deltaX;
+        res.m[9] -= deltaY;
+        return res;
+    }
+
     /// Creates a right-handed view matrix looking from eye towards target.
     [[nodiscard]] static Mat4 lookAt(const Vec3& eye, const Vec3& target,
                                      const Vec3& up = Vec3::unitY()) noexcept {
@@ -1021,6 +1045,36 @@ inline std::optional<Transform> Mat4::decompose() const noexcept {
 
     const Quat rotation = Quat::fromRotationMatrix(rotMat);
     return Transform{translation, rotation, Vec3{scaleX, scaleY, scaleZ}};
+}
+
+/// Computes the radical inverse in the given base (Van der Corput sequence),
+/// generating deterministic low-discrepancy pseudo-random values in [0, 1).
+[[nodiscard]] constexpr float haltonSequence(uint32_t index, uint32_t base) noexcept {
+    float result = 0.0F;
+    float invBase = 1.0F / static_cast<float>(base);
+    float f = invBase;
+    uint32_t i = index;
+    while (i > 0) {
+        result += static_cast<float>(i % base) * f;
+        i /= base;
+        f *= invBase;
+    }
+    return result;
+}
+
+/// Generates a centered 2D Halton(2, 3) subpixel jitter offset in pixel coordinates [-0.5, 0.5].
+///
+/// @param phaseIndex Jitter phase index, starting at 0.
+/// @param sequenceLength Total number of phases before the sequence repeats (e.g. 8, 16, 32).
+[[nodiscard]] constexpr Vec2 computeHaltonJitter(uint32_t phaseIndex,
+                                                 uint32_t sequenceLength = 16) noexcept {
+    if (sequenceLength == 0) {
+        return Vec2{0.0F, 0.0F};
+    }
+    const uint32_t idx = (phaseIndex % sequenceLength) + 1; // 1-based index for Halton
+    const float x = haltonSequence(idx, 2) - 0.5F;
+    const float y = haltonSequence(idx, 3) - 0.5F;
+    return Vec2{x, y};
 }
 
 } // namespace eng

@@ -273,6 +273,66 @@ int testFrustumAndPlane() {
     return 0;
 }
 
+static int testHaltonAndProjectionJitter() {
+    // 1. Halton sequence properties
+    // index 1: base 2 -> 0.5, base 3 -> 1/3 ~ 0.333333
+    const float h1_2 = haltonSequence(1, 2);
+    const float h1_3 = haltonSequence(1, 3);
+    TEST_CHECK(std::abs(h1_2 - 0.5F) < 1e-6F);
+    TEST_CHECK(std::abs(h1_3 - (1.0F / 3.0F)) < 1e-6F);
+
+    // index 2: base 2 -> 0.25, base 3 -> 2/3 ~ 0.666667
+    const float h2_2 = haltonSequence(2, 2);
+    const float h2_3 = haltonSequence(2, 3);
+    TEST_CHECK(std::abs(h2_2 - 0.25F) < 1e-6F);
+    TEST_CHECK(std::abs(h2_3 - (2.0F / 3.0F)) < 1e-6F);
+
+    // Verify determinism and bounds in [-0.5, 0.5]
+    for (uint32_t i = 0; i < 32; ++i) {
+        Vec2 jitter = computeHaltonJitter(i, 16);
+        TEST_CHECK(jitter.x >= -0.5F && jitter.x <= 0.5F);
+        TEST_CHECK(jitter.y >= -0.5F && jitter.y <= 0.5F);
+
+        // Sequence must repeat identically after sequenceLength (16 phases)
+        Vec2 jitterRepeat = computeHaltonJitter(i + 16, 16);
+        TEST_CHECK(std::abs(jitter.x - jitterRepeat.x) < 1e-6F);
+        TEST_CHECK(std::abs(jitter.y - jitterRepeat.y) < 1e-6F);
+    }
+
+    // 2. Projection jitter math verification
+    const Mat4 proj = Mat4::perspective(1.0F, 16.0F / 9.0F, 0.1F, 100.0F);
+    const float width = 1920.0F;
+    const float height = 1080.0F;
+    const float jitterXPixels = 0.5F;
+    const float jitterYPixels = -0.25F;
+
+    const Mat4 jitteredProj = proj.withJitter(jitterXPixels, jitterYPixels, width, height);
+
+    // Project view-space point on z-axis (0, 0, -5)
+    const Vec3 pView{0.0F, 0.0F, -5.0F};
+    float wOrig = 0.0F;
+    float wJittered = 0.0F;
+    const Vec3 pClipOrig = proj.transformPointWithW(pView, wOrig);
+    const Vec3 pClipJittered = jitteredProj.transformPointWithW(pView, wJittered);
+
+    // Both points must have positive w
+    TEST_CHECK(wOrig > 0.0F);
+    TEST_CHECK(wJittered > 0.0F);
+    TEST_CHECK(std::abs(wOrig - wJittered) < 1e-6F);
+
+    const Vec2 ndcOrig{pClipOrig.x / wOrig, pClipOrig.y / wOrig};
+    const Vec2 ndcJittered{pClipJittered.x / wJittered, pClipJittered.y / wJittered};
+
+    // Expected NDC delta: (2 * jitterXPixels / width, 2 * jitterYPixels / height)
+    const float expectedDeltaX = (2.0F * jitterXPixels) / width;
+    const float expectedDeltaY = (2.0F * jitterYPixels) / height;
+
+    TEST_CHECK(std::abs((ndcJittered.x - ndcOrig.x) - expectedDeltaX) < 1e-6F);
+    TEST_CHECK(std::abs((ndcJittered.y - ndcOrig.y) - expectedDeltaY) < 1e-6F);
+
+    return 0;
+}
+
 int main() {
     std::cout << "Running Math Tests...\n";
 
@@ -292,6 +352,9 @@ int main() {
         return 1;
     }
     if (testFrustumAndPlane() != 0) {
+        return 1;
+    }
+    if (testHaltonAndProjectionJitter() != 0) {
         return 1;
     }
 
