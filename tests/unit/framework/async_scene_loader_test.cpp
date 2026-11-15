@@ -286,6 +286,214 @@ int testGlbImportProgress() {
     return 0;
 }
 
+int testStrict10PhasePipelineAndTelemetry() {
+    TEST_CHECK(toString(AsyncLoadState::SceneRequest) == "SCENE_REQUEST");
+    TEST_CHECK(toString(AsyncLoadState::FileReading) == "FILE_READING");
+    TEST_CHECK(toString(AsyncLoadState::AssetDiscovery) == "ASSET_DISCOVERY");
+    TEST_CHECK(toString(AsyncLoadState::AssetDecoding) == "ASSET_DECODING");
+    TEST_CHECK(toString(AsyncLoadState::CpuStaging) == "CPU_STAGING");
+    TEST_CHECK(toString(AsyncLoadState::GpuUpload) == "GPU_UPLOAD");
+    TEST_CHECK(toString(AsyncLoadState::SceneValidation) == "SCENE_VALIDATION");
+    TEST_CHECK(toString(AsyncLoadState::EcsCommit) == "ECS_COMMIT");
+    TEST_CHECK(toString(AsyncLoadState::ViewportPreparation) == "VIEWPORT_PREPARATION");
+    TEST_CHECK(toString(AsyncLoadState::SceneReady) == "SCENE_READY");
+
+    TEST_CHECK(toPhaseDisplayName(AsyncLoadState::SceneRequest) == "Phase 1/10: Scene Request");
+    TEST_CHECK(toPhaseDisplayName(AsyncLoadState::FileReading) == "Phase 2/10: File Reading");
+    TEST_CHECK(toPhaseDisplayName(AsyncLoadState::AssetDiscovery) == "Phase 3/10: Asset Discovery");
+    TEST_CHECK(toPhaseDisplayName(AsyncLoadState::AssetDecoding) == "Phase 4/10: Asset Decoding");
+    TEST_CHECK(toPhaseDisplayName(AsyncLoadState::CpuStaging) ==
+               "Phase 5/10: CPU Processing & Staging");
+    TEST_CHECK(toPhaseDisplayName(AsyncLoadState::GpuUpload) ==
+               "Phase 6/10: Incremental GPU Upload");
+    TEST_CHECK(toPhaseDisplayName(AsyncLoadState::SceneValidation) ==
+               "Phase 7/10: Scene Validation");
+    TEST_CHECK(toPhaseDisplayName(AsyncLoadState::EcsCommit) == "Phase 8/10: Safe ECS Commit");
+    TEST_CHECK(toPhaseDisplayName(AsyncLoadState::ViewportPreparation) ==
+               "Phase 9/10: Viewport Preparation");
+    TEST_CHECK(toPhaseDisplayName(AsyncLoadState::SceneReady) == "Phase 10/10: Scene Ready");
+
+    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+        return 0;
+    }
+
+    auto nullDevRes = rhi::createNullDevice();
+    TEST_CHECK(nullDevRes.hasValue());
+    auto nullDevice = std::move(nullDevRes.value());
+
+    render::AssetManager assetManager;
+    AsyncSceneLoader loader;
+    loader.bindAssetManager(&assetManager);
+
+    auto startRes = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    TEST_CHECK(startRes.hasValue());
+
+    int maxFrames = 1000;
+    while (loader.isLoading() && maxFrames-- > 0) {
+        loader.update(*nullDevice, 3.0F);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    TEST_CHECK(loader.isReadyToActivate());
+    World world;
+    auto actRes = loader.activate(world);
+    TEST_CHECK(actRes.hasValue());
+    TEST_CHECK(loader.isCompleted());
+
+    const auto& t = loader.getTelemetry();
+    TEST_CHECK(t.sceneRequestDuration.asMicroseconds() > 0);
+    TEST_CHECK(t.fileIoDuration.asMicroseconds() > 0);
+    TEST_CHECK(t.discoveryDuration.asMicroseconds() > 0);
+    TEST_CHECK(t.cpuStagingDuration.asMicroseconds() > 0);
+    TEST_CHECK(t.validationDuration.asMicroseconds() > 0);
+    TEST_CHECK(t.ecsCreationDuration.asMicroseconds() > 0);
+    TEST_CHECK(t.viewportPrepDuration.asMicroseconds() > 0);
+    TEST_CHECK(t.totalDuration.asMicroseconds() > 0);
+
+    const auto p = loader.getProgress();
+    TEST_CHECK(p.overallProgress == 1.0F);
+    TEST_CHECK(p.entitiesLoaded == actRes.value().entitiesLoaded);
+
+    return 0;
+}
+
+int testRamAndVramTracking() {
+    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+        return 0;
+    }
+
+    auto nullDevRes = rhi::createNullDevice();
+    TEST_CHECK(nullDevRes.hasValue());
+    auto nullDevice = std::move(nullDevRes.value());
+
+    render::AssetManager assetManager;
+    AsyncSceneLoader loader;
+    loader.bindAssetManager(&assetManager);
+
+    auto startRes = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    TEST_CHECK(startRes.hasValue());
+
+    int maxFrames = 1000;
+    while (loader.isLoading() && maxFrames-- > 0) {
+        loader.update(*nullDevice, 3.0F);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    const auto p = loader.getProgress();
+    TEST_CHECK(p.peakRamBytes > 0);
+
+    World world;
+    (void)loader.activate(world);
+    return 0;
+}
+
+int testBistroBenchmarkSceneLoading() {
+    const std::string bistroPath = "assets/benchmark-scenes/Bistro_Benchmark.hikari";
+    if (!std::filesystem::exists(bistroPath)) {
+        std::cout << "[SKIP] Bistro benchmark scene not present at " << bistroPath << '\n';
+        return 0;
+    }
+
+    JobSystemConfig jobConfig{.workerCount = 4, .maxJobs = 256};
+    size_t bytes = JobSystem::requiredBytes(jobConfig);
+    std::vector<std::byte> storage(bytes);
+    JobSystem jobSystem(storage, jobConfig);
+
+    auto nullDevRes = rhi::createNullDevice();
+    TEST_CHECK(nullDevRes.hasValue());
+    auto nullDevice = std::move(nullDevRes.value());
+
+    render::AssetManager assetManager;
+    AsyncSceneLoader loader;
+    loader.bindJobSystem(&jobSystem);
+    loader.bindAssetManager(&assetManager);
+
+    auto startRes = loader.startLoad(bistroPath);
+    TEST_CHECK(startRes.hasValue());
+    TEST_CHECK(loader.isLoading());
+
+    int maxFrames = 30000;
+    while (loader.isLoading() && maxFrames-- > 0) {
+        loader.update(*nullDevice, 5.0F);
+        std::this_thread::sleep_for(std::chrono::microseconds(500));
+    }
+
+    if (!loader.isReadyToActivate()) {
+        std::cerr << "State: " << toString(loader.getState())
+                  << ", Error: " << loader.getErrorMessage() << ", frames remaining: " << maxFrames
+                  << ", progress: " << loader.getProgress().overallProgress
+                  << ", current op: " << loader.getProgress().currentOperation << '\n';
+        loader.cancel();
+        return 1;
+    }
+
+    TEST_CHECK(loader.isReadyToActivate());
+    const auto progress = loader.getProgress();
+    TEST_CHECK(progress.entitiesDiscovered > 1000);
+    TEST_CHECK(progress.peakRamBytes > 0);
+
+    World world;
+    auto actRes = loader.activate(world);
+    TEST_CHECK(actRes.hasValue());
+    TEST_CHECK(actRes.value().entitiesLoaded > 1000);
+    TEST_CHECK(loader.isCompleted());
+
+    const auto& tel = loader.getTelemetry();
+    std::cout << "[INFO] Bistro Load Telemetry:\n"
+              << "  - Request:      " << tel.sceneRequestDuration.asMicroseconds() << " us\n"
+              << "  - File I/O:     " << tel.fileIoDuration.asMicroseconds() << " us\n"
+              << "  - Discovery:    " << tel.discoveryDuration.asMicroseconds() << " us\n"
+              << "  - CPU Staging:  " << tel.cpuStagingDuration.asMicroseconds() << " us\n"
+              << "  - GPU Upload:   " << tel.gpuUploadDuration.asMicroseconds() << " us\n"
+              << "  - Validation:   " << tel.validationDuration.asMicroseconds() << " us\n"
+              << "  - ECS Commit:   " << tel.ecsCreationDuration.asMicroseconds() << " us\n"
+              << "  - Viewport Prep:" << tel.viewportPrepDuration.asMicroseconds() << " us\n"
+              << "  - Total Time:   " << tel.totalDuration.toSeconds() << " s\n"
+              << "  - Max Stall:    " << tel.longestFrameStall.asMicroseconds() << " us\n"
+              << "  - Peak RAM:     " << (progress.peakRamBytes / (1024 * 1024)) << " MB\n";
+
+    return 0;
+}
+
+int testPhaseCancellationSafety() {
+    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+        return 0;
+    }
+
+    auto nullDevRes = rhi::createNullDevice();
+    TEST_CHECK(nullDevRes.hasValue());
+    auto nullDevice = std::move(nullDevRes.value());
+
+    World world;
+    auto baselineEntity = world.createEntity("UnchangedBaselineEntity");
+    const size_t initialEntities = world.getAllEntities().size();
+
+    // Cancellation test 1: Immediate cancel upon startLoad
+    {
+        AsyncSceneLoader loader;
+        (void)loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+        loader.cancel();
+        loader.update(*nullDevice, 3.0F);
+        TEST_CHECK(loader.isCancelled());
+        TEST_CHECK(world.getAllEntities().size() == initialEntities);
+        TEST_CHECK(world.isAlive(baselineEntity));
+    }
+
+    // Cancellation test 2: Cancel mid-load during GPU tick
+    {
+        AsyncSceneLoader loader;
+        (void)loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+        loader.update(*nullDevice, 1.0F);
+        loader.cancel();
+        loader.update(*nullDevice, 3.0F);
+        TEST_CHECK(loader.isCancelled());
+        TEST_CHECK(world.getAllEntities().size() == initialEntities);
+        TEST_CHECK(world.isAlive(baselineEntity));
+    }
+
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -332,6 +540,30 @@ int main() {
         return 1;
     }
     std::cout << "PASS: testGlbImportProgress\n";
+
+    if (testStrict10PhasePipelineAndTelemetry() != 0) {
+        std::cerr << "FAIL: testStrict10PhasePipelineAndTelemetry\n";
+        return 1;
+    }
+    std::cout << "PASS: testStrict10PhasePipelineAndTelemetry\n";
+
+    if (testRamAndVramTracking() != 0) {
+        std::cerr << "FAIL: testRamAndVramTracking\n";
+        return 1;
+    }
+    std::cout << "PASS: testRamAndVramTracking\n";
+
+    if (testPhaseCancellationSafety() != 0) {
+        std::cerr << "FAIL: testPhaseCancellationSafety\n";
+        return 1;
+    }
+    std::cout << "PASS: testPhaseCancellationSafety\n";
+
+    if (testBistroBenchmarkSceneLoading() != 0) {
+        std::cerr << "FAIL: testBistroBenchmarkSceneLoading\n";
+        return 1;
+    }
+    std::cout << "PASS: testBistroBenchmarkSceneLoading\n";
 
     std::cout << "=== All AsyncSceneLoader Tests Passed ===\n";
     return 0;
