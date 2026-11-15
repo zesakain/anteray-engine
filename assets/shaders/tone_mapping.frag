@@ -113,11 +113,12 @@ vec3 agxToneMapping(vec3 color) {
     // 3. Apply AgX default contrast sigmoid (outputs display-encoded ~gamma 2.2 space)
     val = clamp(agxDefaultContrastApprox(val), 0.0, 1.0);
 
-    // 4. Apply AgX cinematic look (ASC-CDL contrast/saturation punch) in display space
-    // to restore shadow depth and midtone chroma desaturated by the inset matrix.
-    const vec3 slope = vec3(1.05);
-    const vec3 power = vec3(1.25);
-    const float sat = 1.25;
+    // 4. Calibrated AgX Punchy look (ASC-CDL):
+    // Slope, power, and saturation calibrated to eliminate the gray veil, deliver
+    // OLED-grade deep blacks, rich vibrant color separation, and natural highlight roll-off.
+    const vec3 slope = vec3(1.15);
+    const vec3 power = vec3(1.35);
+    const float sat = 1.30;
     val = pow(clamp(val * slope, 0.0, 1.0), power);
     float luma = dot(val, vec3(0.2126, 0.7152, 0.0722));
     val = clamp(luma + sat * (val - luma), 0.0, 1.0);
