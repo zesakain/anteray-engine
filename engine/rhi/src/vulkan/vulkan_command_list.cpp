@@ -101,6 +101,7 @@ void VulkanCommandList::begin() {
     boundLayout_ = VK_NULL_HANDLE;
     hasUnboundDraw_ = false;
     isInsideRenderPass_ = false;
+    targetsSwapchain_ = false;
     currentRenderImage_ = VK_NULL_HANDLE;
     activeColorTarget_ = {};
     activeDepthTarget_ = {};
@@ -399,6 +400,7 @@ void VulkanCommandList::beginRenderPass(const RenderPassBeginInfo& info) {
     }
 
     currentRenderImage_ = swapImage;
+    targetsSwapchain_ = true;
     activeColorTarget_ = {};
     activeDepthTarget_ = {};
     activeColorFormat_ = TextureFormat::BGRA8_UNORM;

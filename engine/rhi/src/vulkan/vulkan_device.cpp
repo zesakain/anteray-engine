@@ -48,10 +48,54 @@ VulkanDevice::VulkanDevice(std::unique_ptr<VulkanInstance> instance,
             queryPool_ = VK_NULL_HANDLE;
         }
     }
+
+    // Initialize per-frame-in-flight synchronization primitives and headless fence
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
+        VkSemaphoreCreateInfo semInfo{
+            .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+        };
+        (void)vkCreateSemaphore(device_, &semInfo, nullptr, &frameSync_[i].imageAvailableSemaphore);
+        (void)vkCreateSemaphore(device_, &semInfo, nullptr, &frameSync_[i].renderFinishedSemaphore);
+
+        VkFenceCreateInfo fenceInfo{
+            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+        };
+        (void)vkCreateFence(device_, &fenceInfo, nullptr, &frameSync_[i].inFlightFence);
+    }
+
+    VkFenceCreateInfo headlessFenceInfo{
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT,
+    };
+    (void)vkCreateFence(device_, &headlessFenceInfo, nullptr, &headlessFence_);
 }
 
 VulkanDevice::~VulkanDevice() noexcept {
     waitIdle();
+
+    for (size_t i = 0; i < kMaxFramesInFlight; ++i) {
+        if (frameSync_[i].imageAvailableSemaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore(device_, frameSync_[i].imageAvailableSemaphore, nullptr);
+            frameSync_[i].imageAvailableSemaphore = VK_NULL_HANDLE;
+        }
+        if (frameSync_[i].renderFinishedSemaphore != VK_NULL_HANDLE) {
+            vkDestroySemaphore(device_, frameSync_[i].renderFinishedSemaphore, nullptr);
+            frameSync_[i].renderFinishedSemaphore = VK_NULL_HANDLE;
+        }
+        if (frameSync_[i].inFlightFence != VK_NULL_HANDLE) {
+            vkDestroyFence(device_, frameSync_[i].inFlightFence, nullptr);
+            frameSync_[i].inFlightFence = VK_NULL_HANDLE;
+        }
+    }
+    if (headlessFence_ != VK_NULL_HANDLE) {
+        vkDestroyFence(device_, headlessFence_, nullptr);
+        headlessFence_ = VK_NULL_HANDLE;
+    }
 
     if (queryPool_ != VK_NULL_HANDLE) {
         vkDestroyQueryPool(device_, queryPool_, nullptr);
@@ -1282,17 +1326,44 @@ Result<void> VulkanDevice::submit(RhiCommandList* commandList) {
     auto* vkCmd = static_cast<VulkanCommandList*>(commandList);
     VkCommandBuffer cmd = vkCmd->handle();
 
-    VkFenceCreateInfo fenceInfo{
-        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-        .pNext = nullptr,
-        .flags = 0,
-    };
+    ++currentSubmissionSerial_;
+    const uint64_t submissionSerial = currentSubmissionSerial_;
 
-    VkFence fence = VK_NULL_HANDLE;
-    VkResult res = vkCreateFence(device_, &fenceInfo, nullptr, &fence);
-    if (res != VK_SUCCESS) {
-        return Error{.code = ErrorCode::CommandSubmissionFailed, .message = "vkCreateFence failed"};
+    if (swapchain_ != nullptr && frameActive_ && vkCmd->targetsSwapchain()) {
+        auto& sync = frameSync_[currentFrameSlot_];
+        sync.submissionSerial = submissionSerial;
+
+        VkPipelineStageFlags waitDstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VkSubmitInfo submitInfo{
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .pNext = nullptr,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = &sync.imageAvailableSemaphore,
+            .pWaitDstStageMask = &waitDstStageMask,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &cmd,
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = &sync.renderFinishedSemaphore,
+        };
+
+        const Timestamp tSubmitStart = Timestamp::now();
+        VkResult res = vkQueueSubmit(graphicsQueue_, 1, &submitInfo, sync.inFlightFence);
+        const Timestamp tSubmitEnd = Timestamp::now();
+        queueTimingStats_.submitTimeMs =
+            static_cast<float>((tSubmitEnd - tSubmitStart).asMilliseconds());
+
+        if (res != VK_SUCCESS) {
+            return Error{.code = ErrorCode::CommandSubmissionFailed,
+                         .message = "vkQueueSubmit failed"};
+        }
+
+        vkCmd->cleanupStagingResources();
+        return Result<void>::success();
     }
+
+    // Headless or offscreen path: synchronize via persistent headlessFence_
+    vkWaitForFences(device_, 1, &headlessFence_, VK_TRUE, 500000000ULL);
+    vkResetFences(device_, 1, &headlessFence_);
 
     VkSubmitInfo submitInfo{
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
@@ -1306,26 +1377,21 @@ Result<void> VulkanDevice::submit(RhiCommandList* commandList) {
         .pSignalSemaphores = nullptr,
     };
 
-    ++currentSubmissionSerial_;
-    const uint64_t submissionSerial = currentSubmissionSerial_;
-
     const Timestamp tSubmitStart = Timestamp::now();
-    res = vkQueueSubmit(graphicsQueue_, 1, &submitInfo, fence);
+    VkResult res = vkQueueSubmit(graphicsQueue_, 1, &submitInfo, headlessFence_);
     const Timestamp tSubmitEnd = Timestamp::now();
     queueTimingStats_.submitTimeMs =
         static_cast<float>((tSubmitEnd - tSubmitStart).asMilliseconds());
 
     if (res != VK_SUCCESS) {
-        vkDestroyFence(device_, fence, nullptr);
         return Error{.code = ErrorCode::CommandSubmissionFailed, .message = "vkQueueSubmit failed"};
     }
 
     const Timestamp tFenceStart = Timestamp::now();
-    res = vkWaitForFences(device_, 1, &fence, VK_TRUE, 2000000000ULL); // 2 second timeout
+    res = vkWaitForFences(device_, 1, &headlessFence_, VK_TRUE, 500000000ULL);
     const Timestamp tFenceEnd = Timestamp::now();
     queueTimingStats_.fenceWaitTimeMs =
         static_cast<float>((tFenceEnd - tFenceStart).asMilliseconds());
-    vkDestroyFence(device_, fence, nullptr);
 
     vkCmd->cleanupStagingResources();
 
@@ -1498,25 +1564,65 @@ Result<uint32_t> VulkanDevice::acquireNextImage() {
             }
         }
     }
+
+    currentFrameSlot_ = (currentFrameSlot_ + 1) % kMaxFramesInFlight;
+    auto& sync = frameSync_[currentFrameSlot_];
+
+    const Timestamp tFenceStart = Timestamp::now();
+    VkResult fenceRes = vkWaitForFences(device_, 1, &sync.inFlightFence, VK_TRUE, 500000000ULL);
+    const Timestamp tFenceEnd = Timestamp::now();
+    queueTimingStats_.fenceWaitTimeMs =
+        static_cast<float>((tFenceEnd - tFenceStart).asMilliseconds());
+
+    if (fenceRes == VK_SUCCESS) {
+        if (sync.submissionSerial > completedSubmissionSerial_) {
+            completedSubmissionSerial_ = sync.submissionSerial;
+        }
+    }
+    vkResetFences(device_, 1, &sync.inFlightFence);
+
     const Timestamp tAcqStart = Timestamp::now();
-    auto acqRes = swapchain_->acquireNextImage();
+    auto acqRes = swapchain_->acquireNextImage(sync.imageAvailableSemaphore);
     const Timestamp tAcqEnd = Timestamp::now();
     queueTimingStats_.acquireTimeMs = static_cast<float>((tAcqEnd - tAcqStart).asMilliseconds());
     if (acqRes.hasValue()) {
         currentSwapchainImageIndex_ = acqRes.value();
+        frameActive_ = true;
+    } else {
+        frameActive_ = false;
     }
     return acqRes;
 }
 
 Result<void> VulkanDevice::present() {
-    if (!swapchain_) {
+    if (!swapchain_ || !frameActive_) {
         return Result<void>::success();
     }
+    frameActive_ = false;
+    auto& sync = frameSync_[currentFrameSlot_];
+
     const Timestamp tPresStart = Timestamp::now();
-    auto presRes = swapchain_->present(presentQueue_, currentSwapchainImageIndex_, VK_NULL_HANDLE);
+    auto presRes = swapchain_->present(presentQueue_, currentSwapchainImageIndex_,
+                                       sync.renderFinishedSemaphore);
     const Timestamp tPresEnd = Timestamp::now();
     queueTimingStats_.presentTimeMs = static_cast<float>((tPresEnd - tPresStart).asMilliseconds());
     return presRes;
+}
+
+uint64_t VulkanDevice::pollCompletedSubmissionSerial() noexcept {
+    if (device_ == VK_NULL_HANDLE) {
+        return completedSubmissionSerial_;
+    }
+    for (const auto& sync : frameSync_) {
+        if (sync.submissionSerial > completedSubmissionSerial_ &&
+            sync.inFlightFence != VK_NULL_HANDLE) {
+            if (vkGetFenceStatus(device_, sync.inFlightFence) == VK_SUCCESS) {
+                completedSubmissionSerial_ =
+                    std::max(completedSubmissionSerial_, sync.submissionSerial);
+            }
+        }
+    }
+    return completedSubmissionSerial_;
 }
 
 bool VulkanDevice::getQueryResults(uint32_t firstQuery, uint32_t queryCount,

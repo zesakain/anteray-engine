@@ -99,6 +99,7 @@ public:
         return bindDescriptorSetsCount_;
     }
     [[nodiscard]] uint32_t getPushConstantCount() const noexcept { return pushConstantCount_; }
+    [[nodiscard]] bool targetsSwapchain() const noexcept { return targetsSwapchain_; }
 
     void cleanupStagingResources() noexcept;
     void onDeviceDestroyed() noexcept;
@@ -109,6 +110,7 @@ private:
     VkCommandBuffer cmdBuffer_{VK_NULL_HANDLE};
     bool isRecording_{false};
     bool isInsideRenderPass_{false};
+    bool targetsSwapchain_{false};
     VkImage currentRenderImage_{VK_NULL_HANDLE};
     TextureHandle activeColorTarget_{};
     TextureHandle activeDepthTarget_{};

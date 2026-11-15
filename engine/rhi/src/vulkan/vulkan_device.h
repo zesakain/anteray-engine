@@ -104,6 +104,7 @@ public:
                                                       uint32_t endQueryIndex) override;
     bool getQueryResults(uint32_t firstQuery, uint32_t queryCount,
                          uint64_t* outTimestamps) override;
+    [[nodiscard]] uint64_t pollCompletedSubmissionSerial() noexcept override;
 
     // Internal backend helpers
     [[nodiscard]] VkDevice getLogicalDevice() const noexcept { return device_; }
@@ -178,6 +179,18 @@ private:
     VkQueryPool queryPool_{VK_NULL_HANDLE};
     static constexpr uint32_t kMaxTimestampQueries = 64;
     QueueTimingStats queueTimingStats_{};
+
+    struct FrameSyncResources {
+        VkSemaphore imageAvailableSemaphore{VK_NULL_HANDLE};
+        VkSemaphore renderFinishedSemaphore{VK_NULL_HANDLE};
+        VkFence inFlightFence{VK_NULL_HANDLE};
+        uint64_t submissionSerial{0};
+    };
+    static constexpr uint32_t kMaxFramesInFlight = 2;
+    std::array<FrameSyncResources, kMaxFramesInFlight> frameSync_{};
+    uint32_t currentFrameSlot_{0};
+    bool frameActive_{false};
+    VkFence headlessFence_{VK_NULL_HANDLE};
 
     std::vector<VulkanBufferSlot> buffers_;
     std::vector<VulkanTextureSlot> textures_;
