@@ -108,6 +108,14 @@ target_link_libraries(scene_test PRIVATE hikari::engine_framework)
 target_compile_definitions(scene_test PRIVATE HIKARI_SAMPLE_SCENE_PATH="${CMAKE_SOURCE_DIR}/assets/scenes/sample.hikari")
 add_test(NAME scene_test COMMAND scene_test)
 
+add_executable(async_scene_loader_test unit/framework/async_scene_loader_test.cpp)
+target_link_libraries(async_scene_loader_test PRIVATE hikari::engine_framework hikari::engine_render hikari::engine_rhi hikari::engine_core)
+target_compile_definitions(async_scene_loader_test PRIVATE
+    HIKARI_SAMPLE_SCENE_PATH="${CMAKE_SOURCE_DIR}/assets/scenes/sample.hikari"
+    HIKARI_DAMAGED_HELMET_PATH="${CMAKE_SOURCE_DIR}/test-assets/DamagedHelmet.glb"
+)
+add_test(NAME async_scene_loader_test COMMAND async_scene_loader_test)
+
 # Benchmark scene generator and capture tools
 add_executable(generate_benchmark_scenes ${CMAKE_SOURCE_DIR}/tools/generate_benchmark_scenes.cpp)
 target_link_libraries(generate_benchmark_scenes PRIVATE hikari::engine_framework hikari::engine_render)

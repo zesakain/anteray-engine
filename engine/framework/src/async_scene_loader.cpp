@@ -240,15 +240,18 @@ struct AsyncSceneLoader::Impl {
             postProcessSettings = deserRes.value().postProcessSettings;
 
             // Collect referenced glTF base files from mesh components
-            flecs::world& ecs = stagingWorld.getRawWorld();
-            ecs.each([&](flecs::entity, const render::MeshComponent& mc) {
-                if (!mc.assetPath.empty()) {
-                    const auto hashPos = mc.assetPath.find('#');
-                    if (hashPos != std::string::npos) {
-                        referencedGltfFiles.insert(mc.assetPath.substr(0, hashPos));
+            for (world::EntityHandle h : stagingWorld.getAllEntities()) {
+                flecs::entity e = stagingWorld.getRawWorld().entity(h.id);
+                if (e.is_valid() && e.has<render::MeshComponent>()) {
+                    const auto* mc = e.get<render::MeshComponent>();
+                    if (!mc->assetPath.empty()) {
+                        const auto hashPos = mc->assetPath.find('#');
+                        if (hashPos != std::string::npos) {
+                            referencedGltfFiles.insert(mc->assetPath.substr(0, hashPos));
+                        }
                     }
                 }
-            });
+            }
         } else if (path.ends_with(".gltf") || path.ends_with(".glb")) {
             telemetry.fileIoDuration = Duration::fromMilliseconds(1);
             updateProgress([&](AsyncLoadProgress& p) {
@@ -289,8 +292,11 @@ struct AsyncSceneLoader::Impl {
 
         // Extract staged entity data from stagingWorld
         std::vector<StagedEntityData> entities;
-        flecs::world& ecs = stagingWorld.getRawWorld();
-        ecs.each([&](flecs::entity e) {
+        for (world::EntityHandle h : stagingWorld.getAllEntities()) {
+            flecs::entity e = stagingWorld.getRawWorld().entity(h.id);
+            if (!e.is_valid()) {
+                continue;
+            }
             StagedEntityData staged{};
             staged.stableId = e.has<StableIdComponent>() ? e.get<StableIdComponent>()->id
                                                          : static_cast<uint64_t>(e.id());
@@ -369,7 +375,7 @@ struct AsyncSceneLoader::Impl {
             }
 
             entities.push_back(std::move(staged));
-        });
+        }
 
         // Discover required textures from all registered meshes
         std::unordered_set<std::string> discoveredTextureKeys;
@@ -792,14 +798,23 @@ void AsyncSceneLoader::bindAssetManager(render::AssetManager* assetManager) noex
 
 Result<uint64_t, Error> AsyncSceneLoader::startLoad(std::string_view filepath) {
     if (filepath.empty()) {
+        impl_->setFailure("Empty scene file path");
         return Result<uint64_t, Error>::failure(
             Error(ErrorCode::InvalidArgument, "Empty scene file path"));
     }
 
     if (!std::filesystem::exists(filepath)) {
+        impl_->setFailure("Scene file does not exist on disk: " + std::string(filepath));
         return Result<uint64_t, Error>::failure(
             Error(ErrorCode::InvalidArgument,
                   "Scene file does not exist on disk: " + std::string(filepath)));
+    }
+
+    if (!filepath.ends_with(".hikari") && !filepath.ends_with(".gltf") &&
+        !filepath.ends_with(".glb")) {
+        impl_->setFailure("Unsupported scene format: " + std::string(filepath));
+        return Result<uint64_t, Error>::failure(Error(
+            ErrorCode::InvalidArgument, "Unsupported scene format: " + std::string(filepath)));
     }
 
     impl_->cancelLoading();
