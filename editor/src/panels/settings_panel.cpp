@@ -281,7 +281,8 @@ void SettingsPanel::drawCategorySidebar() {
     if (matchesSearch("Shadows Resolution Bias PCF")) {
         drawNavButton("Shadows", SettingsCategory::GraphicsShadows);
     }
-    if (matchesSearch("Post-Processing Bloom Tone Map Exposure")) {
+    if (matchesSearch(
+            "Post-Processing Bloom Tone Map Exposure DoF Motion Blur LUT Vignette Film Grain")) {
         drawNavButton("Post-Processing", SettingsCategory::GraphicsPostProcess);
     }
     if (matchesSearch("Display VSync Frame Rate")) {
@@ -712,40 +713,150 @@ void SettingsPanel::drawShadowsTab(EditorContext& /*ctx*/) {
 }
 
 void SettingsPanel::drawPostProcessTab(EditorContext& /*ctx*/) {
-    ImGui::TextUnformatted("HDR Tone Mapping & Post-Processing");
+    ImGui::TextUnformatted("Cinematic Post-Processing & Color Management");
+    ImGui::TextDisabled("Configure tone mapping, exposure adaptation, bloom, DoF, motion blur, and "
+                        "color grading.");
     ImGui::Separator();
     ImGui::Spacing();
 
     ImGui::Checkbox("Enable Post-Processing Pipeline", &pendingGraphics_.postProcess.enabled);
 
     if (pendingGraphics_.postProcess.enabled) {
-        const char* toneOps[] = {"AgX (Default)", "ACES Fitted", "Filmic Reinhard", "Neutral",
-                                 "Bypass (Raw HDR)"};
+        ImGui::Spacing();
+        ImGui::SeparatorText("Tone Mapping & Exposure");
+
+        const char* toneOps[] = {"AgX (Default)", "ACES Fitted", "Filmic Reinhard",
+                                 "Khronos PBR Neutral", "Bypass (Linear HDR)"};
         int toneIdx = static_cast<int>(pendingGraphics_.postProcess.toneMapOp);
         if (ImGui::Combo("Tone Mapping Operator", &toneIdx, toneOps, 5)) {
             pendingGraphics_.postProcess.toneMapOp = static_cast<render::ToneMapOperator>(toneIdx);
         }
+        helpMarker("Selects the HDR-to-SDR display rendering transform. Khronos PBR Neutral "
+                   "preserves strict base-color fidelity.");
 
-        ImGui::SliderFloat("Exposure Compensation", &pendingGraphics_.postProcess.exposure, 0.1F,
-                           10.0F, "%.2f");
         if (pendingGraphics_.postProcess.toneMapOp == render::ToneMapOperator::FilmicReinhard) {
             ImGui::SliderFloat("Reinhard White Point",
                                &pendingGraphics_.postProcess.reinhardWhitePoint, 1.0F, 20.0F,
                                "%.1f");
         }
 
+        ImGui::SliderFloat("Manual Exposure Multiplier", &pendingGraphics_.postProcess.exposure,
+                           0.1F, 10.0F, "%.2f");
+        ImGui::SliderFloat("Exposure Compensation (EV)",
+                           &pendingGraphics_.postProcess.exposureCompensation, -4.0F, 4.0F,
+                           "%+.2f EV");
+
+        ImGui::Checkbox("Enable Auto-Exposure (Eye Adaptation)",
+                        &pendingGraphics_.postProcess.autoExposureEnabled);
+        if (pendingGraphics_.postProcess.autoExposureEnabled) {
+            ImGui::Indent(16.0F);
+            ImGui::SliderFloat("Min Brightness (EV)",
+                               &pendingGraphics_.postProcess.autoExposureMinEv, -8.0F, 0.0F,
+                               "%.1f EV");
+            ImGui::SliderFloat("Max Brightness (EV)",
+                               &pendingGraphics_.postProcess.autoExposureMaxEv, 0.0F, 8.0F,
+                               "%.1f EV");
+            ImGui::SliderFloat("Adaptation Speed Up",
+                               &pendingGraphics_.postProcess.autoExposureSpeedUp, 0.2F, 10.0F,
+                               "%.1f /s");
+            ImGui::SliderFloat("Adaptation Speed Down",
+                               &pendingGraphics_.postProcess.autoExposureSpeedDown, 0.2F, 10.0F,
+                               "%.1f /s");
+            ImGui::Unindent(16.0F);
+        }
+
         ImGui::Spacing();
+        ImGui::SeparatorText("HDR Bloom");
         ImGui::Checkbox("Enable HDR Bloom", &pendingGraphics_.postProcess.bloomEnabled);
         if (pendingGraphics_.postProcess.bloomEnabled) {
+            ImGui::Indent(16.0F);
             ImGui::SliderFloat("Bloom Threshold", &pendingGraphics_.postProcess.bloomThreshold,
                                0.1F, 5.0F, "%.2f");
             ImGui::SliderFloat("Bloom Knee", &pendingGraphics_.postProcess.bloomKnee, 0.0F, 1.0F,
                                "%.2f");
             ImGui::SliderFloat("Bloom Intensity", &pendingGraphics_.postProcess.bloomIntensity,
-                               0.01F, 0.5F, "%.3f");
+                               0.005F, 0.5F, "%.3f");
             ImGui::SliderFloat("Bloom Filter Radius",
                                &pendingGraphics_.postProcess.bloomFilterRadius, 0.5F, 4.0F,
                                "%.1f px");
+            ImGui::Unindent(16.0F);
+        }
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Depth of Field (Bokeh)");
+        ImGui::Checkbox("Enable Depth of Field", &pendingGraphics_.postProcess.dofEnabled);
+        if (pendingGraphics_.postProcess.dofEnabled) {
+            ImGui::Indent(16.0F);
+            ImGui::SliderFloat("Focus Distance", &pendingGraphics_.postProcess.dofFocusDistance,
+                               0.5F, 100.0F, "%.1f m");
+            ImGui::SliderFloat("Focal Length", &pendingGraphics_.postProcess.dofFocalLength, 12.0F,
+                               200.0F, "%.0f mm");
+            ImGui::SliderFloat("Aperture (f-stop)", &pendingGraphics_.postProcess.dofAperture, 1.2F,
+                               22.0F, "f/%.1f");
+            ImGui::SliderFloat("Max Blur Radius", &pendingGraphics_.postProcess.dofMaxBlurRadius,
+                               1.0F, 16.0F, "%.1f px");
+            ImGui::Unindent(16.0F);
+        }
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Camera & Object Motion Blur");
+        ImGui::Checkbox("Enable Motion Blur", &pendingGraphics_.postProcess.motionBlurEnabled);
+        if (pendingGraphics_.postProcess.motionBlurEnabled) {
+            ImGui::Indent(16.0F);
+            ImGui::SliderFloat("Shutter Intensity",
+                               &pendingGraphics_.postProcess.motionBlurIntensity, 0.0F, 1.5F,
+                               "%.2f");
+            int mbSamples = static_cast<int>(pendingGraphics_.postProcess.motionBlurSamples);
+            if (ImGui::SliderInt("Directional Samples", &mbSamples, 4, 16)) {
+                pendingGraphics_.postProcess.motionBlurSamples = static_cast<uint32_t>(mbSamples);
+            }
+            ImGui::Unindent(16.0F);
+        }
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Color Grading & 3D LUT");
+        ImGui::SliderFloat("White Balance Tint", &pendingGraphics_.postProcess.whiteBalance, -1.0F,
+                           1.0F, "%+.2f");
+        ImGui::SliderFloat("Contrast", &pendingGraphics_.postProcess.contrast, 0.5F, 2.0F, "%.2f");
+        ImGui::SliderFloat("Saturation", &pendingGraphics_.postProcess.saturation, 0.0F, 2.0F,
+                           "%.2f");
+
+        ImGui::Checkbox("Enable 3D Color Grading LUT", &pendingGraphics_.postProcess.lutEnabled);
+        if (pendingGraphics_.postProcess.lutEnabled) {
+            ImGui::Indent(16.0F);
+            ImGui::SliderFloat("LUT Intensity", &pendingGraphics_.postProcess.lutIntensity, 0.0F,
+                               1.0F, "%.2f");
+            char lutPathBuf[256]{};
+            std::snprintf(lutPathBuf, sizeof(lutPathBuf), "%s",
+                          pendingGraphics_.postProcess.lutFilePath.c_str());
+            if (ImGui::InputText("LUT Strip Path (256x16)", lutPathBuf, sizeof(lutPathBuf))) {
+                pendingGraphics_.postProcess.lutFilePath = lutPathBuf;
+            }
+            ImGui::Unindent(16.0F);
+        }
+
+        ImGui::Spacing();
+        ImGui::SeparatorText("Vignette & Film Grain");
+        ImGui::Checkbox("Enable Vignette", &pendingGraphics_.postProcess.vignetteEnabled);
+        if (pendingGraphics_.postProcess.vignetteEnabled) {
+            ImGui::Indent(16.0F);
+            ImGui::SliderFloat("Vignette Intensity",
+                               &pendingGraphics_.postProcess.vignetteIntensity, 0.0F, 1.0F, "%.2f");
+            ImGui::SliderFloat("Vignette Smoothness",
+                               &pendingGraphics_.postProcess.vignetteSmoothness, 0.1F, 1.0F,
+                               "%.2f");
+            ImGui::SliderFloat("Vignette Roundness",
+                               &pendingGraphics_.postProcess.vignetteRoundness, 0.0F, 1.0F, "%.2f");
+            ImGui::Unindent(16.0F);
+        }
+
+        ImGui::Checkbox("Enable Film Grain", &pendingGraphics_.postProcess.filmGrainEnabled);
+        if (pendingGraphics_.postProcess.filmGrainEnabled) {
+            ImGui::Indent(16.0F);
+            ImGui::SliderFloat("Film Grain Intensity",
+                               &pendingGraphics_.postProcess.filmGrainIntensity, 0.0F, 0.15F,
+                               "%.3f");
+            ImGui::Unindent(16.0F);
         }
     }
 }

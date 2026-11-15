@@ -1621,11 +1621,34 @@ void InspectorPanel::draw(EditorContext& ctx) {
                     }
 
                     if (pp.enabled) {
+                        bool modified = false;
+
                         float exposure = pp.exposure;
                         if (ImGui::DragFloat("Photometric Exposure", &exposure, 0.05F, 0.01F, 10.0F,
                                              "%.2f")) {
                             pp.exposure = std::clamp(exposure, 0.01F, 10.0F);
-                            ctx.sceneRenderer->setPostProcessSettings(pp);
+                            modified = true;
+                        }
+
+                        if (ImGui::SliderFloat("Exposure Comp (EV)", &pp.exposureCompensation,
+                                               -4.0F, 4.0F, "%+.2f EV")) {
+                            modified = true;
+                        }
+
+                        if (ImGui::Checkbox("Auto-Exposure Adaptation", &pp.autoExposureEnabled)) {
+                            modified = true;
+                        }
+                        if (pp.autoExposureEnabled) {
+                            ImGui::Indent(12.0F);
+                            modified |= ImGui::SliderFloat("Min EV", &pp.autoExposureMinEv, -8.0F,
+                                                           0.0F, "%.1f EV");
+                            modified |= ImGui::SliderFloat("Max EV", &pp.autoExposureMaxEv, 0.0F,
+                                                           8.0F, "%.1f EV");
+                            modified |= ImGui::SliderFloat("Speed Up", &pp.autoExposureSpeedUp,
+                                                           0.2F, 10.0F, "%.1f /s");
+                            modified |= ImGui::SliderFloat("Speed Down", &pp.autoExposureSpeedDown,
+                                                           0.2F, 10.0F, "%.1f /s");
+                            ImGui::Unindent(12.0F);
                         }
 
                         const char* tmOps[] = {"AgX (Default)", "ACES Fitted", "Filmic Reinhard",
@@ -1633,48 +1656,109 @@ void InspectorPanel::draw(EditorContext& ctx) {
                         int currentTm = static_cast<int>(pp.toneMapOp);
                         if (ImGui::Combo("Tone Mapping Operator", &currentTm, tmOps, 5)) {
                             pp.toneMapOp = static_cast<render::ToneMapOperator>(currentTm);
-                            ctx.sceneRenderer->setPostProcessSettings(pp);
+                            modified = true;
                         }
 
                         if (pp.toneMapOp == render::ToneMapOperator::FilmicReinhard) {
-                            float white = pp.reinhardWhitePoint;
-                            if (ImGui::SliderFloat("Reinhard White Point", &white, 1.0F, 20.0F,
-                                                   "%.1f")) {
-                                pp.reinhardWhitePoint = white;
-                                ctx.sceneRenderer->setPostProcessSettings(pp);
+                            if (ImGui::SliderFloat("Reinhard White Point", &pp.reinhardWhitePoint,
+                                                   1.0F, 20.0F, "%.1f")) {
+                                modified = true;
                             }
                         }
 
                         ImGui::Spacing();
                         ImGui::SeparatorText("Bloom Filter");
 
-                        bool bloomEnabled = pp.bloomEnabled;
-                        if (ImGui::Checkbox("Enable Bloom Pyramid", &bloomEnabled)) {
-                            pp.bloomEnabled = bloomEnabled;
-                            ctx.sceneRenderer->setPostProcessSettings(pp);
+                        if (ImGui::Checkbox("Enable Bloom Pyramid", &pp.bloomEnabled)) {
+                            modified = true;
                         }
 
                         if (pp.bloomEnabled) {
-                            float thresh = pp.bloomThreshold;
-                            if (ImGui::SliderFloat("Luminance Threshold", &thresh, 0.0F, 10.0F,
-                                                   "%.2f")) {
-                                pp.bloomThreshold = thresh;
-                                ctx.sceneRenderer->setPostProcessSettings(pp);
-                            }
+                            ImGui::Indent(12.0F);
+                            modified |= ImGui::SliderFloat("Luminance Threshold",
+                                                           &pp.bloomThreshold, 0.0F, 10.0F, "%.2f");
+                            modified |= ImGui::SliderFloat("Soft Knee Half-Width", &pp.bloomKnee,
+                                                           0.0F, 2.0F, "%.2f");
+                            modified |= ImGui::SliderFloat("Composite Intensity",
+                                                           &pp.bloomIntensity, 0.0F, 0.5F, "%.3f");
+                            modified |= ImGui::SliderFloat("Filter Radius", &pp.bloomFilterRadius,
+                                                           0.5F, 4.0F, "%.1f px");
+                            ImGui::Unindent(12.0F);
+                        }
 
-                            float knee = pp.bloomKnee;
-                            if (ImGui::SliderFloat("Soft Knee Half-Width", &knee, 0.0F, 2.0F,
-                                                   "%.2f")) {
-                                pp.bloomKnee = knee;
-                                ctx.sceneRenderer->setPostProcessSettings(pp);
-                            }
+                        ImGui::Spacing();
+                        ImGui::SeparatorText("Depth of Field & Motion Blur");
 
-                            float intensity = pp.bloomIntensity;
-                            if (ImGui::SliderFloat("Composite Intensity", &intensity, 0.0F, 0.5F,
-                                                   "%.3f")) {
-                                pp.bloomIntensity = intensity;
-                                ctx.sceneRenderer->setPostProcessSettings(pp);
+                        if (ImGui::Checkbox("Enable Depth of Field", &pp.dofEnabled)) {
+                            modified = true;
+                        }
+                        if (pp.dofEnabled) {
+                            ImGui::Indent(12.0F);
+                            modified |= ImGui::SliderFloat("Focus Distance", &pp.dofFocusDistance,
+                                                           0.5F, 100.0F, "%.1f m");
+                            modified |= ImGui::SliderFloat("Focal Length", &pp.dofFocalLength,
+                                                           12.0F, 200.0F, "%.0f mm");
+                            modified |= ImGui::SliderFloat("Aperture", &pp.dofAperture, 1.2F, 22.0F,
+                                                           "f/%.1f");
+                            modified |= ImGui::SliderFloat("Max Bokeh Radius", &pp.dofMaxBlurRadius,
+                                                           1.0F, 16.0F, "%.1f px");
+                            ImGui::Unindent(12.0F);
+                        }
+
+                        if (ImGui::Checkbox("Enable Motion Blur", &pp.motionBlurEnabled)) {
+                            modified = true;
+                        }
+                        if (pp.motionBlurEnabled) {
+                            ImGui::Indent(12.0F);
+                            modified |= ImGui::SliderFloat(
+                                "Shutter Intensity", &pp.motionBlurIntensity, 0.0F, 1.5F, "%.2f");
+                            int mbSamples = static_cast<int>(pp.motionBlurSamples);
+                            if (ImGui::SliderInt("Motion Samples", &mbSamples, 4, 16)) {
+                                pp.motionBlurSamples = static_cast<uint32_t>(mbSamples);
+                                modified = true;
                             }
+                            ImGui::Unindent(12.0F);
+                        }
+
+                        ImGui::Spacing();
+                        ImGui::SeparatorText("Color Grading, Vignette & Grain");
+                        modified |= ImGui::SliderFloat("White Balance", &pp.whiteBalance, -1.0F,
+                                                       1.0F, "%+.2f");
+                        modified |=
+                            ImGui::SliderFloat("Contrast", &pp.contrast, 0.5F, 2.0F, "%.2f");
+                        modified |=
+                            ImGui::SliderFloat("Saturation", &pp.saturation, 0.0F, 2.0F, "%.2f");
+
+                        modified |= ImGui::Checkbox("Enable 3D LUT", &pp.lutEnabled);
+                        if (pp.lutEnabled) {
+                            ImGui::Indent(12.0F);
+                            modified |= ImGui::SliderFloat("LUT Intensity", &pp.lutIntensity, 0.0F,
+                                                           1.0F, "%.2f");
+                            ImGui::Unindent(12.0F);
+                        }
+
+                        modified |= ImGui::Checkbox("Enable Vignette", &pp.vignetteEnabled);
+                        if (pp.vignetteEnabled) {
+                            ImGui::Indent(12.0F);
+                            modified |= ImGui::SliderFloat(
+                                "Vignette Intensity", &pp.vignetteIntensity, 0.0F, 1.0F, "%.2f");
+                            modified |= ImGui::SliderFloat(
+                                "Vignette Smoothness", &pp.vignetteSmoothness, 0.1F, 1.0F, "%.2f");
+                            modified |= ImGui::SliderFloat(
+                                "Vignette Roundness", &pp.vignetteRoundness, 0.0F, 1.0F, "%.2f");
+                            ImGui::Unindent(12.0F);
+                        }
+
+                        modified |= ImGui::Checkbox("Enable Film Grain", &pp.filmGrainEnabled);
+                        if (pp.filmGrainEnabled) {
+                            ImGui::Indent(12.0F);
+                            modified |= ImGui::SliderFloat(
+                                "Grain Intensity", &pp.filmGrainIntensity, 0.0F, 0.15F, "%.3f");
+                            ImGui::Unindent(12.0F);
+                        }
+
+                        if (modified) {
+                            ctx.sceneRenderer->setPostProcessSettings(pp);
                         }
                     }
                 }
