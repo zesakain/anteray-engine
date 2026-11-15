@@ -3756,7 +3756,7 @@ static void testEditorPersistentBenchmarkScenes() {
     // Verify post-process settings
     const auto& pp = editor.getSceneRenderer().getPostProcessSettings();
     TEST_CHECK(pp.enabled);
-    TEST_CHECK(pp.toneMapOp == render::ToneMapOperator::AcesFitted);
+    TEST_CHECK(pp.toneMapOp == render::ToneMapOperator::AgX);
     TEST_CHECK(pp.bloomEnabled);
 
     // Test camera reset
