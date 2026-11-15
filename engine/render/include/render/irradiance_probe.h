@@ -229,6 +229,64 @@ struct ReflectionProbeComponent {
     float intensity{1.0F};
     bool boxProjection{true};
     bool enabled{true};
+
+    /// @brief Computes spatial blending weight at world position P with smooth margin falloff.
+    [[nodiscard]] float computeWeight(const Vec3& point) const noexcept {
+        if (!enabled || intensity <= 0.0F) {
+            return 0.0F;
+        }
+        if (boxProjection) {
+            if (point.x < boxMin.x || point.x > boxMax.x || point.y < boxMin.y ||
+                point.y > boxMax.y || point.z < boxMin.z || point.z > boxMax.z) {
+                return 0.0F;
+            }
+            float dx = std::min(point.x - boxMin.x, boxMax.x - point.x);
+            float dy = std::min(point.y - boxMin.y, boxMax.y - point.y);
+            float dz = std::min(point.z - boxMin.z, boxMax.z - point.z);
+            float dMin = std::min({dx, dy, dz});
+            float margin = 0.5F;
+            return std::clamp(dMin / margin, 0.0F, 1.0F) * intensity;
+        }
+
+        float dist = (point - position).length();
+        if (dist >= radius) {
+            return 0.0F;
+        }
+        float normDist = dist / radius;
+        float f = 1.0F - normDist * normDist;
+        return (f * f) * intensity;
+    }
+
+    /// @brief Applies local box-projection parallax correction to a reflection direction R.
+    [[nodiscard]] Vec3 boxProject(const Vec3& R, const Vec3& worldPos) const noexcept {
+        if (!boxProjection) {
+            return R;
+        }
+        Vec3 r = (R.lengthSq() > 1e-6F) ? R.normalized() : Vec3(0.0F, 1.0F, 0.0F);
+
+        float invRx = (std::abs(r.x) > 1e-5F) ? (1.0F / r.x) : (r.x >= 0.0F ? 1e5F : -1e5F);
+        float invRy = (std::abs(r.y) > 1e-5F) ? (1.0F / r.y) : (r.y >= 0.0F ? 1e5F : -1e5F);
+        float invRz = (std::abs(r.z) > 1e-5F) ? (1.0F / r.z) : (r.z >= 0.0F ? 1e5F : -1e5F);
+
+        float t1x = (boxMax.x - worldPos.x) * invRx;
+        float t2x = (boxMin.x - worldPos.x) * invRx;
+        float t1y = (boxMax.y - worldPos.y) * invRy;
+        float t2y = (boxMin.y - worldPos.y) * invRy;
+        float t1z = (boxMax.z - worldPos.z) * invRz;
+        float t2z = (boxMin.z - worldPos.z) * invRz;
+
+        float tMaxX = std::max(t1x, t2x);
+        float tMaxY = std::max(t1y, t2y);
+        float tMaxZ = std::max(t1z, t2z);
+
+        float dist = std::min({tMaxX, tMaxY, tMaxZ});
+        if (dist <= 0.0F) {
+            return r;
+        }
+        Vec3 intersectPos = worldPos + r * dist;
+        Vec3 corrected = intersectPos - position;
+        return (corrected.lengthSq() > 1e-6F) ? corrected.normalized() : r;
+    }
 };
 
 } // namespace eng::render
