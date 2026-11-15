@@ -183,6 +183,12 @@ target_link_libraries(material_descriptor_test PRIVATE hikari::engine_render hik
 add_test(NAME material_descriptor_test COMMAND material_descriptor_test)
 set_tests_properties(material_descriptor_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Sampler & Texture Quality Unit Tests (Milestone 11F Phase 2)
+add_executable(sampler_and_texture_quality_test unit/render/sampler_and_texture_quality_test.cpp)
+target_link_libraries(sampler_and_texture_quality_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
+add_test(NAME sampler_and_texture_quality_test COMMAND sampler_and_texture_quality_test)
+set_tests_properties(sampler_and_texture_quality_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Full glTF Metallic-Roughness PBR Verification Tests (Milestone 10D)
 add_executable(pbr_render_test unit/render/pbr_render_test.cpp)
 target_link_libraries(pbr_render_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
