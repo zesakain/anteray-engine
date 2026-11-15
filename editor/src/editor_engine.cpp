@@ -238,6 +238,7 @@ struct EditorEngine::Impl {
     WorkspaceManager workspaceManager{};
     SelectionModel selectionModel{};
     render::AssetManager assetManager{};
+    JobSystem* jobSystem{nullptr};
 
     render::SceneRenderer sceneRenderer{};
     rhi::SamplerHandle viewportSampler{};
@@ -363,6 +364,7 @@ bool EditorEngine::initialize(rhi::RhiDevice& rhiDevice, const EditorConfig& con
     impl_->context.rhiDevice = &rhiDevice;
     impl_->context.assetManager = &impl_->assetManager;
     impl_->context.selection = &impl_->selectionModel;
+    impl_->context.jobSystem = impl_->jobSystem;
     impl_->context.editorEngine = this;
 
     IMGUI_CHECKVERSION();
@@ -867,6 +869,15 @@ void EditorEngine::bindWorld(world::World* world) noexcept {
     if (impl_->context.world != nullptr) {
         world::updateHierarchyTransforms(*impl_->context.world);
     }
+}
+
+void EditorEngine::bindJobSystem(JobSystem* jobSystem) noexcept {
+    impl_->jobSystem = jobSystem;
+    impl_->context.jobSystem = jobSystem;
+}
+
+JobSystem* EditorEngine::getJobSystem() const noexcept {
+    return impl_->jobSystem;
 }
 
 void EditorEngine::bindConductor(framework::Conductor* conductor) noexcept {

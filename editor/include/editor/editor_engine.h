@@ -29,6 +29,7 @@
 
 namespace eng {
 class FrameTelemetryTracker;
+class JobSystem;
 } // namespace eng
 
 namespace eng::platform {
@@ -146,6 +147,12 @@ public:
 
     /// Binds the authoritative Shared World for entity inspection.
     void bindWorld(world::World* world) noexcept;
+
+    /// Binds the core JobSystem for asynchronous background task execution.
+    void bindJobSystem(JobSystem* jobSystem) noexcept;
+
+    /// Returns the bound JobSystem (or nullptr if none).
+    [[nodiscard]] JobSystem* getJobSystem() const noexcept;
 
     /// Binds the active Conductor for time state monitoring and transition triggering.
     void bindConductor(framework::Conductor* conductor) noexcept;

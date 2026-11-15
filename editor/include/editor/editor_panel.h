@@ -25,6 +25,10 @@ namespace eng {
 class FrameTelemetryTracker;
 } // namespace eng
 
+namespace eng {
+class JobSystem;
+} // namespace eng
+
 namespace eng::world {
 class World;
 } // namespace eng::world
@@ -58,6 +62,7 @@ struct EditorContext {
     rhi::RhiDevice* rhiDevice{nullptr};
     render::AssetManager* assetManager{nullptr};
     render::SceneRenderer* sceneRenderer{nullptr};
+    JobSystem* jobSystem{nullptr};
     EditorEngine* editorEngine{nullptr};
     SelectionModel* selection{nullptr};
     EditorCamera* editorCamera{nullptr};

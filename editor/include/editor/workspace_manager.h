@@ -21,6 +21,10 @@
 #include <string_view>
 #include <vector>
 
+namespace eng {
+class JobSystem;
+} // namespace eng
+
 namespace eng::editor {
 
 /// @class WorkspaceManager
@@ -81,6 +85,20 @@ public:
                             render::AssetManager* assetManager = nullptr,
                             EditorCamera* camera = nullptr,
                             render::SceneRenderer* renderer = nullptr);
+
+    /// Begins asynchronous progressive loading of a scene using background jobs and budgeted GPU
+    /// uploads.
+    bool loadSceneAsync(world::World& world, const char* filepath,
+                        SelectionModel* selection = nullptr, EditorCamera* camera = nullptr,
+                        render::SceneRenderer* renderer = nullptr,
+                        render::AssetManager* assetManager = nullptr,
+                        JobSystem* jobSystem = nullptr);
+
+    /// Checks if an asynchronous scene load is currently in progress.
+    [[nodiscard]] bool isAsyncLoading() const noexcept;
+
+    /// Requests cooperative cancellation of the current asynchronous scene load.
+    void cancelAsyncLoad() noexcept;
 
     /// Resets editor camera to benchmark scene defaults.
     void resetBenchmarkCamera(EditorCamera* camera) noexcept;

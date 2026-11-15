@@ -3,6 +3,7 @@
 
 #include "editor/workspace_manager.h"
 
+#include "core/job_system.h"
 #include "core/log.h"
 #include "editor/editor_camera.h"
 #include "editor/editor_engine.h"
@@ -10,6 +11,7 @@
 #include "editor/hierarchy_panel.h"
 #include "editor/selection_model.h"
 #include "editor/ui_helpers.h"
+#include "framework/async_scene_loader.h"
 #include "framework/conductor.h"
 #include "framework/runtime_session.h"
 #include "framework/scene.h"
@@ -61,6 +63,19 @@ struct WorkspaceManager::Impl {
 
     char openPathBuffer[512]{"assets/benchmark-scenes/Sponza_Benchmark.hikari"};
     char savePathBuffer[512]{"assets/scenes/my_scene.hikari"};
+
+    // Asynchronous Scene Loading State
+    framework::AsyncSceneLoader asyncLoader{};
+    bool isAsyncLoading{false};
+    bool showLoadingModal{false};
+    bool shouldCloseLoadingModal{false};
+    std::string asyncLoadingScenePath{""};
+    std::string asyncLoadingSceneName{""};
+    world::World* asyncTargetWorld{nullptr};
+    SelectionModel* asyncTargetSelection{nullptr};
+    EditorCamera* asyncTargetCamera{nullptr};
+    render::SceneRenderer* asyncTargetRenderer{nullptr};
+    render::AssetManager* asyncTargetAssetManager{nullptr};
 
     bool newScene(world::World& world, SelectionModel* selection) {
         world.clearUserEntities();
@@ -248,6 +263,228 @@ struct WorkspaceManager::Impl {
         return true;
     }
 
+    bool loadSceneAsync(world::World& world, const char* filepath,
+                        SelectionModel* selection = nullptr, EditorCamera* camera = nullptr,
+                        render::SceneRenderer* renderer = nullptr,
+                        render::AssetManager* assetManager = nullptr,
+                        JobSystem* jobSystem = nullptr) {
+        if (filepath == nullptr || filepath[0] == '\0') {
+            lastSceneError = "Invalid empty scene file path.";
+            showSceneErrorModal = true;
+            return false;
+        }
+
+        if (!std::filesystem::exists(filepath)) {
+            lastSceneError = "Scene file does not exist on disk: ";
+            lastSceneError += filepath;
+            showSceneErrorModal = true;
+            ENG_LOG_ERROR("Editor", lastSceneError);
+            return false;
+        }
+
+        if (isAsyncLoading) {
+            asyncLoader.cancel();
+            asyncLoader.reset();
+        }
+
+        asyncTargetWorld = &world;
+        asyncTargetSelection = selection;
+        asyncTargetCamera = camera;
+        asyncTargetRenderer = renderer;
+        asyncTargetAssetManager = assetManager;
+
+        asyncLoadingScenePath = filepath;
+        asyncLoadingSceneName = std::filesystem::path(filepath).stem().string();
+
+        if (jobSystem != nullptr) {
+            asyncLoader.bindJobSystem(jobSystem);
+        }
+        if (assetManager != nullptr) {
+            asyncLoader.bindAssetManager(assetManager);
+        }
+
+        auto res = asyncLoader.startLoad(filepath);
+        if (!res.hasValue()) {
+            lastSceneError =
+                "Failed to start asynchronous scene loading: " + std::string(res.error().message);
+            showSceneErrorModal = true;
+            ENG_LOG_ERROR("Editor", lastSceneError);
+            return false;
+        }
+
+        isAsyncLoading = true;
+        showLoadingModal = true;
+        shouldCloseLoadingModal = false;
+        ENG_LOG_INFO("Editor", "Started asynchronous scene load: " + std::string(filepath));
+        return true;
+    }
+
+    void cancelAsyncLoad() noexcept {
+        if (isAsyncLoading) {
+            asyncLoader.cancel();
+        }
+    }
+
+    void updateAsyncLoading(EditorContext& ctx) {
+        if (!isAsyncLoading) {
+            return;
+        }
+
+        if (ctx.rhiDevice != nullptr) {
+            asyncLoader.update(*ctx.rhiDevice, 3.0F);
+        }
+
+        if (asyncLoader.isReadyToActivate()) {
+            if (asyncTargetWorld != nullptr) {
+                auto actRes = asyncLoader.activate(*asyncTargetWorld);
+                if (actRes.hasValue()) {
+                    if (asyncTargetSelection != nullptr) {
+                        asyncTargetSelection->clear();
+                    }
+                    currentScenePath = asyncLoadingScenePath;
+                    currentSceneName = asyncLoadingSceneName;
+                    isSceneDirty = false;
+
+                    benchmarkDefaultCameraPos = actRes.value().cameraPosition;
+                    benchmarkDefaultCameraTarget = actRes.value().cameraTarget;
+
+                    if (asyncTargetCamera != nullptr) {
+                        if (actRes.value().cameraPosition.has_value()) {
+                            Vec3 tgt = actRes.value().cameraTarget.value_or(Vec3::zero());
+                            asyncTargetCamera->lookAt(*actRes.value().cameraPosition, tgt);
+                        } else {
+                            resetBenchmarkCamera(asyncTargetCamera);
+                        }
+                    }
+
+                    if (asyncTargetRenderer != nullptr &&
+                        actRes.value().postProcessSettings.has_value()) {
+                        asyncTargetRenderer->setPostProcessSettings(
+                            *actRes.value().postProcessSettings);
+                    }
+
+                    ENG_LOG_INFO("Editor",
+                                 "Scene successfully loaded asynchronously: " + currentScenePath);
+                } else {
+                    lastSceneError =
+                        "Failed to activate scene: " + std::string(actRes.error().message);
+                    showSceneErrorModal = true;
+                    ENG_LOG_ERROR("Editor", lastSceneError);
+                }
+            }
+            isAsyncLoading = false;
+            showLoadingModal = false;
+            shouldCloseLoadingModal = true;
+            asyncLoader.reset();
+        } else if (asyncLoader.isFailed()) {
+            std::string err = std::string(asyncLoader.getErrorMessage());
+            if (err.empty()) {
+                err = "Unknown error occurred during asynchronous scene load.";
+            }
+            const auto& assetErrs = asyncLoader.getAssetErrors();
+            if (!assetErrs.empty()) {
+                err += "\nAsset Diagnostics:";
+                for (const auto& ae : assetErrs) {
+                    err += "\n - [" + ae.assetType + "] " + ae.path + ": " + ae.reason;
+                }
+            }
+            lastSceneError = err;
+            showSceneErrorModal = true;
+            ENG_LOG_ERROR("Editor", "Async scene loading failed: " + lastSceneError);
+
+            isAsyncLoading = false;
+            showLoadingModal = false;
+            shouldCloseLoadingModal = true;
+            asyncLoader.reset();
+        } else if (asyncLoader.isCancelled()) {
+            ENG_LOG_INFO("Editor",
+                         "Asynchronous scene loading cancelled. Shared World retained intact.");
+            isAsyncLoading = false;
+            showLoadingModal = false;
+            shouldCloseLoadingModal = true;
+            asyncLoader.reset();
+        }
+    }
+
+    void drawAsyncLoadingModal() {
+        if (!isAsyncLoading && !shouldCloseLoadingModal) {
+            return;
+        }
+
+        if (showLoadingModal) {
+            ImGui::OpenPopup("Loading Scene##AsyncSceneLoaderModal");
+            showLoadingModal = false;
+        }
+
+        ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+        ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5F, 0.5F));
+        ImGui::SetNextWindowSize(ImVec2(520.0F, 0.0F));
+
+        if (ImGui::BeginPopupModal("Loading Scene##AsyncSceneLoaderModal", nullptr,
+                                   ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+                                       ImGuiWindowFlags_NoTitleBar)) {
+            const auto progress = asyncLoader.getProgress();
+            const auto& telemetry = asyncLoader.getTelemetry();
+
+            ImGui::TextColored(ImVec4(0.38F, 0.74F, 0.98F, 1.0F), "HIKARI ENGINE");
+            ImGui::SameLine();
+            ImGui::TextDisabled("| Asynchronous Scene Loading");
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            ImGui::Text("Scene: %s", asyncLoadingSceneName.c_str());
+            ImGui::Spacing();
+
+            const char* stateStr = framework::toString(progress.state).data();
+            ImGui::TextColored(ImVec4(0.95F, 0.75F, 0.20F, 1.0F), "[Phase] %s", stateStr);
+            if (!progress.currentOperation.empty()) {
+                ImGui::TextWrapped("%s", progress.currentOperation.c_str());
+            }
+            ImGui::Spacing();
+
+            char overlayBuf[64];
+            float pct = progress.overallProgress * 100.0F;
+            std::snprintf(overlayBuf, sizeof(overlayBuf), "%.1f%%", pct);
+            ImGui::ProgressBar(progress.overallProgress, ImVec2(-1.0F, 24.0F), overlayBuf);
+            ImGui::Spacing();
+
+            ImGui::TextDisabled("Entities Discovered: %u", progress.entitiesDiscovered);
+            ImGui::TextDisabled("Textures: %u / %u decoded | %u / %u uploaded (%u failed)",
+                                progress.texturesDecoded, progress.texturesTotal,
+                                progress.texturesUploaded, progress.texturesTotal,
+                                progress.texturesFailed);
+            float stagedMb = static_cast<float>(progress.peakRamBytes) / (1024.0F * 1024.0F);
+            float uploadedMb = static_cast<float>(progress.peakVramBytes) / (1024.0F * 1024.0F);
+            ImGui::TextDisabled("Memory: Staged %.2f MB | VRAM %.2f MB", stagedMb, uploadedMb);
+            ImGui::TextDisabled("Elapsed Time: %.2f s",
+                                static_cast<float>(telemetry.totalDuration.toSeconds()));
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            if (progress.state == framework::AsyncLoadState::ReadingFile ||
+                progress.state == framework::AsyncLoadState::DiscoveringAssets ||
+                progress.state == framework::AsyncLoadState::DecodingAssets ||
+                progress.state == framework::AsyncLoadState::UploadingGpu ||
+                progress.state == framework::AsyncLoadState::Validating ||
+                progress.state == framework::AsyncLoadState::ReadyToActivate) {
+                if (ImGui::Button("Cancel Loading", ImVec2(140.0F, 28.0F))) {
+                    asyncLoader.cancel();
+                }
+            } else {
+                ImGui::BeginDisabled();
+                ImGui::Button("Cancelling...", ImVec2(140.0F, 28.0F));
+                ImGui::EndDisabled();
+            }
+
+            if (shouldCloseLoadingModal) {
+                ImGui::CloseCurrentPopup();
+                shouldCloseLoadingModal = false;
+            }
+            ImGui::EndPopup();
+        }
+    }
+
     void buildDefaultLayout(ImGuiID dockspaceId, int preset = 0) {
         ImGui::DockBuilderRemoveNode(dockspaceId);
         ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
@@ -296,6 +533,8 @@ struct WorkspaceManager::Impl {
     }
 
     void drawMainMenuBar(EditorContext& ctx) {
+        updateAsyncLoading(ctx);
+
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8.0F, 6.0F));
         ImGui::PushStyleColor(ImGuiCol_MenuBarBg, ImVec4(0.082F, 0.086F, 0.098F, 1.0F));
 
@@ -618,15 +857,11 @@ struct WorkspaceManager::Impl {
                 if (ImGui::MenuItem("Khronos Sponza Atrium (10G)")) {
                     if (ctx.world != nullptr) {
                         const char* sponzaScene = "assets/benchmark-scenes/Sponza_Benchmark.hikari";
-                        if (std::filesystem::exists(sponzaScene)) {
-                            openScene(*ctx.world, sponzaScene, ctx.selection, ctx.editorCamera,
-                                      ctx.sceneRenderer);
-                        } else {
-                            loadBenchmarkScene(*ctx.world,
-                                               "test-assets/benchmark/sponza/Sponza.gltf",
-                                               ctx.selection, ctx.assetManager, ctx.editorCamera,
-                                               ctx.sceneRenderer);
-                        }
+                        const char* target = std::filesystem::exists(sponzaScene)
+                                                 ? sponzaScene
+                                                 : "test-assets/benchmark/sponza/Sponza.gltf";
+                        loadSceneAsync(*ctx.world, target, ctx.selection, ctx.editorCamera,
+                                       ctx.sceneRenderer, ctx.assetManager, ctx.jobSystem);
                         ctx.selectedEntityId = 0;
                     }
                 }
@@ -634,15 +869,12 @@ struct WorkspaceManager::Impl {
                     if (ctx.world != nullptr) {
                         const char* flightScene =
                             "assets/benchmark-scenes/FlightHelmet_Benchmark.hikari";
-                        if (std::filesystem::exists(flightScene)) {
-                            openScene(*ctx.world, flightScene, ctx.selection, ctx.editorCamera,
-                                      ctx.sceneRenderer);
-                        } else {
-                            loadBenchmarkScene(
-                                *ctx.world, "test-assets/benchmark/flight_helmet/FlightHelmet.gltf",
-                                ctx.selection, ctx.assetManager, ctx.editorCamera,
-                                ctx.sceneRenderer);
-                        }
+                        const char* target =
+                            std::filesystem::exists(flightScene)
+                                ? flightScene
+                                : "test-assets/benchmark/flight_helmet/FlightHelmet.gltf";
+                        loadSceneAsync(*ctx.world, target, ctx.selection, ctx.editorCamera,
+                                       ctx.sceneRenderer, ctx.assetManager, ctx.jobSystem);
                         ctx.selectedEntityId = 0;
                     }
                 }
@@ -650,29 +882,22 @@ struct WorkspaceManager::Impl {
                     if (ctx.world != nullptr) {
                         const char* damagedScene =
                             "assets/benchmark-scenes/DamagedHelmet_Benchmark.hikari";
-                        if (std::filesystem::exists(damagedScene)) {
-                            openScene(*ctx.world, damagedScene, ctx.selection, ctx.editorCamera,
-                                      ctx.sceneRenderer);
-                        } else {
-                            loadBenchmarkScene(*ctx.world, "test-assets/DamagedHelmet.glb",
-                                               ctx.selection, ctx.assetManager, ctx.editorCamera,
-                                               ctx.sceneRenderer);
-                        }
+                        const char* target = std::filesystem::exists(damagedScene)
+                                                 ? damagedScene
+                                                 : "test-assets/DamagedHelmet.glb";
+                        loadSceneAsync(*ctx.world, target, ctx.selection, ctx.editorCamera,
+                                       ctx.sceneRenderer, ctx.assetManager, ctx.jobSystem);
                         ctx.selectedEntityId = 0;
                     }
                 }
                 if (ImGui::MenuItem("Amazon Lumberyard Bistro")) {
                     if (ctx.world != nullptr) {
                         const char* bistroScene = "assets/benchmark-scenes/Bistro_Benchmark.hikari";
-                        if (std::filesystem::exists(bistroScene)) {
-                            openScene(*ctx.world, bistroScene, ctx.selection, ctx.editorCamera,
-                                      ctx.sceneRenderer);
-                        } else {
-                            loadBenchmarkScene(*ctx.world,
-                                               "test-assets/benchmark/bistro/bistro.gltf",
-                                               ctx.selection, ctx.assetManager, ctx.editorCamera,
-                                               ctx.sceneRenderer);
-                        }
+                        const char* target = std::filesystem::exists(bistroScene)
+                                                 ? bistroScene
+                                                 : "test-assets/benchmark/bistro/bistro.gltf";
+                        loadSceneAsync(*ctx.world, target, ctx.selection, ctx.editorCamera,
+                                       ctx.sceneRenderer, ctx.assetManager, ctx.jobSystem);
                         ctx.selectedEntityId = 0;
                     }
                 }
@@ -868,8 +1093,8 @@ struct WorkspaceManager::Impl {
             ImGui::Separator();
             if (ImGui::Button("Open", ImVec2(120.0F, 0.0F))) {
                 if (ctx.world != nullptr) {
-                    if (openScene(*ctx.world, openPathBuffer, ctx.selection, ctx.editorCamera,
-                                  ctx.sceneRenderer)) {
+                    if (loadSceneAsync(*ctx.world, openPathBuffer, ctx.selection, ctx.editorCamera,
+                                       ctx.sceneRenderer, ctx.assetManager, ctx.jobSystem)) {
                         ctx.selectedEntityId = 0;
                         ImGui::CloseCurrentPopup();
                     }
@@ -919,6 +1144,8 @@ struct WorkspaceManager::Impl {
             }
             ImGui::EndPopup();
         }
+
+        drawAsyncLoadingModal();
     }
 
     void drawToolbar(EditorContext& ctx) {
@@ -1395,6 +1622,22 @@ bool WorkspaceManager::loadBenchmarkScene(world::World& world, const char* filep
                                           render::AssetManager* assetManager, EditorCamera* camera,
                                           render::SceneRenderer* renderer) {
     return impl_->loadBenchmarkScene(world, filepath, selection, assetManager, camera, renderer);
+}
+
+bool WorkspaceManager::loadSceneAsync(world::World& world, const char* filepath,
+                                      SelectionModel* selection, EditorCamera* camera,
+                                      render::SceneRenderer* renderer,
+                                      render::AssetManager* assetManager, JobSystem* jobSystem) {
+    return impl_->loadSceneAsync(world, filepath, selection, camera, renderer, assetManager,
+                                 jobSystem);
+}
+
+bool WorkspaceManager::isAsyncLoading() const noexcept {
+    return impl_->isAsyncLoading;
+}
+
+void WorkspaceManager::cancelAsyncLoad() noexcept {
+    impl_->cancelAsyncLoad();
 }
 
 void WorkspaceManager::resetBenchmarkCamera(EditorCamera* camera) noexcept {

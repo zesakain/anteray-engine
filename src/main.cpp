@@ -180,7 +180,7 @@ int main(int argc, char* argv[]) {
     ENG_LOG_INFO("Core", "=== Hikari Machine 0.1.0 Initializing ===");
 
     // 1. Core Job System
-    JobSystemConfig jobConfig{.workerCount = 2, .maxJobs = 128};
+    JobSystemConfig jobConfig{.workerCount = 4, .maxJobs = 1024, .maxDependencies = 2048};
     size_t jobBytes = JobSystem::requiredBytes(jobConfig);
     std::vector<std::byte> jobStorage(jobBytes);
     JobSystem jobSystem(jobStorage, jobConfig);
@@ -318,6 +318,7 @@ body {
         framework::RuntimeSession runtimeSession(sessionConfig);
         editor::EditorEngine editorEngine;
         if (editorEngine.initialize(*rhiDevice)) {
+            editorEngine.bindJobSystem(&jobSystem);
             editorEngine.bindRuntimeSession(&runtimeSession);
             editorEngine.bindWorld(&world);
             editorEngine.bindConductor(&conductor);
