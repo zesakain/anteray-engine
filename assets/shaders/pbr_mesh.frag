@@ -101,7 +101,11 @@ layout(std140, set = 1, binding = 0) uniform LightingData {
     vec4 probeSh[9];
     vec4 cascadeSplits; // View-space cascade far distances: x: c0, y: c1, z: c2, w: c3
     vec4 cascadeParams; // x: cascadeCount, y: cascadeBlendRange, z: contactShadows, w: softShadows
-    vec4 padShadow;
+    vec4 ssrParams;     // x: ssrEnabled, y: ssrIntensity, z: ssrRoughnessCutoff, w: ssrMaxDistance
+    vec4 probeBoxMin;   // xyz: boxMin, w: boxProjection (1.0 = true, 0.0 = false)
+    vec4 probeBoxMax;   // xyz: boxMax, w: pad
+    vec4 probePosAndWeight; // xyz: probePos, w: probeWeight
+    vec4 padSsr;
 }
 uLighting;
 
@@ -111,6 +115,7 @@ layout(set = 1, binding = 3) uniform samplerCube uPrefilteredEnvMap;
 layout(set = 1, binding = 4) uniform sampler2D uBrdfLut;
 layout(set = 1, binding = 5) uniform sampler2D uAoMap;
 layout(set = 1, binding = 6) uniform sampler2D uIndirectLightMap;
+layout(set = 1, binding = 7) uniform sampler2D uSsrMap;
 
 // Analytical Order-2 Spherical Harmonics Diffuse Irradiance Convolution (Ramamoorthi 2001)
 vec3 evaluateProbeIrradiance(vec3 N) {
@@ -143,6 +148,20 @@ vec3 evaluateProbeIrradiance(vec3 N) {
 
 const float PI = 3.141592653589793;
 const float INV_PI = 0.31830988618379067;
+
+// Milestone 11G: Specular Reflection Probe Box-Projection Parallax Correction
+vec3 boxProjectReflection(vec3 R, vec3 worldPos, vec3 probePos, vec3 boxMin, vec3 boxMax) {
+    vec3 invR = 1.0 / max(abs(R), vec3(1e-5)) * sign(R);
+    vec3 t1 = (boxMax - worldPos) * invR;
+    vec3 t2 = (boxMin - worldPos) * invR;
+    vec3 tMax = max(t1, t2);
+    float dist = min(min(tMax.x, tMax.y), tMax.z);
+    if (dist <= 0.0) {
+        return R;
+    }
+    vec3 intersectPos = worldPos + R * dist;
+    return normalize(intersectPos - probePos);
+}
 
 // Fast Schlick Fresnel Approximation - eliminates log2/exp2 SFU instructions
 vec3 fresnelSchlick(float VdotH, vec3 F0) {
@@ -701,11 +720,29 @@ void main() {
             effN = normalize(mix(N, bentN, anisoStrength * 0.5));
         }
         vec3 R = reflect(-V, effN);
+        // Milestone 11G: Local Reflection Probe Box-Projection Parallax Correction
+        if (uLighting.probeBoxMin.w > 0.5 && uLighting.probePosAndWeight.w > 0.001) {
+            vec3 R_box = boxProjectReflection(R, inWorldPos, uLighting.probePosAndWeight.xyz,
+                                              uLighting.probeBoxMin.xyz, uLighting.probeBoxMax.xyz);
+            R = normalize(mix(R, R_box, uLighting.probePosAndWeight.w));
+        }
+
         float maxMip = uLighting.iblParams.z;
         vec3 prefilteredColor = textureLod(uPrefilteredEnvMap, R, roughness * maxMip).rgb;
         vec2 envBRDF = texture(uBrdfLut, vec2(NdotV, roughness)).rg;
         vec3 F_env = F0 * envBRDF.x + max(vec3(1.0 - roughness), F0) * envBRDF.y;
-        vec3 specularIBL = prefilteredColor * F_env;
+        vec3 specularReflection = prefilteredColor;
+
+        // Milestone 11G: Screen-Space Reflections (SSR) with roughness cutoff and fallback
+        if (uLighting.ssrParams.x > 0.5) {
+            vec4 ssrSample = texture(uSsrMap, screenUV);
+            float cutoff = uLighting.ssrParams.z;
+            float roughnessFade = clamp(1.0 - (roughness - (cutoff - 0.2)) / 0.2, 0.0, 1.0);
+            float ssrWeight = clamp(ssrSample.a * uLighting.ssrParams.y * roughnessFade, 0.0, 1.0);
+            specularReflection = mix(specularReflection, ssrSample.rgb, ssrWeight);
+        }
+
+        vec3 specularIBL = specularReflection * F_env;
 
         ambient = (diffuseAmbient + specularIBL) * (finalOcclusion * uLighting.iblParams.y);
     } else {
@@ -730,8 +767,13 @@ void main() {
     // Clearcoat IBL specular
     if (clearcoat > 0.001) {
         vec3 R_c = reflect(-V, Nc);
+        if (uLighting.probeBoxMin.w > 0.5 && uLighting.probePosAndWeight.w > 0.001) {
+            vec3 R_box = boxProjectReflection(R_c, inWorldPos, uLighting.probePosAndWeight.xyz,
+                                              uLighting.probeBoxMin.xyz, uLighting.probeBoxMax.xyz);
+            R_c = normalize(mix(R_c, R_box, uLighting.probePosAndWeight.w));
+        }
         float NdotV_c = max(dot(Nc, V), 0.0);
-        float prefilteredLod = clearcoatRoughness * 4.0;
+        float prefilteredLod = clearcoatRoughness * uLighting.iblParams.z;
         vec3 prefilteredColor = textureLod(uPrefilteredEnvMap, R_c, prefilteredLod).rgb;
         vec2 envBrdf = texture(uBrdfLut, vec2(NdotV_c, clearcoatRoughness)).rg;
         vec3 Fc_ibl = fresnelSchlickRoughness(NdotV_c, vec3(0.04), clearcoatRoughness);

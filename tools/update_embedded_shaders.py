@@ -16,6 +16,7 @@ shader_mappings = [
     ("kGtaoFragmentShaderSpirv", "assets/shaders/gtao.frag"),
     ("kBilateralBlurFragmentShaderSpirv", "assets/shaders/bilateral_blur.frag"),
     ("kSsgiFragmentShaderSpirv", "assets/shaders/ssgi.frag"),
+    ("kSsrFragmentShaderSpirv", "assets/shaders/ssr.frag"),
     ("kTemporalFilterFragmentShaderSpirv", "assets/shaders/temporal_filter.frag"),
 ]
 

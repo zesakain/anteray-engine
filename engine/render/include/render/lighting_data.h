@@ -71,7 +71,8 @@ struct GpuSpotLight {
 struct alignas(16) GpuLightingData {
     /// Cascade light-space view-projection transformation matrices (4 * 64 = 256 bytes).
     /// cascadeLightSpaceMatrices[0] serves as primary directional shadow matrix.
-    Mat4 cascadeLightSpaceMatrices[4]{Mat4::identity(), Mat4::identity(), Mat4::identity(), Mat4::identity()};
+    Mat4 cascadeLightSpaceMatrices[4]{Mat4::identity(), Mat4::identity(), Mat4::identity(),
+                                      Mat4::identity()};
 
     /// Directional sunlight parameters (32 bytes).
     GpuDirectionalLight dirLight{};
@@ -115,30 +116,45 @@ struct alignas(16) GpuLightingData {
     /// Inverse view-projection matrix for world-space position reconstruction (64 bytes)
     Mat4 invViewProj{Mat4::identity()};
 
-    /// Order-2 Spherical Harmonics coefficients for localized diffuse irradiance (9 * 16 = 144 bytes)
+    /// Order-2 Spherical Harmonics coefficients for localized diffuse irradiance (9 * 16 = 144
+    /// bytes)
     Vec4 probeSh[9]{};
 
-    /// Cascade split far distances in view space: x: cascade 0, y: cascade 1, z: cascade 2, w: cascade 3 (16 bytes)
+    /// Cascade split far distances in view space: x: cascade 0, y: cascade 1, z: cascade 2, w:
+    /// cascade 3 (16 bytes)
     Vec4 cascadeSplits{6.0F, 18.0F, 45.0F, 100.0F};
 
     /// Cascade and contact shadow parameters (16 bytes):
-    /// x: cascadeCount (1.0 to 4.0), y: cascadeBlendRange (0.10), z: contactShadowsEnabled, w: softShadowsEnabled
+    /// x: cascadeCount (1.0 to 4.0), y: cascadeBlendRange (0.10), z: contactShadowsEnabled, w:
+    /// softShadowsEnabled
     Vec4 cascadeParams{4.0F, 0.10F, 1.0F, 1.0F};
 
+    /// Milestone 11G: Screen-Space Reflection parameters (16 bytes):
+    /// x: ssrEnabled (1.0 or 0.0), y: ssrIntensity, z: ssrRoughnessCutoff, w: ssrMaxDistance
+    Vec4 ssrParams{0.0F, 1.0F, 0.6F, 10.0F};
+
+    /// Specular reflection probe bounding box min (xyz) and boxProjection flag (w: 1.0 = true, 0.0
+    /// = false) (16 bytes)
+    Vec4 probeBoxMin{-10.0F, -10.0F, -10.0F, 0.0F};
+
+    /// Specular reflection probe bounding box max (xyz) and padding (w) (16 bytes)
+    Vec4 probeBoxMax{10.0F, 10.0F, 10.0F, 0.0F};
+
+    /// Specular reflection probe position (xyz) and probe blend weight (w) (16 bytes)
+    Vec4 probePosAndWeight{0.0F, 0.0F, 0.0F, 0.0F};
+
     /// Explicit std140 alignment padding (16 bytes)
-    Vec4 padShadow{0.0F, 0.0F, 0.0F, 0.0F};
+    Vec4 padSsr{0.0F, 0.0F, 0.0F, 0.0F};
 
     /// Backward-compatibility accessor for cascade 0 light-space matrix.
     [[nodiscard]] const Mat4& getLightSpaceMatrix() const noexcept {
         return cascadeLightSpaceMatrices[0];
     }
-    void setLightSpaceMatrix(const Mat4& m) noexcept {
-        cascadeLightSpaceMatrices[0] = m;
-    }
+    void setLightSpaceMatrix(const Mat4& m) noexcept { cascadeLightSpaceMatrices[0] = m; }
 };
 
-static_assert(sizeof(GpuLightingData) == 2240,
-              "GpuLightingData must strictly match std140 layout (2240 bytes)");
+static_assert(sizeof(GpuLightingData) == 2304,
+              "GpuLightingData must strictly match std140 layout (2304 bytes)");
 
 /// @brief Generates descriptor set layout descriptor for Scene/Lighting/Shadows (Set 1).
 ///
@@ -149,6 +165,7 @@ static_assert(sizeof(GpuLightingData) == 2240,
 /// Binding 4: CombinedImageSampler (Split-Sum BRDF 2D LUT) in Fragment stage.
 /// Binding 5: CombinedImageSampler (Ground-Truth Ambient Occlusion Map) in Fragment stage.
 /// Binding 6: CombinedImageSampler (Screen-Space Indirect Light Map) in Fragment stage.
+/// Binding 7: CombinedImageSampler (Screen-Space Reflection Map) in Fragment stage.
 [[nodiscard]] inline rhi::DescriptorSetLayoutDesc createSceneDescriptorSetLayoutDesc() {
     return rhi::DescriptorSetLayoutDesc{
         .bindings =
@@ -191,6 +208,12 @@ static_assert(sizeof(GpuLightingData) == 2240,
                 },
                 {
                     .binding = 6,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 7,
                     .descriptorType = rhi::DescriptorType::CombinedImageSampler,
                     .descriptorCount = 1,
                     .stageFlags = rhi::ShaderStageFlags::Fragment,

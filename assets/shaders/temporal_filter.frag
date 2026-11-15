@@ -16,6 +16,18 @@ layout(push_constant) uniform TemporalPushConstants {
     float pad0;
 } pc;
 
+vec3 reconstructNormal(vec2 uv) {
+    vec2 texel = pc.invResolution;
+    float dR = texture(uDepthMap, uv + vec2(texel.x, 0.0)).r;
+    float dL = texture(uDepthMap, uv - vec2(texel.x, 0.0)).r;
+    float dU = texture(uDepthMap, uv + vec2(0.0, texel.y)).r;
+    float dD = texture(uDepthMap, uv - vec2(0.0, texel.y)).r;
+    vec3 dX = vec3(2.0 * texel.x, 0.0, dR - dL);
+    vec3 dY = vec3(0.0, 2.0 * texel.y, dU - dD);
+    vec3 n = cross(dX, dY);
+    return (dot(n, n) > 1e-8) ? normalize(n) : vec3(0.0, 0.0, 1.0);
+}
+
 void main() {
     float centerDepth = texture(uDepthMap, inUV).r;
     vec4 current = texture(uCurrentMap, inUV);
@@ -40,6 +52,14 @@ void main() {
         return;
     }
 
+    // Milestone 11G: Normal-based history rejection across silhouettes
+    vec3 curN = reconstructNormal(inUV);
+    vec3 histN = reconstructNormal(prevUV);
+    if (dot(curN, histN) < 0.707) {
+        outColor = vec4(current.rgb, centerDepth);
+        return;
+    }
+
     // Temporal depth rejection (reject history when reprojected surface depth differs from stored history)
     vec4 history = texture(uHistoryMap, prevUV);
     float reprojectedZ = prevClip.z / prevClip.w;
@@ -49,7 +69,9 @@ void main() {
         return;
     }
 
-    // 3x3 neighborhood color clamping to prevent ghosting and trailing artifacts under motion
+    // Milestone 11G: 3x3 neighborhood variance clipping & box clamping for ghosting suppression
+    vec3 m1 = vec3(0.0);
+    vec3 m2 = vec3(0.0);
     vec3 boxMin = current.rgb;
     vec3 boxMax = current.rgb;
 
@@ -57,12 +79,20 @@ void main() {
         for (int x = -1; x <= 1; ++x) {
             vec2 sampleUV = inUV + vec2(float(x), float(y)) * pc.invResolution;
             vec3 val = texture(uCurrentMap, sampleUV).rgb;
+            m1 += val;
+            m2 += val * val;
             boxMin = min(boxMin, val);
             boxMax = max(boxMax, val);
         }
     }
 
-    vec3 clampedHistory = clamp(history.rgb, boxMin, boxMax);
+    vec3 mu = m1 * (1.0 / 9.0);
+    vec3 sigma = sqrt(max(m2 * (1.0 / 9.0) - mu * mu, vec3(0.0)));
+    float gamma = 1.25;
+    vec3 clipMin = max(boxMin, mu - gamma * sigma);
+    vec3 clipMax = min(boxMax, mu + gamma * sigma);
+
+    vec3 clampedHistory = clamp(history.rgb, clipMin, clipMax);
     float alpha = clamp(pc.filterParams.x, 0.05, 1.0);
     outColor = vec4(mix(clampedHistory, current.rgb, alpha), centerDepth);
 }

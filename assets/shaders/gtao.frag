@@ -66,7 +66,8 @@ float calculateContactShadow(vec3 P, vec3 N, vec3 lightDir, float maxDist, float
         vec3 hitWorld = getWorldPos(sampleUV);
         float hitZ = dot(hitWorld - camPos, camForward);
         float depthDiff = vZ - hitZ;
-        if (depthDiff > 0.01 && depthDiff < 0.35) {
+        float thickness = max(0.02, stepSize * 1.5);
+        if (depthDiff > 0.005 && depthDiff < thickness) {
             float fade = 1.0 - (float(i) / float(kSteps));
             shadow = clamp(1.0 - fade * 0.85, 0.0, 1.0);
             break;
@@ -129,9 +130,12 @@ void main() {
             vec3 S = getWorldPos(sampleUV);
             vec3 horizonVec = S - P;
             float dist = length(horizonVec);
-            if (dist > 0.005 && dist < radiusWorld * 1.5) {
+            float maxR = radiusWorld * 1.5;
+            if (dist > 0.005 && dist < maxR) {
                 float elevation = dot(horizonVec / dist, N);
-                h1 = max(h1, elevation);
+                // Milestone 11G: Quadratic distance falloff eliminates silhouette depth halos
+                float falloff = clamp(1.0 - (dist * dist) / (maxR * maxR), 0.0, 1.0);
+                h1 = max(h1, elevation * falloff);
             }
         }
 
@@ -145,9 +149,11 @@ void main() {
             vec3 S = getWorldPos(sampleUV);
             vec3 horizonVec = S - P;
             float dist = length(horizonVec);
-            if (dist > 0.005 && dist < radiusWorld * 1.5) {
+            float maxR = radiusWorld * 1.5;
+            if (dist > 0.005 && dist < maxR) {
                 float elevation = dot(horizonVec / dist, N);
-                h2 = max(h2, elevation);
+                float falloff = clamp(1.0 - (dist * dist) / (maxR * maxR), 0.0, 1.0);
+                h2 = max(h2, elevation * falloff);
             }
         }
 
