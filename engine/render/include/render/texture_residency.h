@@ -37,7 +37,7 @@ enum class TextureResidencyState : uint8_t {
     CpuResident = 2,      ///< Host bitmap pixels resident in CPU memory; not uploaded to GPU.
     GpuUploadPending = 3, ///< Host bitmap queued for Vulkan staging and transfer.
     GpuResident = 4,      ///< Vulkan VkImage, memory, and view allocated and sampled on GPU.
-    EvictionPending = 5,  ///< Marked for reclaim under memory pressure.
+    EvictionPending = 5,  ///< Marked for reclaim under memory pressure; awaiting GPU retirement.
     Failed = 6,           ///< Read or allocation failure; safely bound to fallback texture.
 };
 
@@ -60,6 +60,123 @@ enum class TextureResidencyState : uint8_t {
         return "Failed";
     }
     return "Unknown";
+}
+
+/// @enum TextureFailureStage
+/// @brief Pipeline stage where texture loading or allocation failed.
+enum class TextureFailureStage : uint8_t {
+    None = 0,
+    FileRead,
+    Decode,
+    GpuAllocation,
+    GpuUpload,
+    EvictionRetirement,
+};
+
+/// @brief Returns human-readable string representation of a failure stage.
+[[nodiscard]] constexpr const char* toString(TextureFailureStage stage) noexcept {
+    switch (stage) {
+    case TextureFailureStage::None:
+        return "None";
+    case TextureFailureStage::FileRead:
+        return "FileRead";
+    case TextureFailureStage::Decode:
+        return "Decode";
+    case TextureFailureStage::GpuAllocation:
+        return "GpuAllocation";
+    case TextureFailureStage::GpuUpload:
+        return "GpuUpload";
+    case TextureFailureStage::EvictionRetirement:
+        return "EvictionRetirement";
+    }
+    return "Unknown";
+}
+
+/// @enum TextureFailureReason
+/// @brief Root cause classification for texture load or allocation failure.
+enum class TextureFailureReason : uint8_t {
+    None = 0,
+    FileNotFound,
+    InvalidHeader,
+    CorruptData,
+    UnsupportedFormat,
+    OutOfMemoryCpu,
+    OutOfMemoryGpu,
+    DeviceLost,
+    SubmissionFailed,
+};
+
+/// @brief Returns human-readable string representation of a failure reason.
+[[nodiscard]] constexpr const char* toString(TextureFailureReason reason) noexcept {
+    switch (reason) {
+    case TextureFailureReason::None:
+        return "None";
+    case TextureFailureReason::FileNotFound:
+        return "FileNotFound";
+    case TextureFailureReason::InvalidHeader:
+        return "InvalidHeader";
+    case TextureFailureReason::CorruptData:
+        return "CorruptData";
+    case TextureFailureReason::UnsupportedFormat:
+        return "UnsupportedFormat";
+    case TextureFailureReason::OutOfMemoryCpu:
+        return "OutOfMemoryCpu";
+    case TextureFailureReason::OutOfMemoryGpu:
+        return "OutOfMemoryGpu";
+    case TextureFailureReason::DeviceLost:
+        return "DeviceLost";
+    case TextureFailureReason::SubmissionFailed:
+        return "SubmissionFailed";
+    }
+    return "Unknown";
+}
+
+/// @struct TextureFailureInfo
+/// @brief Structured diagnostics for texture failures with bounded retry tracking.
+struct TextureFailureInfo {
+    TextureFailureStage stage{TextureFailureStage::None};
+    TextureFailureReason reason{TextureFailureReason::None};
+    uint32_t retryCount{0};
+    static constexpr uint32_t kMaxRetries = 3;
+
+    [[nodiscard]] constexpr bool canRetry() const noexcept {
+        return retryCount < kMaxRetries && reason != TextureFailureReason::UnsupportedFormat &&
+               reason != TextureFailureReason::FileNotFound;
+    }
+};
+
+/// @brief Validates whether a state transition adheres to the formal residency transition graph.
+[[nodiscard]] constexpr bool isValidResidencyTransition(TextureResidencyState from,
+                                                        TextureResidencyState to) noexcept {
+    if (from == to) {
+        return true;
+    }
+    switch (from) {
+    case TextureResidencyState::Unloaded:
+        return to == TextureResidencyState::Loading || to == TextureResidencyState::Failed;
+    case TextureResidencyState::Loading:
+        return to == TextureResidencyState::CpuResident ||
+               to == TextureResidencyState::Unloaded || // cancelled
+               to == TextureResidencyState::Failed;
+    case TextureResidencyState::CpuResident:
+        return to == TextureResidencyState::GpuUploadPending ||
+               to == TextureResidencyState::Unloaded || // evicted from host memory
+               to == TextureResidencyState::Failed;
+    case TextureResidencyState::GpuUploadPending:
+        return to == TextureResidencyState::GpuResident ||
+               to == TextureResidencyState::CpuResident || // upload cancelled
+               to == TextureResidencyState::Failed;
+    case TextureResidencyState::GpuResident:
+        return to == TextureResidencyState::EvictionPending;
+    case TextureResidencyState::EvictionPending:
+        return to == TextureResidencyState::Unloaded ||    // retired: host bitmap discarded
+               to == TextureResidencyState::CpuResident || // retired: host bitmap preserved
+               to == TextureResidencyState::Failed;        // retirement error / device lost
+    case TextureResidencyState::Failed:
+        return to == TextureResidencyState::Unloaded || // reset
+               to == TextureResidencyState::Loading;    // retry
+    }
+    return false;
 }
 
 /// @struct TextureBudgetConfig
@@ -95,15 +212,22 @@ struct TextureBudgetConfig {
 /// @struct TextureMemoryMetrics
 /// @brief Observable real-time telemetry tracking texture memory residency and pressure.
 struct TextureMemoryMetrics {
-    size_t estimatedGpuMemoryBytes{0};     ///< Total resident GPU memory footprint in bytes.
-    size_t estimatedCpuMemoryBytes{0};     ///< Total host CPU memory footprint in bytes.
-    uint32_t residentTextureCount{0};      ///< Number of textures currently in GpuResident state.
-    uint32_t residentMipLevelsTotal{0};    ///< Total resident mip levels across all GPU textures.
-    size_t uploadBytesLifetime{0};         ///< Cumulative upload throughput in bytes.
-    uint32_t evictionCountLifetime{0};     ///< Total number of textures evicted across session.
+    size_t residentGpuMemoryBytes{0};       ///< Total resident GPU memory footprint in bytes.
+    size_t pendingUploadBytes{0};           ///< Memory queued for GPU staging and upload.
+    size_t retiredGpuMemoryBytes{0};        ///< Memory pending deferred GPU retirement.
+    size_t pinnedBytes{0};                  ///< Memory footprint held by pinned textures.
+    size_t estimatedTotalGpuMemoryBytes{0}; ///< Sum of resident + pending + retired allocations.
+    size_t estimatedGpuMemoryBytes{0};   ///< Backward-compatible alias for residentGpuMemoryBytes.
+    size_t estimatedCpuMemoryBytes{0};   ///< Total host CPU memory footprint in bytes.
+    uint32_t residentTextureCount{0};    ///< Number of textures currently in GpuResident state.
+    uint32_t pendingRetirementsCount{0}; ///< Number of textures in EvictionPending state.
+    uint32_t pinnedTextureCount{0};      ///< Number of textures flagged as pinned.
+    uint32_t residentMipLevelsTotal{0};  ///< Total resident mip levels across all GPU textures.
+    size_t uploadBytesLifetime{0};       ///< Cumulative upload throughput in bytes.
+    uint32_t evictionCountLifetime{0};   ///< Total number of textures evicted across session.
     uint32_t failedAllocationsLifetime{0}; ///< Total failed load or allocation attempts.
-    float budgetUsageRatio{0.0F};          ///< Current ratio of GPU memory to max budget [0..1+].
-    bool isUnderMemoryPressure{false};     ///< True if budgetUsageRatio >= memoryPressureThreshold.
+    float budgetUsageRatio{0.0F};      ///< Current ratio of total GPU memory to max budget [0..1+].
+    bool isUnderMemoryPressure{false}; ///< True if budgetUsageRatio >= memoryPressureThreshold.
 };
 
 /// @brief Computes conservative estimated GPU memory footprint in bytes for a texture.

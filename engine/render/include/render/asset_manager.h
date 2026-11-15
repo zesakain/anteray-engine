@@ -236,6 +236,15 @@ public:
     /// @brief Rebinds all active material descriptor sets to current GPU textures or fallbacks.
     void rebindMaterialTextures(rhi::RhiDevice& device) noexcept;
 
+    /// @brief Processes deferred resource destructions whose GPU submission serial has completed.
+    ///
+    /// @param device Active RhiDevice to query completion status.
+    /// @return Number of retired texture allocations successfully destroyed and reclaimed.
+    uint32_t processRetiredResources(rhi::RhiDevice& device) noexcept;
+
+    /// @brief Retrieves structured failure information for a texture asset, or nullptr.
+    [[nodiscard]] const TextureFailureInfo* getTextureFailureInfo(AssetId id) const noexcept;
+
 private:
     void updateMemoryMetrics() noexcept;
 
@@ -251,10 +260,20 @@ private:
         ImageData cpuImage{};
         std::unique_ptr<GpuTexture> gpuTexture{nullptr};
         TextureResidencyState residencyState{TextureResidencyState::Unloaded};
+        TextureFailureInfo failureInfo{};
         uint64_t lastUsedFrame{0};
         bool isPinned{false};
         size_t estimatedGpuBytes{0};
+        uint32_t residentMipBase{0};
         uint32_t residentMipLevels{0};
+    };
+
+    struct RetiredTextureEntry {
+        std::unique_ptr<GpuTexture> texture{nullptr};
+        uint64_t retiredSubmissionSerial{0};
+        uint64_t retiredFrame{0};
+        size_t memoryBytes{0};
+        AssetId id{0};
     };
 
     std::unordered_map<AssetId, MeshEntry> meshEntries_{};
@@ -262,6 +281,7 @@ private:
     std::unordered_map<std::string, AssetId> pathToId_{};
     std::unordered_set<AssetId> failedIds_{};
     std::unordered_map<std::string, std::string> failedPaths_{};
+    std::vector<RetiredTextureEntry> retiredTextures_{};
     std::unordered_map<DefaultTextureType, std::unique_ptr<GpuTexture>> defaultTextures_{};
     std::unique_ptr<GpuMaterial> defaultMaterial_{nullptr};
     SamplerCache samplerCache_{};
@@ -269,6 +289,7 @@ private:
     TextureBudgetConfig budgetConfig_{};
     TextureMemoryMetrics metrics_{};
     rhi::RhiDevice* device_{nullptr};
+    uint64_t currentFrame_{0};
 };
 
 } // namespace eng::render
