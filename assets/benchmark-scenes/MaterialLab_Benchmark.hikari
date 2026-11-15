@@ -1,0 +1,911 @@
+{
+  "formatVersion": 1,
+  "metadata": {
+    "name": "MaterialLab Benchmark",
+    "generator": "Hikari Machine Milestone 11F Phase 6 Visual Certification",
+    "timestamp": 20261115
+  },
+  "entities": [
+    {
+      "id": 1,
+      "name": "Sphere_0_0",
+      "components": {
+        "Transform": {
+          "position": [
+            -3.5,
+            0.45,
+            -2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_0",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "Sphere_0_1",
+      "components": {
+        "Transform": {
+          "position": [
+            -2.1,
+            0.45,
+            -2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_1",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 3,
+      "name": "Sphere_0_2",
+      "components": {
+        "Transform": {
+          "position": [
+            -0.7,
+            0.45,
+            -2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_2",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 4,
+      "name": "Sphere_0_3",
+      "components": {
+        "Transform": {
+          "position": [
+            0.7,
+            0.45,
+            -2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_3",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 5,
+      "name": "Sphere_0_4",
+      "components": {
+        "Transform": {
+          "position": [
+            2.1,
+            0.45,
+            -2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_4",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 6,
+      "name": "Sphere_0_5",
+      "components": {
+        "Transform": {
+          "position": [
+            3.5,
+            0.45,
+            -2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_5",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 7,
+      "name": "Sphere_1_0",
+      "components": {
+        "Transform": {
+          "position": [
+            -3.5,
+            0.45,
+            -0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_6",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 8,
+      "name": "Sphere_1_1",
+      "components": {
+        "Transform": {
+          "position": [
+            -2.1,
+            0.45,
+            -0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_7",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 9,
+      "name": "Sphere_1_2",
+      "components": {
+        "Transform": {
+          "position": [
+            -0.7,
+            0.45,
+            -0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_8",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 10,
+      "name": "Sphere_1_3",
+      "components": {
+        "Transform": {
+          "position": [
+            0.7,
+            0.45,
+            -0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_9",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 11,
+      "name": "Sphere_1_4",
+      "components": {
+        "Transform": {
+          "position": [
+            2.1,
+            0.45,
+            -0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_10",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 12,
+      "name": "Sphere_1_5",
+      "components": {
+        "Transform": {
+          "position": [
+            3.5,
+            0.45,
+            -0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_11",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 13,
+      "name": "Sphere_2_0",
+      "components": {
+        "Transform": {
+          "position": [
+            -3.5,
+            0.45,
+            0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_12",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 14,
+      "name": "Sphere_2_1",
+      "components": {
+        "Transform": {
+          "position": [
+            -2.1,
+            0.45,
+            0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_13",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 15,
+      "name": "Sphere_2_2",
+      "components": {
+        "Transform": {
+          "position": [
+            -0.7,
+            0.45,
+            0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_14",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 16,
+      "name": "Sphere_2_3",
+      "components": {
+        "Transform": {
+          "position": [
+            0.7,
+            0.45,
+            0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_15",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 17,
+      "name": "Sphere_2_4",
+      "components": {
+        "Transform": {
+          "position": [
+            2.1,
+            0.45,
+            0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_16",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 18,
+      "name": "Sphere_2_5",
+      "components": {
+        "Transform": {
+          "position": [
+            3.5,
+            0.45,
+            0.7
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_17",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 19,
+      "name": "Sphere_3_0",
+      "components": {
+        "Transform": {
+          "position": [
+            -3.5,
+            0.45,
+            2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_18",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 20,
+      "name": "Sphere_3_1",
+      "components": {
+        "Transform": {
+          "position": [
+            -2.1,
+            0.45,
+            2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_19",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 21,
+      "name": "Sphere_3_2",
+      "components": {
+        "Transform": {
+          "position": [
+            -0.7,
+            0.45,
+            2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_20",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 22,
+      "name": "Sphere_3_3",
+      "components": {
+        "Transform": {
+          "position": [
+            0.7,
+            0.45,
+            2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_21",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 23,
+      "name": "Sphere_3_4",
+      "components": {
+        "Transform": {
+          "position": [
+            2.1,
+            0.45,
+            2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_22",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 24,
+      "name": "Sphere_3_5",
+      "components": {
+        "Transform": {
+          "position": [
+            3.5,
+            0.45,
+            2.1
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_23",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 25,
+      "name": "GroundPlane",
+      "components": {
+        "Transform": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Mesh": {
+          "assetPath": "assets/benchmark-scenes/material_lab.gltf#mesh_24",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 26,
+      "name": "Sunlight",
+      "components": {
+        "DirectionalLight": {
+          "direction": [
+            0.416463,
+            0.832927,
+            0.364405
+          ],
+          "color": [
+            1,
+            0.98,
+            0.94
+          ],
+          "intensity": 3.5,
+          "castShadows": true,
+          "shadowBias": 0.0015,
+          "enabled": true
+        }
+      }
+    },
+    {
+      "id": 27,
+      "name": "DefaultBenchmarkCamera",
+      "components": {
+        "Transform": {
+          "position": [
+            0,
+            3.8,
+            7.2
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "Camera": {
+          "fovDegrees": 50,
+          "nearPlane": 0.1,
+          "farPlane": 500,
+          "isPrimary": true
+        }
+      }
+    },
+    {
+      "id": 28,
+      "name": "IrradianceProbe_MaterialLab",
+      "components": {
+        "IrradianceProbe": {
+          "position": [
+            0,
+            1.5,
+            0
+          ],
+          "radius": 20,
+          "boxMin": [
+            -5,
+            -5,
+            -5
+          ],
+          "boxMax": [
+            5,
+            5,
+            5
+          ],
+          "intensity": 1,
+          "enabled": true,
+          "useBoxBounds": false,
+          "sh": [
+            [
+              0.0846285,
+              0.0930914,
+              0.107196
+            ],
+            [
+              -0.0293162,
+              -0.0146581,
+              0.00977205
+            ],
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              -0.0946176,
+              -0.104079,
+              -0.119849
+            ],
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              -0.163882,
+              -0.18027,
+              -0.207584
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "settings": {
+    "postProcess": {
+      "enabled": true,
+      "exposure": 1,
+      "toneMapOp": "ACES",
+      "bloomEnabled": true,
+      "bloomThreshold": 1.2,
+      "bloomKnee": 0.5,
+      "reinhardWhitePoint": 4,
+      "bloomIntensity": 0.03,
+      "bloomFilterRadius": 1
+    },
+    "camera": {
+      "position": [
+        0,
+        3.8,
+        7.2
+      ],
+      "target": [
+        0,
+        0.45,
+        0
+      ]
+    }
+  }
+}
