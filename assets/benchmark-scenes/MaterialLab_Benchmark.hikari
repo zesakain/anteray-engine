@@ -887,7 +887,7 @@
     "postProcess": {
       "enabled": true,
       "exposure": 1,
-      "toneMapOp": "ACES",
+      "toneMapOp": "AgX",
       "bloomEnabled": true,
       "bloomThreshold": 1.2,
       "bloomKnee": 0.5,

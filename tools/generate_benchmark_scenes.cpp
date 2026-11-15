@@ -79,11 +79,11 @@ static bool generateSponza(const std::filesystem::path& outDir) {
 
     world::updateHierarchyTransforms(world);
 
-    // Post-processing: ACES fitted tone mapping + exposure 1.0 + bloom
+    // Post-processing: AgX tone mapping + exposure 1.0 + bloom
     render::PostProcessSettings pp{};
     pp.enabled = true;
     pp.exposure = 1.0F;
-    pp.toneMapOp = render::ToneMapOperator::AcesFitted;
+    pp.toneMapOp = render::ToneMapOperator::AgX;
     pp.bloomEnabled = true;
     pp.bloomThreshold = 1.0F;
     pp.bloomIntensity = 0.04F;
@@ -154,7 +154,7 @@ static bool generateFlightHelmet(const std::filesystem::path& outDir) {
     render::PostProcessSettings pp{};
     pp.enabled = true;
     pp.exposure = 1.0F;
-    pp.toneMapOp = render::ToneMapOperator::AcesFitted;
+    pp.toneMapOp = render::ToneMapOperator::AgX;
     pp.bloomEnabled = true;
     pp.bloomThreshold = 1.0F;
     pp.bloomIntensity = 0.04F;
@@ -225,7 +225,7 @@ static bool generateDamagedHelmet(const std::filesystem::path& outDir) {
     render::PostProcessSettings pp{};
     pp.enabled = true;
     pp.exposure = 1.0F;
-    pp.toneMapOp = render::ToneMapOperator::AcesFitted;
+    pp.toneMapOp = render::ToneMapOperator::AgX;
     pp.bloomEnabled = true;
     pp.bloomThreshold = 1.0F;
     pp.bloomIntensity = 0.04F;
@@ -331,11 +331,11 @@ static bool generateBistro(const std::filesystem::path& outDir) {
 
     world::updateHierarchyTransforms(world);
 
-    // Post-processing: ACES fitted tone mapping + exposure 1.0 + bloom
+    // Post-processing: AgX tone mapping + exposure 1.0 + bloom
     render::PostProcessSettings pp{};
     pp.enabled = true;
     pp.exposure = 1.0F;
-    pp.toneMapOp = render::ToneMapOperator::AcesFitted;
+    pp.toneMapOp = render::ToneMapOperator::AgX;
     pp.bloomEnabled = true;
     pp.bloomThreshold = 1.6F;
     pp.bloomIntensity = 0.035F;
@@ -757,11 +757,11 @@ static bool generateMaterialLab(const std::filesystem::path& outDir) {
 
     world::updateHierarchyTransforms(world);
 
-    // Post-processing: ACES fitted tone mapping + exposure 1.0 + bloom
+    // Post-processing: AgX tone mapping + exposure 1.0 + bloom
     render::PostProcessSettings pp{};
     pp.enabled = true;
     pp.exposure = 1.0F;
-    pp.toneMapOp = render::ToneMapOperator::AcesFitted;
+    pp.toneMapOp = render::ToneMapOperator::AgX;
     pp.bloomEnabled = true;
     pp.bloomThreshold = 1.2F;
     pp.bloomIntensity = 0.03F;
