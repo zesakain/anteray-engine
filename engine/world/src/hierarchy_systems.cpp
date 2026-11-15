@@ -22,6 +22,10 @@ struct QueueItem {
 } // namespace
 
 void updateHierarchyTransforms(World& world) {
+    if (!world.isTransformDirty()) {
+        return;
+    }
+
     // Reusable BFS queue to guarantee zero hot-path heap allocations once warm.
     // Invariant: Simulation progress and continuous systems execute on the main thread.
     static thread_local std::vector<QueueItem> queue;
@@ -142,6 +146,8 @@ void updateHierarchyTransforms(World& world) {
             });
         });
     }
+
+    world.setTransformDirty(false);
 }
 
 void registerHierarchySystems(World& world) {

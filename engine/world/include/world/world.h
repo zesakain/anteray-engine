@@ -79,7 +79,7 @@ public:
         } else {
             ecs_.entity(entity.id).set<T>(std::move(component));
             if constexpr (std::is_same_v<T, TransformComponent>) {
-                isTransformDirty_ = true;
+                setTransformDirty(true);
                 if (!ecs_.entity(entity.id).template has<WorldTransformComponent>()) {
                     ecs_.entity(entity.id).template set<WorldTransformComponent>({});
                 }
@@ -115,7 +115,7 @@ public:
                 return nullptr;
             }
             if constexpr (std::is_same_v<T, TransformComponent>) {
-                isTransformDirty_ = true;
+                setTransformDirty(true);
             }
             return ecs_.entity(entity.id).template get_mut<T>();
         }
@@ -222,7 +222,18 @@ public:
     [[nodiscard]] bool isTransformDirty() const noexcept { return isTransformDirty_; }
 
     /// Sets or clears the transform hierarchy dirty flag.
-    void setTransformDirty(bool dirty) noexcept { isTransformDirty_ = dirty; }
+    void setTransformDirty(bool dirty) noexcept {
+        isTransformDirty_ = dirty;
+        if (dirty) {
+            ++transformVersion_;
+        }
+    }
+
+    /// Monotonically increasing version counter incremented whenever any transform changes.
+    [[nodiscard]] uint64_t getTransformVersion() const noexcept { return transformVersion_; }
+
+    /// Monotonically increasing counter incremented when the world is cleared for a new scene.
+    [[nodiscard]] uint64_t getSceneGeneration() const noexcept { return sceneGeneration_; }
 
     /// Direct access to underlying Flecs world instance.
     [[nodiscard]] flecs::world& getRawWorld() noexcept { return ecs_; }
@@ -238,6 +249,8 @@ private:
     std::array<std::vector<flecs::system>, static_cast<size_t>(SystemGroup::Count)> groupSystems_{};
     std::vector<HierarchyValidator> hierarchyValidators_{};
     bool isTransformDirty_{true};
+    uint64_t transformVersion_{1};
+    uint64_t sceneGeneration_{1};
 };
 
 } // namespace eng::world

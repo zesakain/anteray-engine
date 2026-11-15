@@ -28,7 +28,7 @@ World::World(World&& other) noexcept
       rootEntities_(std::move(other.rootEntities_)), groupActive_(other.groupActive_),
       groupSystems_(std::move(other.groupSystems_)),
       hierarchyValidators_(std::move(other.hierarchyValidators_)),
-      isTransformDirty_(other.isTransformDirty_) {}
+      isTransformDirty_(other.isTransformDirty_), transformVersion_(other.transformVersion_) {}
 
 World& World::operator=(World&& other) noexcept {
     if (this != &other) {
@@ -39,6 +39,7 @@ World& World::operator=(World&& other) noexcept {
         groupSystems_ = std::move(other.groupSystems_);
         hierarchyValidators_ = std::move(other.hierarchyValidators_);
         isTransformDirty_ = other.isTransformDirty_;
+        transformVersion_ = other.transformVersion_;
     }
     return *this;
 }
@@ -48,7 +49,7 @@ EntityHandle World::createEntity() {
     EntityHandle handle(e.id());
     activeEntities_.push_back(handle);
     rootEntities_.push_back(handle);
-    isTransformDirty_ = true;
+    setTransformDirty(true);
     return handle;
 }
 
@@ -60,7 +61,7 @@ EntityHandle World::createEntity(std::string_view name) {
     if (!name.empty()) {
         setEntityName(handle, name);
     }
-    isTransformDirty_ = true;
+    setTransformDirty(true);
     return handle;
 }
 
@@ -68,7 +69,7 @@ void World::destroyEntity(EntityHandle entity) {
     if (!isAlive(entity)) {
         return;
     }
-    isTransformDirty_ = true;
+    setTransformDirty(true);
 
     // Collect all descendants recursively before destruction to ensure activeEntities_ consistency
     std::vector<EntityHandle> toClean;
@@ -108,7 +109,8 @@ void World::clearUserEntities() {
     }
     activeEntities_.clear();
     rootEntities_.clear();
-    isTransformDirty_ = true;
+    ++sceneGeneration_;
+    setTransformDirty(true);
 }
 
 std::vector<EntityHandle> World::getAllEntities() const {
@@ -301,7 +303,7 @@ bool World::setParent(EntityHandle child, EntityHandle parent, bool preserveWorl
     if (auto* tc = getMutableComponent<TransformComponent>(child)) {
         tc->isDirty = true;
     }
-    isTransformDirty_ = true;
+    setTransformDirty(true);
 
     return true;
 }
