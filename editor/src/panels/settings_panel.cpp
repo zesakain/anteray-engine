@@ -611,6 +611,52 @@ void SettingsPanel::drawQualityTab(EditorContext& /*ctx*/) {
     int aaIdx = static_cast<int>(pendingGraphics_.quality.antiAliasing);
     if (ImGui::Combo("Anti-Aliasing", &aaIdx, aaModes, 5)) {
         pendingGraphics_.quality.antiAliasing = static_cast<render::AntiAliasingMode>(aaIdx);
+        pendingGraphics_.quality.taa.enabled =
+            (pendingGraphics_.quality.antiAliasing == render::AntiAliasingMode::TAA);
+    }
+    helpMarker("Edge smoothing technique. TAA accumulates subpixel samples over time.");
+
+    if (pendingGraphics_.quality.antiAliasing == render::AntiAliasingMode::TAA) {
+        ImGui::Spacing();
+        ImGui::Indent(16.0F);
+
+        ImGui::Checkbox("Screen-Space Motion Vectors",
+                        &pendingGraphics_.quality.taa.useMotionVectors);
+        helpMarker("Reconstructs camera and dynamic mesh velocities to reproject temporal history "
+                   "accurately, preventing ghosting during movement.");
+
+        ImGui::SliderFloat("History Weight", &pendingGraphics_.quality.taa.historyWeight, 0.80F,
+                           0.98F, "%.2f");
+        helpMarker("Exponential accumulation blend factor for temporal history. Higher values "
+                   "reduce subpixel shimmering; lower values increase responsiveness.");
+
+        ImGui::SliderFloat("Variance Gamma", &pendingGraphics_.quality.taa.varianceGamma, 0.50F,
+                           2.50F, "%.2f");
+        helpMarker("Statistical box multiplier (mu +/- gamma * sigma) in YCoCg color space for "
+                   "neighborhood clamping, rejecting history disocclusion artifacts.");
+
+        const char* seqOptions[] = {"Halton 8", "Halton 16", "Halton 32"};
+        int seqIdx = static_cast<int>(pendingGraphics_.quality.taa.jitterSequence);
+        if (ImGui::Combo("Jitter Sequence Length", &seqIdx, seqOptions, 3)) {
+            pendingGraphics_.quality.taa.jitterSequence =
+                static_cast<render::TaaJitterSequence>(seqIdx);
+        }
+        helpMarker("Number of subpixel camera projection jitter phases in the low-discrepancy "
+                   "Halton(2, 3) sequence.");
+
+        ImGui::Checkbox("Enable Sharpening (RCAS)",
+                        &pendingGraphics_.quality.taa.sharpeningEnabled);
+        helpMarker("Applies contrast-adaptive sharpening with overshoot limiting to the "
+                   "anti-aliased output without contaminating the history buffer.");
+
+        if (pendingGraphics_.quality.taa.sharpeningEnabled) {
+            ImGui::SliderFloat("Sharpening Intensity",
+                               &pendingGraphics_.quality.taa.sharpeningIntensity, 0.0F, 1.0F,
+                               "%.2f");
+            helpMarker("Strength of contrast-adaptive edge sharpening.");
+        }
+
+        ImGui::Unindent(16.0F);
     }
 }
 

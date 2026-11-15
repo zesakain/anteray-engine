@@ -387,6 +387,13 @@ void ViewportPanel::draw(EditorContext& ctx) {
         camera_.updateMatrices(canvasSize.x, canvasSize.y);
         ctx.viewportCameraViewProj = camera_.getViewProjectionMatrix();
 
+        if (camera_.hasCutOccurred()) {
+            if (ctx.sceneRenderer != nullptr) {
+                ctx.sceneRenderer->invalidateTaaHistory();
+            }
+            camera_.clearCutFlag();
+        }
+
         const Vec3 canvasOrigin3D{canvasPos.x, canvasPos.y, 0.0F};
         const Vec3 canvasSize3D{canvasSize.x, canvasSize.y, 0.0F};
 

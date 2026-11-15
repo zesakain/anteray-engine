@@ -32,6 +32,7 @@ void EditorCamera::resetToDefault() noexcept {
     updateVectorsFromAngles();
     updatePositionFromPivot();
     updateMatrices(1280.0F, 720.0F);
+    notifyCut();
 }
 
 void EditorCamera::lookAt(const Vec3& eye, const Vec3& target) noexcept {
@@ -39,6 +40,7 @@ void EditorCamera::lookAt(const Vec3& eye, const Vec3& target) noexcept {
     position_ = eye;
     updateVectorsFromPivot();
     updateMatrices(1280.0F, 720.0F);
+    notifyCut();
 }
 
 void EditorCamera::frame(const Vec3& target, float radius) noexcept {
@@ -46,6 +48,7 @@ void EditorCamera::frame(const Vec3& target, float radius) noexcept {
     distance_ = std::clamp(std::max(2.0F, radius * 2.5F), kMinDistance, kMaxDistance);
     updatePositionFromPivot();
     updateMatrices(1280.0F, 720.0F);
+    notifyCut();
 }
 
 void EditorCamera::setDistance(float dist) noexcept {

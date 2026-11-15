@@ -159,6 +159,11 @@ public:
     [[nodiscard]] float getMouseSensitivity() const noexcept { return mouseSensitivity_; }
     void setMouseSensitivity(float sens) noexcept { mouseSensitivity_ = sens; }
 
+    /// Whether a sudden camera jump or cut occurred (e.g. framing or teleport) requiring temporal history invalidation.
+    [[nodiscard]] bool hasCutOccurred() const noexcept { return cutOccurred_; }
+    void clearCutFlag() noexcept { cutOccurred_ = false; }
+    void notifyCut() noexcept { cutOccurred_ = true; }
+
 private:
     void updateVectorsFromAngles() noexcept;
     void updatePositionFromPivot() noexcept;
@@ -183,6 +188,7 @@ private:
 
     EditorCameraMode cameraMode_{EditorCameraMode::Orbit};
     bool isNavigating_{false};
+    bool cutOccurred_{false};
     float moveSpeed_{kDefaultMoveSpeed};               // meters / second
     float mouseSensitivity_{kDefaultMouseSensitivity}; // radians / pixel
 
