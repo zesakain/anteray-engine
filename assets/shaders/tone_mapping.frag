@@ -8,7 +8,7 @@ layout(set = 0, binding = 1) uniform sampler2D bloomTexture;
 
 layout(push_constant) uniform ToneMappingPushConstants {
     float exposure;
-    int toneMapOp; // 0 = ACES, 1 = FilmicReinhard, 2 = Neutral, 3 = Bypass
+    int toneMapOp; // 0 = AgX, 1 = ACES, 2 = FilmicReinhard, 3 = Neutral, 4 = Bypass
     float bloomIntensity;
     int bloomEnabled;
     float whitePoint;
@@ -57,6 +57,62 @@ vec3 applyColorGrading(vec3 c, float contrast, float saturation) {
         c = mix(vec3(luma), c, max(0.0, saturation));
     }
     return c;
+}
+
+// Troy Sobotka AgX tone mapping formulation
+// Working color primaries inset matrix (converting linear sRGB to AgX log working space)
+const mat3 AGX_INSET_MATRIX = mat3(
+    vec3(0.842479062253094, 0.0423282422610123, 0.0423756549057051),
+    vec3(0.0784335999999992, 0.878468646464646, 0.0784335999999992),
+    vec3(0.0792237451977152, 0.0792237451977152, 0.879237451977152)
+);
+
+// AgX working space to sRGB display primaries outset matrix
+const mat3 AGX_OUTSET_MATRIX = mat3(
+    vec3(1.19687900512017, -0.0528968517574562, -0.0529716355178468),
+    vec3(-0.0980208811401368, 1.15190312990417, -0.0980434501171801),
+    vec3(-0.0990297440797205, -0.0990297440797205, 1.15107360136118)
+);
+
+// Dynamic range: min EV = -12.47393, max EV = 4.026069 (approx. 16.5 stops)
+const float AGX_MIN_EV = -12.47393;
+const float AGX_MAX_EV = 4.026069;
+
+// AgX default contrast sigmoid approximation (6th order polynomial fit)
+vec3 agxDefaultContrastApprox(vec3 x) {
+    vec3 x2 = x * x;
+    vec3 x4 = x2 * x2;
+    return + 15.5 * (x4 * x2)
+           - 40.14 * (x4 * x)
+           + 31.96 * x4
+           - 6.868 * (x2 * x)
+           + 0.4298 * x2
+           + 0.1191 * x
+           - 0.00232;
+}
+
+vec3 agxToneMapping(vec3 color) {
+    // 1. Transform linear sRGB to AgX working primaries
+    vec3 val = AGX_INSET_MATRIX * max(color, vec3(0.0));
+
+    // Clamp floor to avoid log2(0) or negative values
+    val = max(val, vec3(1e-10));
+
+    // 2. Log2 encoding mapped to [0, 1] range across 16.5 stops
+    val = clamp((log2(val) - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV), 0.0, 1.0);
+
+    // 3. Apply AgX default contrast sigmoid
+    val = clamp(agxDefaultContrastApprox(val), 0.0, 1.0);
+
+    // 4. Transform back from AgX working primaries to target display primaries
+    val = clamp(AGX_OUTSET_MATRIX * val, 0.0, 1.0);
+
+    // 5. Decompress from 2.2 display response to linear HDR space.
+    // This ensures color remains in linear photometric space prior to the pipeline's
+    // final linearToSrgb() swapchain EOTF, strictly preventing double gamma encoding.
+    val = pow(val, vec3(2.2));
+
+    return val;
 }
 
 vec3 acesFitted(vec3 x) {
@@ -124,10 +180,12 @@ void main() {
     // Apply tone mapping operator
     vec3 mappedColor = color;
     if (pc.toneMapOp == 0) {
-        mappedColor = acesFitted(color);
+        mappedColor = agxToneMapping(color);
     } else if (pc.toneMapOp == 1) {
-        mappedColor = filmicReinhard(color, pc.whitePoint);
+        mappedColor = acesFitted(color);
     } else if (pc.toneMapOp == 2) {
+        mappedColor = filmicReinhard(color, pc.whitePoint);
+    } else if (pc.toneMapOp == 3) {
         mappedColor = neutralToneMapping(color);
     } else {
         mappedColor = linearBypass(color);

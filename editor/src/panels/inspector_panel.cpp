@@ -1628,10 +1628,10 @@ void InspectorPanel::draw(EditorContext& ctx) {
                             ctx.sceneRenderer->setPostProcessSettings(pp);
                         }
 
-                        const char* tmOps[] = {"ACES Fitted", "Filmic Reinhard",
+                        const char* tmOps[] = {"AgX (Default)", "ACES Fitted", "Filmic Reinhard",
                                                "Khronos PBR Neutral", "Linear Bypass"};
                         int currentTm = static_cast<int>(pp.toneMapOp);
-                        if (ImGui::Combo("Tone Mapping Operator", &currentTm, tmOps, 4)) {
+                        if (ImGui::Combo("Tone Mapping Operator", &currentTm, tmOps, 5)) {
                             pp.toneMapOp = static_cast<render::ToneMapOperator>(currentTm);
                             ctx.sceneRenderer->setPostProcessSettings(pp);
                         }

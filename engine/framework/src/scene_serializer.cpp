@@ -199,6 +199,8 @@ std::optional<Quat> jsonToQuat(const core::JsonValue& val) {
 
 const char* toneMapOpToString(render::ToneMapOperator op) noexcept {
     switch (op) {
+    case render::ToneMapOperator::AgX:
+        return "AgX";
     case render::ToneMapOperator::AcesFitted:
         return "ACES";
     case render::ToneMapOperator::FilmicReinhard:
@@ -208,11 +210,14 @@ const char* toneMapOpToString(render::ToneMapOperator op) noexcept {
     case render::ToneMapOperator::Bypass:
         return "Bypass";
     default:
-        return "ACES";
+        return "AgX";
     }
 }
 
 std::optional<render::ToneMapOperator> stringToToneMapOp(std::string_view str) noexcept {
+    if (str == "AgX" || str == "agx") {
+        return render::ToneMapOperator::AgX;
+    }
     if (str == "ACES" || str == "AcesFitted" || str == "aces") {
         return render::ToneMapOperator::AcesFitted;
     }
@@ -246,7 +251,7 @@ render::PostProcessSettings jsonToPostProcess(const core::JsonValue& obj) {
     render::PostProcessSettings pp{};
     pp.enabled = obj.getBool("enabled", pp.enabled);
     pp.exposure = obj.getFloat("exposure", pp.exposure);
-    std::string_view opStr = obj.getString("toneMapOp", "ACES");
+    std::string_view opStr = obj.getString("toneMapOp", "AgX");
     if (auto opOpt = stringToToneMapOp(opStr)) {
         pp.toneMapOp = *opOpt;
     }

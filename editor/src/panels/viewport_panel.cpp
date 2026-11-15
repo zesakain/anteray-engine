@@ -305,10 +305,10 @@ void ViewportPanel::draw(EditorContext& ctx) {
                             ctx.sceneRenderer->setPostProcessSettings(ppSettings);
                         }
 
-                        const char* tmOps[] = {"ACES Fitted", "Filmic Reinhard", "Khronos Neutral",
-                                               "Linear Bypass"};
+                        const char* tmOps[] = {"AgX (Default)", "ACES Fitted", "Filmic Reinhard",
+                                               "Khronos Neutral", "Linear Bypass"};
                         int currentTm = static_cast<int>(ppSettings.toneMapOp);
-                        if (ImGui::Combo("Tone Map", &currentTm, tmOps, 4)) {
+                        if (ImGui::Combo("Tone Map", &currentTm, tmOps, 5)) {
                             ppSettings.toneMapOp = static_cast<render::ToneMapOperator>(currentTm);
                             ctx.sceneRenderer->setPostProcessSettings(ppSettings);
                         }

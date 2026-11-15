@@ -8,17 +8,20 @@ namespace eng::render {
 /// @brief Available tone mapping operators mapping high dynamic range (HDR) radiance values to
 /// display-referred dynamic range.
 enum class ToneMapOperator : uint8_t {
+    /// Troy Sobotka AgX tone mapper providing natural highlight roll-off and chroma preservation.
+    AgX = 0,
+
     /// Fitted ACES curve (Narkowicz fit) providing cinematic contrast and highlight roll-off.
-    AcesFitted = 0,
+    AcesFitted = 1,
 
     /// Filmic extended Reinhard curve with white point preservation.
-    FilmicReinhard = 1,
+    FilmicReinhard = 2,
 
     /// Khronos PBR Neutral curve preventing color desaturation, hue shifts, and highlight burnout.
-    Neutral = 2,
+    Neutral = 3,
 
     /// Linear bypass: no non-linear tonemapping curve applied (clamped to [0, 1]).
-    Bypass = 3,
+    Bypass = 4,
 };
 
 /// @struct PostProcessSettings
@@ -36,8 +39,8 @@ struct PostProcessSettings {
     /// Range: [0.001, 100.0], default: 1.0.
     float exposure{1.0F};
 
-    /// Selected tone reproduction operator. Default: ACES fitted.
-    ToneMapOperator toneMapOp{ToneMapOperator::AcesFitted};
+    /// Selected tone reproduction operator. Default: AgX.
+    ToneMapOperator toneMapOp{ToneMapOperator::AgX};
 
     /// Master toggle for bloom bright extraction and multi-scale blur pyramid.
     bool bloomEnabled{true};

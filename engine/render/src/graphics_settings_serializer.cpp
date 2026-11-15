@@ -125,6 +125,8 @@ ShadowPcfQuality stringToPcf(std::string_view s) noexcept {
 
 std::string_view toneMapToString(ToneMapOperator op) noexcept {
     switch (op) {
+    case ToneMapOperator::AgX:
+        return "AgX";
     case ToneMapOperator::AcesFitted:
         return "AcesFitted";
     case ToneMapOperator::FilmicReinhard:
@@ -134,17 +136,21 @@ std::string_view toneMapToString(ToneMapOperator op) noexcept {
     case ToneMapOperator::Bypass:
         return "Bypass";
     }
-    return "AcesFitted";
+    return "AgX";
 }
 
 ToneMapOperator stringToToneMap(std::string_view s) noexcept {
-    if (s == "FilmicReinhard")
+    if (s == "AgX" || s == "agx")
+        return ToneMapOperator::AgX;
+    if (s == "AcesFitted" || s == "ACES" || s == "aces")
+        return ToneMapOperator::AcesFitted;
+    if (s == "FilmicReinhard" || s == "Reinhard" || s == "reinhard")
         return ToneMapOperator::FilmicReinhard;
-    if (s == "Neutral")
+    if (s == "Neutral" || s == "neutral")
         return ToneMapOperator::Neutral;
-    if (s == "Bypass")
+    if (s == "Bypass" || s == "bypass")
         return ToneMapOperator::Bypass;
-    return ToneMapOperator::AcesFitted;
+    return ToneMapOperator::AgX;
 }
 
 std::string_view timeOfDayToString(EnvironmentTimeOfDay tod) noexcept {
@@ -486,8 +492,7 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
     if (const auto* pp = root.find("postProcess"); pp != nullptr && pp->isObject()) {
         settings.postProcess.enabled = pp->getBool("enabled", settings.postProcess.enabled);
         if (pp->contains("toneMapOp")) {
-            settings.postProcess.toneMapOp =
-                stringToToneMap(pp->getString("toneMapOp", "AcesFitted"));
+            settings.postProcess.toneMapOp = stringToToneMap(pp->getString("toneMapOp", "AgX"));
         }
         settings.postProcess.exposure = pp->getFloat("exposure", settings.postProcess.exposure);
         settings.postProcess.reinhardWhitePoint =

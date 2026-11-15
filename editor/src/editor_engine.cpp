@@ -485,7 +485,7 @@ bool EditorEngine::initialize(rhi::RhiDevice& rhiDevice, const EditorConfig& con
     render::PostProcessSettings ppSettings{};
     ppSettings.enabled = true;
     ppSettings.exposure = 1.0F;
-    ppSettings.toneMapOp = render::ToneMapOperator::AcesFitted;
+    ppSettings.toneMapOp = render::ToneMapOperator::AgX;
     ppSettings.bloomEnabled = true;
     ppSettings.bloomThreshold = 1.0F;
     ppSettings.bloomKnee = 0.5F;

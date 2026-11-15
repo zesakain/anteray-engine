@@ -78,7 +78,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.postProcess.bloomEnabled = true;
         s.postProcess.bloomIntensity = 0.03F;
         s.postProcess.bloomThreshold = 1.0F;
-        s.postProcess.toneMapOp = ToneMapOperator::AcesFitted;
+        s.postProcess.toneMapOp = ToneMapOperator::AgX;
         break;
 
     case GraphicsQualityPreset::High:
@@ -107,7 +107,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.postProcess.bloomEnabled = true;
         s.postProcess.bloomIntensity = 0.04F;
         s.postProcess.bloomThreshold = 1.0F;
-        s.postProcess.toneMapOp = ToneMapOperator::AcesFitted;
+        s.postProcess.toneMapOp = ToneMapOperator::AgX;
         break;
 
     case GraphicsQualityPreset::Ultra:
@@ -159,7 +159,7 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.postProcess.bloomEnabled = true;
         s.postProcess.bloomIntensity = 0.05F;
         s.postProcess.bloomThreshold = 0.9F;
-        s.postProcess.toneMapOp = ToneMapOperator::AcesFitted;
+        s.postProcess.toneMapOp = ToneMapOperator::AgX;
         break;
 
     case GraphicsQualityPreset::Custom:

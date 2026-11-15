@@ -673,9 +673,10 @@ void SettingsPanel::drawPostProcessTab(EditorContext& /*ctx*/) {
     ImGui::Checkbox("Enable Post-Processing Pipeline", &pendingGraphics_.postProcess.enabled);
 
     if (pendingGraphics_.postProcess.enabled) {
-        const char* toneOps[] = {"ACES Fitted", "Filmic Reinhard", "Neutral", "Bypass (Raw HDR)"};
+        const char* toneOps[] = {"AgX (Default)", "ACES Fitted", "Filmic Reinhard", "Neutral",
+                                 "Bypass (Raw HDR)"};
         int toneIdx = static_cast<int>(pendingGraphics_.postProcess.toneMapOp);
-        if (ImGui::Combo("Tone Mapping Operator", &toneIdx, toneOps, 4)) {
+        if (ImGui::Combo("Tone Mapping Operator", &toneIdx, toneOps, 5)) {
             pendingGraphics_.postProcess.toneMapOp = static_cast<render::ToneMapOperator>(toneIdx);
         }
 
