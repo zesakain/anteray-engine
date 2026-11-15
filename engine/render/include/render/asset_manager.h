@@ -27,6 +27,7 @@
 #include "render/material.h"
 #include "render/mesh.h"
 #include "render/sampler_cache.h"
+#include "render/texture_residency.h"
 #include "rhi/rhi_device.h"
 
 #include <memory>
@@ -192,7 +193,52 @@ public:
     /// filtering or texture quality settings change.
     Result<void> updateSamplerQuality(const QualitySettings& settings, rhi::RhiDevice& device);
 
+    /// @brief Sets the texture memory budget configuration.
+    void setTextureBudgetConfig(const TextureBudgetConfig& config) noexcept;
+
+    /// @brief Gets the active texture memory budget configuration.
+    [[nodiscard]] const TextureBudgetConfig& getTextureBudgetConfig() const noexcept {
+        return budgetConfig_;
+    }
+
+    /// @brief Retrieves the real-time texture residency and memory telemetry metrics.
+    [[nodiscard]] const TextureMemoryMetrics& getTextureMemoryMetrics() const noexcept {
+        return metrics_;
+    }
+
+    /// @brief Returns the residency state of a specific texture asset.
+    [[nodiscard]] TextureResidencyState getTextureResidencyState(AssetId id) const noexcept;
+
+    /// @brief Updates the last-used frame index for a texture asset (for LRU eviction).
+    void touchTexture(AssetId id, uint64_t frameIndex) noexcept;
+
+    /// @brief Marks a texture as pinned (immune from eviction) or unpinned.
+    void pinTexture(AssetId id, bool pinned) noexcept;
+
+    /// @brief Checks if a texture asset is pinned.
+    [[nodiscard]] bool isTexturePinned(AssetId id) const noexcept;
+
+    /// @brief Safely evicts a GPU texture to reclaim memory, rebinding referencing materials to
+    /// fallbacks.
+    Result<bool> evictTexture(AssetId id, rhi::RhiDevice& device) noexcept;
+
+    /// @brief Enforces texture memory budget using LRU eviction policy.
+    Result<uint32_t> enforceTextureBudget(rhi::RhiDevice& device,
+                                          uint64_t currentFrame = 0) noexcept;
+
+    /// @brief Promotes texture mip level residency towards highest detail (LOD 0).
+    Result<void> promoteTextureMips(AssetId id, rhi::RhiDevice& device) noexcept;
+
+    /// @brief Demotes texture mip level residency towards coarse levels to conserve
+    /// bandwidth/memory.
+    Result<void> demoteTextureMips(AssetId id, rhi::RhiDevice& device) noexcept;
+
+    /// @brief Rebinds all active material descriptor sets to current GPU textures or fallbacks.
+    void rebindMaterialTextures(rhi::RhiDevice& device) noexcept;
+
 private:
+    void updateMemoryMetrics() noexcept;
+
     struct MeshEntry {
         AssetMetadata metadata{};
         MeshData cpuMesh{};
@@ -204,6 +250,11 @@ private:
         AssetMetadata metadata{};
         ImageData cpuImage{};
         std::unique_ptr<GpuTexture> gpuTexture{nullptr};
+        TextureResidencyState residencyState{TextureResidencyState::Unloaded};
+        uint64_t lastUsedFrame{0};
+        bool isPinned{false};
+        size_t estimatedGpuBytes{0};
+        uint32_t residentMipLevels{0};
     };
 
     std::unordered_map<AssetId, MeshEntry> meshEntries_{};
@@ -215,6 +266,8 @@ private:
     std::unique_ptr<GpuMaterial> defaultMaterial_{nullptr};
     SamplerCache samplerCache_{};
     QualitySettings qualitySettings_{};
+    TextureBudgetConfig budgetConfig_{};
+    TextureMemoryMetrics metrics_{};
     rhi::RhiDevice* device_{nullptr};
 };
 

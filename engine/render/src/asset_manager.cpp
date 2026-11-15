@@ -322,6 +322,7 @@ Result<AssetId> AssetManager::loadTexture(std::string_view path, bool srgb) {
         failedIds_.insert(id);
         failedPaths_[cacheKey] = errMsg;
         failedPaths_[normPath] = errMsg;
+        metrics_.failedAllocationsLifetime++;
         return decodeRes.error();
     }
 
@@ -335,12 +336,14 @@ Result<AssetId> AssetManager::loadTexture(std::string_view path, bool srgb) {
     entry.metadata.fileSize = decodeRes.value().sizeInBytes();
     entry.cpuImage = std::move(decodeRes.value());
     entry.gpuTexture = nullptr;
+    entry.residencyState = TextureResidencyState::CpuResident;
 
     pathToId_[cacheKey] = id;
     if (pathToId_.find(normPath) == pathToId_.end()) {
         pathToId_[normPath] = id;
     }
     textureEntries_[id] = std::move(entry);
+    updateMemoryMetrics();
 
     ENG_LOG_INFO("AssetManager", "Loaded texture asset successfully: " + normPath);
     return Result<AssetId>::success(id);
@@ -369,12 +372,14 @@ Result<AssetId> AssetManager::registerTexture(std::string_view path, ImageData i
     entry.metadata.fileSize = image.sizeInBytes();
     entry.cpuImage = std::move(image);
     entry.gpuTexture = nullptr;
+    entry.residencyState = TextureResidencyState::CpuResident;
 
     pathToId_[cacheKey] = id;
     if (pathToId_.find(normPath) == pathToId_.end()) {
         pathToId_[normPath] = id;
     }
     textureEntries_[id] = std::move(entry);
+    updateMemoryMetrics();
 
     return Result<AssetId>::success(id);
 }
@@ -390,24 +395,39 @@ Result<GpuTexture*> AssetManager::uploadTexture(AssetId id, rhi::RhiDevice& devi
                      .message = "Texture asset not loaded in AssetManager"};
     }
 
-    if (it->second.gpuTexture != nullptr) {
+    if (it->second.gpuTexture != nullptr &&
+        it->second.residencyState == TextureResidencyState::GpuResident) {
         return Result<GpuTexture*>::success(it->second.gpuTexture.get());
     }
 
+    it->second.residencyState = TextureResidencyState::GpuUploadPending;
     auto gpuRes = GpuTexture::create(device, it->second.cpuImage, generateMips, samplerDesc);
     if (!gpuRes.hasValue()) {
         ENG_LOG_ERROR("AssetManager",
                       "Failed to create GPU texture for asset: " + it->second.metadata.path);
+        it->second.residencyState = TextureResidencyState::Failed;
+        metrics_.failedAllocationsLifetime++;
         return gpuRes.error();
     }
 
     it->second.gpuTexture = std::move(gpuRes.value());
+    it->second.residencyState = TextureResidencyState::GpuResident;
+    it->second.residentMipLevels = it->second.gpuTexture->getMipLevels();
+    it->second.estimatedGpuBytes = estimateTextureMemoryBytes(
+        it->second.gpuTexture->getWidth(), it->second.gpuTexture->getHeight(),
+        it->second.residentMipLevels, it->second.gpuTexture->getFormat());
+    metrics_.uploadBytesLifetime += it->second.estimatedGpuBytes;
+
     if (samplerDesc != nullptr) {
         auto cachedSmpRes = samplerCache_.getOrCreate(device, *samplerDesc);
         if (cachedSmpRes.hasValue()) {
             it->second.gpuTexture->setSharedSampler(cachedSmpRes.value());
         }
     }
+
+    updateMemoryMetrics();
+    rebindMaterialTextures(device);
+
     return Result<GpuTexture*>::success(it->second.gpuTexture.get());
 }
 
@@ -568,11 +588,21 @@ void AssetManager::unload(AssetId id) noexcept {
                 pathToId_.erase(pIt);
             }
         }
+        if (device_ != nullptr && itTex->second.gpuTexture != nullptr) {
+            device_->waitIdle();
+        }
         textureEntries_.erase(itTex);
+        updateMemoryMetrics();
+        if (device_ != nullptr) {
+            rebindMaterialTextures(*device_);
+        }
     }
 }
 
 void AssetManager::unloadAll() noexcept {
+    if (device_ != nullptr) {
+        device_->waitIdle();
+    }
     defaultMaterial_.reset();
     defaultTextures_.clear();
     pathToId_.clear();
@@ -580,51 +610,16 @@ void AssetManager::unloadAll() noexcept {
     textureEntries_.clear();
     failedIds_.clear();
     failedPaths_.clear();
+    metrics_ = {};
     if (device_ != nullptr) {
         samplerCache_.clear(*device_);
         device_ = nullptr;
     }
 }
 
-Result<void> AssetManager::updateSamplerQuality(const QualitySettings& settings,
-                                                rhi::RhiDevice& device) {
+void AssetManager::rebindMaterialTextures(rhi::RhiDevice& device) noexcept {
     device_ = &device;
-    qualitySettings_ = settings;
-    const auto& caps = device.getCaps();
 
-    // 1. Destroy existing cached samplers (caller must ensure device is idle via waitIdle())
-    samplerCache_.clear(device);
-
-    const float maxCapsAniso =
-        caps.features.samplerAnisotropy ? caps.limits.maxSamplerAnisotropy : 1.0F;
-    const AnisotropicFiltering effectiveAniso = caps.features.samplerAnisotropy
-                                                    ? qualitySettings_.anisotropicFiltering
-                                                    : AnisotropicFiltering::Off;
-
-    // 2. Re-evaluate and reassign samplers for all resident textures
-    for (auto& [texId, texEntry] : textureEntries_) {
-        if (texEntry.gpuTexture != nullptr && texEntry.gpuTexture->isValid()) {
-            const uint32_t mipLevels = texEntry.gpuTexture->getMipLevels();
-            float minLod = 0.0F;
-            if (qualitySettings_.textureQuality == TextureQuality::Medium) {
-                minLod = (mipLevels > 1) ? 1.0F : 0.0F;
-            } else if (qualitySettings_.textureQuality == TextureQuality::Low) {
-                minLod = (mipLevels > 2) ? 2.0F : ((mipLevels > 1) ? 1.0F : 0.0F);
-            }
-            const float maxLod = static_cast<float>(mipLevels);
-
-            TextureSamplerDesc defaultAuthorDesc{};
-            rhi::SamplerDesc smp =
-                toRhiSamplerDesc(defaultAuthorDesc, effectiveAniso, maxCapsAniso, minLod, maxLod);
-
-            auto cachedSmpRes = samplerCache_.getOrCreate(device, smp);
-            if (cachedSmpRes.hasValue()) {
-                texEntry.gpuTexture->setSharedSampler(cachedSmpRes.value());
-            }
-        }
-    }
-
-    // 3. Update descriptor sets on all resident materials
     auto resolveTexSlot =
         [&](const TextureInfo& info,
             DefaultTextureType fallbackType) -> std::pair<rhi::TextureHandle, rhi::SamplerHandle> {
@@ -674,8 +669,263 @@ Result<void> AssetManager::updateSamplerQuality(const QualitySettings& settings,
             }
         }
     }
+}
+
+Result<void> AssetManager::updateSamplerQuality(const QualitySettings& settings,
+                                                rhi::RhiDevice& device) {
+    device_ = &device;
+    qualitySettings_ = settings;
+    const auto& caps = device.getCaps();
+
+    // 1. Destroy existing cached samplers (caller must ensure device is idle via waitIdle())
+    samplerCache_.clear(device);
+
+    const float maxCapsAniso =
+        caps.features.samplerAnisotropy ? caps.limits.maxSamplerAnisotropy : 1.0F;
+    const AnisotropicFiltering effectiveAniso = caps.features.samplerAnisotropy
+                                                    ? qualitySettings_.anisotropicFiltering
+                                                    : AnisotropicFiltering::Off;
+
+    // 2. Re-evaluate and reassign samplers for all resident textures
+    for (auto& [texId, texEntry] : textureEntries_) {
+        if (texEntry.gpuTexture != nullptr && texEntry.gpuTexture->isValid()) {
+            const uint32_t mipLevels = texEntry.gpuTexture->getMipLevels();
+            float minLod = 0.0F;
+            if (qualitySettings_.textureQuality == TextureQuality::Medium) {
+                minLod = (mipLevels > 1) ? 1.0F : 0.0F;
+            } else if (qualitySettings_.textureQuality == TextureQuality::Low) {
+                minLod = (mipLevels > 2) ? 2.0F : ((mipLevels > 1) ? 1.0F : 0.0F);
+            }
+            const float maxLod = static_cast<float>(mipLevels);
+
+            TextureSamplerDesc defaultAuthorDesc{};
+            rhi::SamplerDesc smp =
+                toRhiSamplerDesc(defaultAuthorDesc, effectiveAniso, maxCapsAniso, minLod, maxLod);
+
+            auto cachedSmpRes = samplerCache_.getOrCreate(device, smp);
+            if (cachedSmpRes.hasValue()) {
+                texEntry.gpuTexture->setSharedSampler(cachedSmpRes.value());
+            }
+        }
+    }
+
+    // 3. Update descriptor sets on all resident materials
+    rebindMaterialTextures(device);
 
     return Result<void>::success();
+}
+
+void AssetManager::setTextureBudgetConfig(const TextureBudgetConfig& config) noexcept {
+    budgetConfig_ = config;
+    updateMemoryMetrics();
+}
+
+TextureResidencyState AssetManager::getTextureResidencyState(AssetId id) const noexcept {
+    if (failedIds_.find(id) != failedIds_.end()) {
+        return TextureResidencyState::Failed;
+    }
+    auto it = textureEntries_.find(id);
+    if (it != textureEntries_.end()) {
+        return it->second.residencyState;
+    }
+    return TextureResidencyState::Unloaded;
+}
+
+void AssetManager::touchTexture(AssetId id, uint64_t frameIndex) noexcept {
+    auto it = textureEntries_.find(id);
+    if (it != textureEntries_.end()) {
+        it->second.lastUsedFrame = frameIndex;
+    }
+}
+
+void AssetManager::pinTexture(AssetId id, bool pinned) noexcept {
+    auto it = textureEntries_.find(id);
+    if (it != textureEntries_.end()) {
+        it->second.isPinned = pinned;
+    }
+}
+
+bool AssetManager::isTexturePinned(AssetId id) const noexcept {
+    auto it = textureEntries_.find(id);
+    if (it != textureEntries_.end()) {
+        return it->second.isPinned;
+    }
+    return false;
+}
+
+Result<bool> AssetManager::evictTexture(AssetId id, rhi::RhiDevice& device) noexcept {
+    auto it = textureEntries_.find(id);
+    if (it == textureEntries_.end()) {
+        return Result<bool>::success(false);
+    }
+    if (it->second.residencyState != TextureResidencyState::GpuResident) {
+        return Result<bool>::success(false);
+    }
+    if (it->second.isPinned) {
+        // Pinned textures are strictly immune from eviction
+        return Result<bool>::success(false);
+    }
+
+    // Ensure GPU in-flight safety before releasing GPU resources
+    device.waitIdle();
+
+    it->second.residencyState = TextureResidencyState::EvictionPending;
+    it->second.gpuTexture.reset();
+    it->second.residencyState = it->second.cpuImage.isValid() ? TextureResidencyState::CpuResident
+                                                              : TextureResidencyState::Unloaded;
+    it->second.residentMipLevels = 0;
+    it->second.estimatedGpuBytes = 0;
+    metrics_.evictionCountLifetime++;
+    updateMemoryMetrics();
+
+    // Rebind material descriptors referencing this texture to default fallbacks
+    rebindMaterialTextures(device);
+
+    return Result<bool>::success(true);
+}
+
+Result<uint32_t> AssetManager::enforceTextureBudget(rhi::RhiDevice& device,
+                                                    uint64_t currentFrame) noexcept {
+    (void)currentFrame;
+    if (metrics_.estimatedGpuMemoryBytes <= budgetConfig_.maxGpuMemoryBytes) {
+        return Result<uint32_t>::success(0);
+    }
+
+    struct EvictCandidate {
+        AssetId id;
+        uint64_t lastUsedFrame;
+        size_t bytes;
+    };
+    std::vector<EvictCandidate> candidates;
+    candidates.reserve(textureEntries_.size());
+    for (const auto& [id, entry] : textureEntries_) {
+        if (entry.residencyState == TextureResidencyState::GpuResident && !entry.isPinned) {
+            candidates.push_back({id, entry.lastUsedFrame, entry.estimatedGpuBytes});
+        }
+    }
+
+    if (candidates.empty()) {
+        return Result<uint32_t>::success(0);
+    }
+
+    // Sort by lastUsedFrame ascending (LRU: oldest frame evicted first)
+    std::sort(candidates.begin(), candidates.end(),
+              [](const EvictCandidate& a, const EvictCandidate& b) {
+                  return a.lastUsedFrame < b.lastUsedFrame;
+              });
+
+    device.waitIdle();
+
+    uint32_t evictedCount = 0;
+    for (const auto& cand : candidates) {
+        auto it = textureEntries_.find(cand.id);
+        if (it != textureEntries_.end() &&
+            it->second.residencyState == TextureResidencyState::GpuResident) {
+            it->second.residencyState = TextureResidencyState::EvictionPending;
+            it->second.gpuTexture.reset();
+            it->second.residencyState = it->second.cpuImage.isValid()
+                                            ? TextureResidencyState::CpuResident
+                                            : TextureResidencyState::Unloaded;
+            it->second.residentMipLevels = 0;
+            it->second.estimatedGpuBytes = 0;
+            metrics_.evictionCountLifetime++;
+            evictedCount++;
+
+            updateMemoryMetrics();
+            if (metrics_.estimatedGpuMemoryBytes <= budgetConfig_.targetGpuMemoryBytes) {
+                break;
+            }
+        }
+    }
+
+    if (evictedCount > 0) {
+        rebindMaterialTextures(device);
+    }
+
+    return Result<uint32_t>::success(evictedCount);
+}
+
+Result<void> AssetManager::promoteTextureMips(AssetId id, rhi::RhiDevice& device) noexcept {
+    auto it = textureEntries_.find(id);
+    if (it == textureEntries_.end() || it->second.gpuTexture == nullptr ||
+        !it->second.gpuTexture->isValid()) {
+        return Error{.code = ErrorCode::InvalidArgument,
+                     .message = "Texture not resident on GPU for mip promotion"};
+    }
+    const uint32_t mipLevels = it->second.gpuTexture->getMipLevels();
+    const float maxLod = static_cast<float>(mipLevels);
+    // Promote towards LOD 0 (full fidelity)
+    TextureSamplerDesc defaultAuthorDesc{};
+    const auto& caps = device.getCaps();
+    const float maxCapsAniso =
+        caps.features.samplerAnisotropy ? caps.limits.maxSamplerAnisotropy : 1.0F;
+    const AnisotropicFiltering effectiveAniso = caps.features.samplerAnisotropy
+                                                    ? qualitySettings_.anisotropicFiltering
+                                                    : AnisotropicFiltering::Off;
+    rhi::SamplerDesc smp =
+        toRhiSamplerDesc(defaultAuthorDesc, effectiveAniso, maxCapsAniso, 0.0F, maxLod);
+    auto cachedSmpRes = samplerCache_.getOrCreate(device, smp);
+    if (cachedSmpRes.hasValue()) {
+        it->second.gpuTexture->setSharedSampler(cachedSmpRes.value());
+        rebindMaterialTextures(device);
+    }
+    return Result<void>::success();
+}
+
+Result<void> AssetManager::demoteTextureMips(AssetId id, rhi::RhiDevice& device) noexcept {
+    auto it = textureEntries_.find(id);
+    if (it == textureEntries_.end() || it->second.gpuTexture == nullptr ||
+        !it->second.gpuTexture->isValid()) {
+        return Error{.code = ErrorCode::InvalidArgument,
+                     .message = "Texture not resident on GPU for mip demotion"};
+    }
+    const uint32_t mipLevels = it->second.gpuTexture->getMipLevels();
+    const float minLod = (mipLevels > 1) ? 1.0F : 0.0F;
+    const float maxLod = static_cast<float>(mipLevels);
+    // Demote towards coarse mips (clamped to at least LOD 1.0)
+    TextureSamplerDesc defaultAuthorDesc{};
+    const auto& caps = device.getCaps();
+    const float maxCapsAniso =
+        caps.features.samplerAnisotropy ? caps.limits.maxSamplerAnisotropy : 1.0F;
+    const AnisotropicFiltering effectiveAniso = caps.features.samplerAnisotropy
+                                                    ? qualitySettings_.anisotropicFiltering
+                                                    : AnisotropicFiltering::Off;
+    rhi::SamplerDesc smp =
+        toRhiSamplerDesc(defaultAuthorDesc, effectiveAniso, maxCapsAniso, minLod, maxLod);
+    auto cachedSmpRes = samplerCache_.getOrCreate(device, smp);
+    if (cachedSmpRes.hasValue()) {
+        it->second.gpuTexture->setSharedSampler(cachedSmpRes.value());
+        rebindMaterialTextures(device);
+    }
+    return Result<void>::success();
+}
+
+void AssetManager::updateMemoryMetrics() noexcept {
+    metrics_.estimatedGpuMemoryBytes = 0;
+    metrics_.estimatedCpuMemoryBytes = 0;
+    metrics_.residentTextureCount = 0;
+    metrics_.residentMipLevelsTotal = 0;
+
+    for (const auto& [id, entry] : textureEntries_) {
+        if (entry.cpuImage.isValid()) {
+            metrics_.estimatedCpuMemoryBytes += entry.cpuImage.sizeInBytes();
+        }
+        if (entry.residencyState == TextureResidencyState::GpuResident &&
+            entry.gpuTexture != nullptr && entry.gpuTexture->isValid()) {
+            metrics_.estimatedGpuMemoryBytes += entry.estimatedGpuBytes;
+            metrics_.residentTextureCount++;
+            metrics_.residentMipLevelsTotal += entry.residentMipLevels;
+        }
+    }
+
+    if (budgetConfig_.maxGpuMemoryBytes > 0) {
+        metrics_.budgetUsageRatio = static_cast<float>(metrics_.estimatedGpuMemoryBytes) /
+                                    static_cast<float>(budgetConfig_.maxGpuMemoryBytes);
+    } else {
+        metrics_.budgetUsageRatio = 0.0F;
+    }
+    metrics_.isUnderMemoryPressure =
+        (metrics_.budgetUsageRatio >= budgetConfig_.memoryPressureThreshold);
 }
 
 std::vector<AssetMetadata> AssetManager::getAllMetadata() const {
