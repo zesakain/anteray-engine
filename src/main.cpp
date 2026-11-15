@@ -157,7 +157,7 @@ int main(int argc, char* argv[]) {
             std::cout << "Architecture: Two-State Conductor over Shared World (C++20)\n";
             return 0;
         } else if (arg == "--help") {
-            std::cout << "Hikari 3D Game Engine\n";
+            std::cout << "Hikari Machine 3D Engine\n";
             std::cout << "Usage: hikari [options]\n\n";
             std::cout << "Options:\n";
             std::cout << "  --headless         Run continuous headless simulation without window\n";
@@ -177,7 +177,7 @@ int main(int argc, char* argv[]) {
         targetFrames = 60; // Default headless run limit for CI / automated runs
     }
 
-    ENG_LOG_INFO("Core", "=== Hikari Engine 0.1.0 Initializing ===");
+    ENG_LOG_INFO("Core", "=== Hikari Machine 0.1.0 Initializing ===");
 
     // 1. Core Job System
     JobSystemConfig jobConfig{.workerCount = 2, .maxJobs = 128};
@@ -203,7 +203,7 @@ int main(int argc, char* argv[]) {
         ENG_ASSERT(devRes.hasValue(), "Failed to create Null RHI device in headless mode");
         rhiDevice = std::move(devRes.value());
     } else {
-        auto winRes = platform->createWindow(platform::WindowDesc{.title = "Hikari Engine (C++20)",
+        auto winRes = platform->createWindow(platform::WindowDesc{.title = "Hikari Machine",
                                                                   .width = windowWidth,
                                                                   .height = windowHeight,
                                                                   .vulkan = true});

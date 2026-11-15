@@ -85,10 +85,10 @@ static void testExecutionAndValues() {
     TEST_CHECK(std::get<double>(res.value()) == 42.0);
 
     // String manipulation
-    res = engine.executeString("return 'Hikari' .. ' Engine'");
+    res = engine.executeString("return 'Hikari' .. ' Machine'");
     TEST_CHECK(res.hasValue());
     TEST_CHECK(std::holds_alternative<std::string>(res.value()));
-    TEST_CHECK(std::get<std::string>(res.value()) == "Hikari Engine");
+    TEST_CHECK(std::get<std::string>(res.value()) == "Hikari Machine");
 
     // Syntax error handling
     res = engine.executeString("return 10 + ");

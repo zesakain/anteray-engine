@@ -35,9 +35,9 @@ int testPrimitives() {
     TEST_CHECK(numVal.asInt() == 42);
     TEST_CHECK(numVal.asUInt64() == 42);
 
-    JsonValue strVal("Hikari Engine");
+    JsonValue strVal("Hikari Machine");
     TEST_CHECK(strVal.isString());
-    TEST_CHECK(strVal.asString() == "Hikari Engine");
+    TEST_CHECK(strVal.asString() == "Hikari Machine");
 
     return 0;
 }

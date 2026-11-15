@@ -29,7 +29,7 @@ struct StableIdComponent {
 /// @brief Descriptive header metadata embedded into the .hikari scene container.
 struct SceneMetadata {
     std::string name{"Untitled"};
-    std::string generator{"Hikari Engine 0.1.0"};
+    std::string generator{"Hikari Machine 0.1.0"};
     uint64_t timestamp{0};
 };
 

@@ -128,7 +128,7 @@ Result<std::unique_ptr<VulkanInstance>> VulkanInstance::create(bool enableValida
     VkApplicationInfo appInfo{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pNext = nullptr,
-        .pApplicationName = "Hikari Engine",
+        .pApplicationName = "Hikari Machine",
         .applicationVersion = VK_MAKE_VERSION(0, 1, 0),
         .pEngineName = "Hikari",
         .engineVersion = VK_MAKE_VERSION(0, 1, 0),

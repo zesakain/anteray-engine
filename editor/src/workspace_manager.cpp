@@ -773,7 +773,7 @@ struct WorkspaceManager::Impl {
         }
         if (ImGui::BeginPopupModal("About Hikari Editor", nullptr,
                                    ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextColored(ImVec4(0.38F, 0.74F, 0.98F, 1.0F), "Hikari Engine - Studio Editor");
+            ImGui::TextColored(ImVec4(0.38F, 0.74F, 0.98F, 1.0F), "Hikari Machine - Studio Editor");
             ImGui::Text("Architecture: Two-State Conductor over Single Shared World");
             ImGui::Text("Version: 0.1.0 (Milestone 1.5 Professional Experience)");
             ImGui::Separator();

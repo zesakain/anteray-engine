@@ -615,7 +615,7 @@ ContentBrowserController::createFile(std::string_view fileName, ContentFileTempl
         out << "  \"formatVersion\": 1,\n";
         out << "  \"metadata\": {\n";
         out << "    \"name\": \"" << sceneStem << "\",\n";
-        out << "    \"generator\": \"Hikari Engine\",\n";
+        out << "    \"generator\": \"Hikari Machine\",\n";
         out << "    \"timestamp\": 0\n";
         out << "  },\n";
         out << "  \"entities\": []\n";
