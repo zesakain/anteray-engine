@@ -49,6 +49,11 @@ struct StagedTextureItem {
     std::string errorMessage{};
 };
 
+struct StagedMeshItem {
+    std::string path{};
+    render::MeshData meshData{};
+};
+
 struct StagedEntityData {
     uint64_t stableId{0};
     std::string name{};
@@ -130,8 +135,13 @@ struct AsyncSceneLoader::Impl {
     std::atomic<bool> discoveryFinished{false};
     std::atomic<bool> allDecodingFinished{false};
     std::atomic<bool> discoveryRunning{false};
+    std::atomic<bool> backpressurePaused{false};
     std::atomic<uint32_t> activeDecodeWorkers{0};
+    static constexpr size_t kMaxStagedRamBytes = 128ULL * 1024ULL * 1024ULL;
+    static constexpr size_t kResumeStagedRamBytes = 64ULL * 1024ULL * 1024ULL;
+    static constexpr size_t kMaxUploadBytesPerTick = 8ULL * 1024ULL * 1024ULL;
     std::atomic<size_t> currentStagedRamBytes{0};
+    std::atomic<size_t> stagedTextureRamBytes{0};
     std::atomic<size_t> currentVramBytes{0};
     Duration totalGpuUploadDuration{};
 
@@ -155,6 +165,7 @@ struct AsyncSceneLoader::Impl {
     std::optional<render::GraphicsSettings> graphicsSettings{std::nullopt};
 
     std::vector<StagedEntityData> stagedEntities{};
+    std::deque<StagedMeshItem> pendingMeshRegistrations{};
     std::deque<StagedTextureItem> pendingTextureDecodes{};
     std::deque<StagedTextureItem> pendingTextureUploads{};
 
@@ -185,9 +196,11 @@ struct AsyncSceneLoader::Impl {
 
     void cancelLoading() {
         cancellationRequested.store(true, std::memory_order_release);
+        backpressurePaused.store(false, std::memory_order_release);
         state.store(AsyncLoadState::Cancelled, std::memory_order_release);
         std::lock_guard<std::mutex> lock(queueMutex);
         stagedEntities.clear();
+        pendingMeshRegistrations.clear();
         pendingTextureDecodes.clear();
         pendingTextureUploads.clear();
 
@@ -298,8 +311,9 @@ struct AsyncSceneLoader::Impl {
                 p.overallProgress = 0.10F;
             });
 
+            render::AssetManager stagingAssetManager;
             auto importRes =
-                render::GltfSceneImporter::importScene(path, stagingWorld, assetManager);
+                render::GltfSceneImporter::importScene(path, stagingWorld, &stagingAssetManager);
             if (!importRes.success) {
                 setFailure("glTF scene import failed: " + importRes.errorMessage);
                 return;
@@ -314,7 +328,9 @@ struct AsyncSceneLoader::Impl {
             return;
         }
 
-        // Import referenced glTF base files to register all meshes into assetManager
+        // Import referenced glTF base files into a worker-local staging AssetManager so the
+        // main thread's AssetManager is never mutated concurrently during active frame rendering.
+        render::AssetManager stagingAssetManager;
         for (const auto& gltfPath : referencedGltfFiles) {
             if (cancellationRequested.load(std::memory_order_acquire) ||
                 reqId != currentRequestId.load(std::memory_order_acquire)) {
@@ -323,7 +339,7 @@ struct AsyncSceneLoader::Impl {
             if (path.ends_with(".hikari")) {
                 world::World dummyGltfWorld;
                 (void)render::GltfSceneImporter::importScene(gltfPath, dummyGltfWorld,
-                                                             assetManager);
+                                                             &stagingAssetManager);
             }
         }
 
@@ -443,11 +459,6 @@ struct AsyncSceneLoader::Impl {
                     : (info.uri + colorSuffix);
 
             if (discoveredTextureKeys.insert(cacheKey).second) {
-                if (assetManager != nullptr &&
-                    assetManager->isLoaded(render::makeAssetIdFromPath(cacheKey))) {
-                    return;
-                }
-
                 StagedTextureItem item{};
                 item.cacheKey = cacheKey;
                 item.filePath = info.uri;
@@ -467,28 +478,38 @@ struct AsyncSceneLoader::Impl {
         uint32_t discoveredMeshes = 0;
         uint32_t discoveredMaterials = 0;
         size_t stagedMeshRam = 0;
+        std::vector<StagedMeshItem> stagedMeshes;
 
-        if (assetManager != nullptr) {
-            for (const auto& metaRec : assetManager->getAllMetadata()) {
-                if (metaRec.type == render::AssetType::Mesh) {
-                    discoveredMeshes++;
-                    const auto* meshData = assetManager->getMeshData(metaRec.id);
-                    if (meshData != nullptr) {
-                        discoveredMaterials += static_cast<uint32_t>(meshData->materials.size());
-                        stagedMeshRam += meshData->vertices.size() * sizeof(render::Vertex) +
-                                         meshData->indices.size() * sizeof(uint32_t);
-                        for (const auto& mat : meshData->materials) {
-                            addTexture(mat.baseColorTexture, true, false);
-                            addTexture(mat.metallicRoughnessTexture, false, true);
-                            addTexture(mat.normalTexture, false, true);
-                            addTexture(mat.occlusionTexture, false, true);
-                            addTexture(mat.emissiveTexture, true, true);
-                            addTexture(mat.clearcoat.texture, false, true);
-                            addTexture(mat.clearcoat.roughnessTexture, false, true);
-                            addTexture(mat.clearcoat.normalTexture, false, true);
-                        }
+        for (const auto& metaRec : stagingAssetManager.getAllMetadata()) {
+            if (metaRec.type == render::AssetType::Mesh) {
+                discoveredMeshes++;
+                const auto* meshData = stagingAssetManager.getMeshData(metaRec.id);
+                if (meshData != nullptr) {
+                    discoveredMaterials += static_cast<uint32_t>(meshData->materials.size());
+                    stagedMeshRam += meshData->vertices.size() * sizeof(render::Vertex) +
+                                     meshData->indices.size() * sizeof(uint32_t);
+                    for (const auto& mat : meshData->materials) {
+                        addTexture(mat.baseColorTexture, true, false);
+                        addTexture(mat.metallicRoughnessTexture, false, true);
+                        addTexture(mat.normalTexture, false, true);
+                        addTexture(mat.occlusionTexture, false, true);
+                        addTexture(mat.emissiveTexture, true, true);
+                        addTexture(mat.clearcoat.texture, false, true);
+                        addTexture(mat.clearcoat.roughnessTexture, false, true);
+                        addTexture(mat.clearcoat.normalTexture, false, true);
                     }
+                    stagedMeshes.push_back(StagedMeshItem{
+                        .path = metaRec.path,
+                        .meshData = *meshData,
+                    });
                 }
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            for (auto& sm : stagedMeshes) {
+                pendingMeshRegistrations.push_back(std::move(sm));
             }
         }
 
@@ -595,6 +616,14 @@ struct AsyncSceneLoader::Impl {
     void runTextureDecodeLoop(uint64_t reqId) {
         while (!cancellationRequested.load(std::memory_order_acquire) &&
                reqId == currentRequestId.load(std::memory_order_acquire)) {
+            if (jobSystem != nullptr && jobSystem->isRunning() &&
+                stagedTextureRamBytes.load(std::memory_order_acquire) >= kMaxStagedRamBytes) {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                if (!pendingTextureUploads.empty() && !pendingTextureDecodes.empty()) {
+                    backpressurePaused.store(true, std::memory_order_release);
+                    break;
+                }
+            }
             StagedTextureItem item{};
             {
                 std::lock_guard<std::mutex> lock(queueMutex);
@@ -618,6 +647,7 @@ struct AsyncSceneLoader::Impl {
                 item.decodedImage = std::move(decodeRes.value());
                 item.decodeFailed = false;
                 const size_t imgSize = item.decodedImage->pixels.size();
+                stagedTextureRamBytes.fetch_add(imgSize, std::memory_order_relaxed);
                 const size_t ram =
                     currentStagedRamBytes.fetch_add(imgSize, std::memory_order_relaxed) + imgSize;
                 {
@@ -657,11 +687,19 @@ struct AsyncSceneLoader::Impl {
         }
 
         if (activeDecodeWorkers.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-            telemetry.textureDecodeDuration = Timestamp::now() - decodeStartTime;
-            if (telemetry.textureDecodeDuration.asMicroseconds() == 0) {
-                telemetry.textureDecodeDuration = Duration::fromMicroseconds(100);
+            bool remainingDecodes = false;
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                remainingDecodes = !pendingTextureDecodes.empty();
             }
-            allDecodingFinished.store(true, std::memory_order_release);
+            if (!remainingDecodes || cancellationRequested.load(std::memory_order_acquire) ||
+                reqId != currentRequestId.load(std::memory_order_acquire)) {
+                telemetry.textureDecodeDuration = Timestamp::now() - decodeStartTime;
+                if (telemetry.textureDecodeDuration.asMicroseconds() == 0) {
+                    telemetry.textureDecodeDuration = Duration::fromMicroseconds(100);
+                }
+                allDecodingFinished.store(true, std::memory_order_release);
+            }
         }
     }
 
@@ -679,21 +717,41 @@ struct AsyncSceneLoader::Impl {
 
         const auto startTick = std::chrono::high_resolution_clock::now();
         const double budgetUs = static_cast<double>(budgetMs) * 1000.0;
+        size_t bytesUploadedThisTick = 0;
 
         if (assetManager != nullptr) {
             assetManager->beginBatchUpload();
         }
 
         while (!cancellationRequested.load(std::memory_order_acquire)) {
+            StagedMeshItem meshItem{};
+            bool hasMesh = false;
             StagedTextureItem texItem{};
             bool hasTex = false;
             {
                 std::lock_guard<std::mutex> lock(queueMutex);
-                if (!pendingTextureUploads.empty()) {
+                if (!pendingMeshRegistrations.empty()) {
+                    meshItem = std::move(pendingMeshRegistrations.front());
+                    pendingMeshRegistrations.pop_front();
+                    hasMesh = true;
+                } else if (!pendingTextureUploads.empty()) {
                     texItem = std::move(pendingTextureUploads.front());
                     pendingTextureUploads.pop_front();
                     hasTex = true;
                 }
+            }
+
+            if (hasMesh) {
+                if (assetManager != nullptr) {
+                    (void)assetManager->registerMesh(meshItem.path, std::move(meshItem.meshData));
+                }
+                const auto now = std::chrono::high_resolution_clock::now();
+                const double elapsedUs =
+                    std::chrono::duration<double, std::micro>(now - startTick).count();
+                if (elapsedUs >= budgetUs) {
+                    break;
+                }
+                continue;
             }
 
             if (hasTex && texItem.decodeFailed) {
@@ -703,7 +761,8 @@ struct AsyncSceneLoader::Impl {
                 }
             } else if (hasTex && texItem.decodedImage.has_value()) {
                 const size_t imgSize = texItem.decodedImage->pixels.size();
-                if (assetManager != nullptr) {
+                if (assetManager != nullptr &&
+                    !assetManager->isLoaded(render::makeAssetIdFromPath(texItem.cacheKey))) {
                     auto regRes = assetManager->registerTexture(texItem.cacheKey,
                                                                 std::move(*texItem.decodedImage));
                     if (regRes.hasValue()) {
@@ -711,6 +770,8 @@ struct AsyncSceneLoader::Impl {
                     }
                 }
                 currentStagedRamBytes.fetch_sub(imgSize, std::memory_order_relaxed);
+                stagedTextureRamBytes.fetch_sub(imgSize, std::memory_order_relaxed);
+                bytesUploadedThisTick += imgSize;
                 const size_t vramAdded = imgSize * 4 / 3;
                 const size_t vram =
                     currentVramBytes.fetch_add(vramAdded, std::memory_order_relaxed) + vramAdded;
@@ -740,8 +801,26 @@ struct AsyncSceneLoader::Impl {
             const auto now = std::chrono::high_resolution_clock::now();
             const double elapsedUs =
                 std::chrono::duration<double, std::micro>(now - startTick).count();
-            if (elapsedUs >= budgetUs) {
-                break; // Enforce frame time budget to maintain 60+ FPS UI responsiveness
+            if (elapsedUs >= budgetUs || bytesUploadedThisTick >= kMaxUploadBytesPerTick) {
+                break; // Enforce both frame time and upload byte budgets
+            }
+        }
+
+        if (backpressurePaused.load(std::memory_order_acquire) &&
+            stagedTextureRamBytes.load(std::memory_order_acquire) <= kResumeStagedRamBytes &&
+            activeDecodeWorkers.load(std::memory_order_acquire) == 0 &&
+            !cancellationRequested.load(std::memory_order_acquire)) {
+            bool hasPendingDecodes = false;
+            {
+                std::lock_guard<std::mutex> lock(queueMutex);
+                hasPendingDecodes = !pendingTextureDecodes.empty();
+            }
+            if (hasPendingDecodes) {
+                backpressurePaused.store(false, std::memory_order_release);
+                dispatchTextureDecodeJobs(currentRequestId.load(std::memory_order_acquire));
+            } else {
+                backpressurePaused.store(false, std::memory_order_release);
+                allDecodingFinished.store(true, std::memory_order_release);
             }
         }
 
@@ -991,6 +1070,8 @@ Result<uint64_t, Error> AsyncSceneLoader::startLoad(std::string_view filepath) {
     impl_->sceneName = std::filesystem::path(filepath).stem().string();
     impl_->loadStartTime = Timestamp::now();
     impl_->currentStagedRamBytes.store(0, std::memory_order_release);
+    impl_->stagedTextureRamBytes.store(0, std::memory_order_release);
+    impl_->backpressurePaused.store(false, std::memory_order_release);
     impl_->currentVramBytes.store(0, std::memory_order_release);
     impl_->totalGpuUploadDuration = Duration{};
 
