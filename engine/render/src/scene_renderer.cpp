@@ -19,6 +19,28 @@ namespace eng::render {
 
 namespace {
 
+struct DofPushConstants {
+    Vec2 texelSize;
+    float focusDistance;
+    float focalLengthMm;
+    float aperture;
+    float maxBlurRadius;
+    float zNear;
+    float zFar;
+};
+static_assert(sizeof(DofPushConstants) == 32, "DofPushConstants must be 32 bytes");
+
+struct MotionBlurPushConstants {
+    Vec2 texelSize;
+    float intensity;
+    int32_t sampleCount;
+    float maxVelocityPixels;
+    float zNear;
+    float zFar;
+    float pad0;
+};
+static_assert(sizeof(MotionBlurPushConstants) == 32, "MotionBlurPushConstants must be 32 bytes");
+
 struct BloomDownsamplePushConstants {
     Vec2 texelSize;
     float threshold;
@@ -42,7 +64,16 @@ struct ToneMappingPushConstants {
     float whiteBalance;
     float contrast;
     float saturation;
+    float lutIntensity;
+    float vignetteIntensity;
+    float vignetteSmoothness;
+    float vignetteRoundness;
+    float filmGrainIntensity;
+    uint32_t frameIndex;
+    float aspectRatio;
+    float pad0;
 };
+static_assert(sizeof(ToneMappingPushConstants) == 64, "ToneMappingPushConstants must be 64 bytes");
 
 rhi::TextureFormat selectHdrFormat(const rhi::RhiDevice& device) {
     const auto requiredUsage =
@@ -117,6 +148,31 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
         other.bloomUpTarget_[i] = {};
         other.bloomUpSets_[i] = {};
     }
+    postProcessTempTarget_[0] = other.postProcessTempTarget_[0];
+    postProcessTempTarget_[1] = other.postProcessTempTarget_[1];
+    dofFragmentShader_ = other.dofFragmentShader_;
+    motionBlurFragmentShader_ = other.motionBlurFragmentShader_;
+    dofSet_ = other.dofSet_;
+    motionBlurSet_ = other.motionBlurSet_;
+    dofPipelineLayout_ = other.dofPipelineLayout_;
+    motionBlurPipelineLayout_ = other.motionBlurPipelineLayout_;
+    dofPipeline_ = other.dofPipeline_;
+    motionBlurPipeline_ = other.motionBlurPipeline_;
+    defaultLutTexture_ = std::move(other.defaultLutTexture_);
+    customLutTexture_ = std::move(other.customLutTexture_);
+    loadedLutPath_ = std::move(other.loadedLutPath_);
+    adaptedLuminance_ = other.adaptedLuminance_;
+    adaptedExposure_ = other.adaptedExposure_;
+    other.postProcessTempTarget_[0] = {};
+    other.postProcessTempTarget_[1] = {};
+    other.dofFragmentShader_ = {};
+    other.motionBlurFragmentShader_ = {};
+    other.dofSet_ = {};
+    other.motionBlurSet_ = {};
+    other.dofPipelineLayout_ = {};
+    other.motionBlurPipelineLayout_ = {};
+    other.dofPipeline_ = {};
+    other.motionBlurPipeline_ = {};
 
     gtaoRawTarget_ = other.gtaoRawTarget_;
     gtaoFilteredTarget_ = other.gtaoFilteredTarget_;
@@ -364,6 +420,31 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
             other.bloomUpTarget_[i] = {};
             other.bloomUpSets_[i] = {};
         }
+        postProcessTempTarget_[0] = other.postProcessTempTarget_[0];
+        postProcessTempTarget_[1] = other.postProcessTempTarget_[1];
+        dofFragmentShader_ = other.dofFragmentShader_;
+        motionBlurFragmentShader_ = other.motionBlurFragmentShader_;
+        dofSet_ = other.dofSet_;
+        motionBlurSet_ = other.motionBlurSet_;
+        dofPipelineLayout_ = other.dofPipelineLayout_;
+        motionBlurPipelineLayout_ = other.motionBlurPipelineLayout_;
+        dofPipeline_ = other.dofPipeline_;
+        motionBlurPipeline_ = other.motionBlurPipeline_;
+        defaultLutTexture_ = std::move(other.defaultLutTexture_);
+        customLutTexture_ = std::move(other.customLutTexture_);
+        loadedLutPath_ = std::move(other.loadedLutPath_);
+        adaptedLuminance_ = other.adaptedLuminance_;
+        adaptedExposure_ = other.adaptedExposure_;
+        other.postProcessTempTarget_[0] = {};
+        other.postProcessTempTarget_[1] = {};
+        other.dofFragmentShader_ = {};
+        other.motionBlurFragmentShader_ = {};
+        other.dofSet_ = {};
+        other.motionBlurSet_ = {};
+        other.dofPipelineLayout_ = {};
+        other.motionBlurPipelineLayout_ = {};
+        other.dofPipeline_ = {};
+        other.motionBlurPipeline_ = {};
 
         postProcessSampler_ = other.postProcessSampler_;
         fullscreenVertexShader_ = other.fullscreenVertexShader_;
@@ -1261,12 +1342,6 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         return ppRes.error();
     }
 
-    auto ppTargetsRes = createPostProcessTargets(width_, height_);
-    if (!ppTargetsRes.hasValue()) {
-        shutdown();
-        return ppTargetsRes.error();
-    }
-
     // 9. Initialize Global Illumination (Milestone 11D) Resources
     auto giRes = initGiResources();
     if (!giRes.hasValue()) {
@@ -1293,6 +1368,12 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         return taaTargetsRes.error();
     }
 
+    auto ppTargetsRes = createPostProcessTargets(width_, height_);
+    if (!ppTargetsRes.hasValue()) {
+        shutdown();
+        return ppTargetsRes.error();
+    }
+
     settings_ = GraphicsSettings::createPreset(GraphicsQualityPreset::High);
     settings_ = settings_.validateAgainstCaps(device_->getCaps());
 
@@ -1314,6 +1395,14 @@ void SceneRenderer::shutdown() {
             device_->destroyGraphicsPipeline(toneMappingPipeline_);
             toneMappingPipeline_ = {};
         }
+        if (motionBlurPipeline_.isValid()) {
+            device_->destroyGraphicsPipeline(motionBlurPipeline_);
+            motionBlurPipeline_ = {};
+        }
+        if (dofPipeline_.isValid()) {
+            device_->destroyGraphicsPipeline(dofPipeline_);
+            dofPipeline_ = {};
+        }
         if (bloomUpPipeline_.isValid()) {
             device_->destroyGraphicsPipeline(bloomUpPipeline_);
             bloomUpPipeline_ = {};
@@ -1325,6 +1414,14 @@ void SceneRenderer::shutdown() {
         if (toneMappingPipelineLayout_.isValid()) {
             device_->destroyPipelineLayout(toneMappingPipelineLayout_);
             toneMappingPipelineLayout_ = {};
+        }
+        if (motionBlurPipelineLayout_.isValid()) {
+            device_->destroyPipelineLayout(motionBlurPipelineLayout_);
+            motionBlurPipelineLayout_ = {};
+        }
+        if (dofPipelineLayout_.isValid()) {
+            device_->destroyPipelineLayout(dofPipelineLayout_);
+            dofPipelineLayout_ = {};
         }
         if (bloomUpPipelineLayout_.isValid()) {
             device_->destroyPipelineLayout(bloomUpPipelineLayout_);
@@ -1343,6 +1440,8 @@ void SceneRenderer::shutdown() {
             for (auto& s : bloomUpSets_) {
                 s = {};
             }
+            dofSet_ = {};
+            motionBlurSet_ = {};
             toneMappingSet_ = {};
         }
         if (dualTextureSetLayout_.isValid()) {
@@ -1356,6 +1455,14 @@ void SceneRenderer::shutdown() {
         if (toneMappingFragmentShader_.isValid()) {
             device_->destroyShader(toneMappingFragmentShader_);
             toneMappingFragmentShader_ = {};
+        }
+        if (motionBlurFragmentShader_.isValid()) {
+            device_->destroyShader(motionBlurFragmentShader_);
+            motionBlurFragmentShader_ = {};
+        }
+        if (dofFragmentShader_.isValid()) {
+            device_->destroyShader(dofFragmentShader_);
+            dofFragmentShader_ = {};
         }
         if (bloomUpFragmentShader_.isValid()) {
             device_->destroyShader(bloomUpFragmentShader_);
@@ -1373,6 +1480,9 @@ void SceneRenderer::shutdown() {
             device_->destroySampler(postProcessSampler_);
             postProcessSampler_ = {};
         }
+        customLutTexture_.reset();
+        defaultLutTexture_.reset();
+        loadedLutPath_.clear();
         if (hdrPipeline_.isValid() && hdrPipeline_ != pipeline_) {
             device_->destroyGraphicsPipeline(hdrPipeline_);
         }
@@ -1603,11 +1713,6 @@ Result<void> SceneRenderer::resize(uint32_t width, uint32_t height) {
     }
     depthTarget_ = depthRes.value();
 
-    auto ppRes = createPostProcessTargets(width_, height_);
-    if (!ppRes.hasValue()) {
-        return ppRes.error();
-    }
-
     auto giTargetsRes = createGiTargets(width_, height_);
     if (!giTargetsRes.hasValue()) {
         return giTargetsRes.error();
@@ -1615,6 +1720,10 @@ Result<void> SceneRenderer::resize(uint32_t width, uint32_t height) {
     auto taaTargetsRes = createTaaTargets(width_, height_);
     if (!taaTargetsRes.hasValue()) {
         return taaTargetsRes.error();
+    }
+    auto ppRes = createPostProcessTargets(width_, height_);
+    if (!ppRes.hasValue()) {
+        return ppRes.error();
     }
     isHistoryValid_ = false;
     invalidateTaaHistory();
@@ -1696,18 +1805,7 @@ Result<void> SceneRenderer::applyGraphicsSettings(const GraphicsSettings& newSet
     }
 
     // 4. Synchronize post-processing runtime controls
-    postProcessSettings_.enabled = validated.postProcess.enabled;
-    postProcessSettings_.bloomEnabled = validated.postProcess.bloomEnabled;
-    postProcessSettings_.bloomIntensity = validated.postProcess.bloomIntensity;
-    postProcessSettings_.bloomThreshold = validated.postProcess.bloomThreshold;
-    postProcessSettings_.bloomKnee = validated.postProcess.bloomKnee;
-    postProcessSettings_.bloomFilterRadius = validated.postProcess.bloomFilterRadius;
-    postProcessSettings_.reinhardWhitePoint = validated.postProcess.reinhardWhitePoint;
-    postProcessSettings_.exposure = validated.postProcess.exposure;
-    postProcessSettings_.toneMapOp = validated.postProcess.toneMapOp;
-    postProcessSettings_.whiteBalance = validated.postProcess.whiteBalance;
-    postProcessSettings_.contrast = validated.postProcess.contrast;
-    postProcessSettings_.saturation = validated.postProcess.saturation;
+    setPostProcessSettings(validated.postProcess);
 
     if (settings_.lighting.timeOfDay != validated.lighting.timeOfDay) {
         switch (validated.lighting.timeOfDay) {
@@ -1839,6 +1937,9 @@ void SceneRenderer::buildRenderGraph() {
     const bool useTaa = isTaaEnabled() && hdrRawTarget_.isValid() && velocityTarget_.isValid() &&
                         taaPipeline_.isValid() && sharpenPipeline_.isValid();
     const bool useHdr = postProcessSettings_.enabled && hdrTarget_.isValid();
+    const bool useMotionBlur =
+        useHdr && postProcessSettings_.motionBlurEnabled && velocityTarget_.isValid();
+    const bool needsVelocity = (useTaa || useMotionBlur) && velocityPipeline_.isValid();
     const rhi::TextureHandle sceneColorTarget =
         useTaa ? hdrRawTarget_ : (useHdr ? hdrTarget_ : colorTarget_);
 
@@ -1861,11 +1962,11 @@ void SceneRenderer::buildRenderGraph() {
     bool hasPrevHistory = false;
     GraphTextureId finalHdrId{};
     bool hasFinalHdr = false;
+    if (needsVelocity && velocityTarget_.isValid()) {
+        velocityId = renderGraph_.importTexture("VelocityTarget", velocityTarget_);
+        hasVelocityTarget = true;
+    }
     if (useTaa) {
-        if (velocityTarget_.isValid()) {
-            velocityId = renderGraph_.importTexture("VelocityTarget", velocityTarget_);
-            hasVelocityTarget = true;
-        }
         const uint32_t currSlot = frameSlotIndex_ % 2;
         const uint32_t prevSlot = (frameSlotIndex_ + 1) % 2;
         if (hdrHistoryTarget_[currSlot].isValid()) {
@@ -2021,9 +2122,9 @@ void SceneRenderer::buildRenderGraph() {
     // 5. Main PBR Scene Pass
     renderGraph_.addPass(
         "MainPbrPass",
-        [hasShadowTarget, shadowId, hasLightBuf, lightBufId, hasColorTarget, colorId, hasDepthTarget,
-         depthId, hasDepthPrepass, hasGtao, gtaoFilteredId, hasSsgi, ssgiFilteredId, hasSsr,
-         ssrFilteredId](RenderPassBuilder& builder) {
+        [hasShadowTarget, shadowId, hasLightBuf, lightBufId, hasColorTarget, colorId,
+         hasDepthTarget, depthId, hasDepthPrepass, hasGtao, gtaoFilteredId, hasSsgi, ssgiFilteredId,
+         hasSsr, ssrFilteredId](RenderPassBuilder& builder) {
             if (hasShadowTarget) {
                 builder.readTexture(shadowId, rhi::TextureUsageFlags::Sampled);
             }
@@ -2052,8 +2153,8 @@ void SceneRenderer::buildRenderGraph() {
         },
         [this](rhi::RhiCommandList& cmdList) { recordMainPbrPass(cmdList); });
 
-    // 6. Velocity / Motion Vector Pass (Milestone 11H)
-    if (useTaa && hasVelocityTarget && hasDepthTarget) {
+    // 6. Velocity / Motion Vector Pass (Milestone 11H / 11I Motion Blur)
+    if (needsVelocity && hasVelocityTarget && hasDepthTarget) {
         renderGraph_.addPass(
             "VelocityPass",
             [depthId, velocityId](RenderPassBuilder& builder) {
@@ -3064,8 +3165,8 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         }
         const Vec2 jitterPixels = computeHaltonJitter(taaJitterPhase_, seqLen);
         currentViewProj_ =
-            viewProjection.withJitter(jitterPixels.x, jitterPixels.y,
-                                      static_cast<float>(width_), static_cast<float>(height_));
+            viewProjection.withJitter(jitterPixels.x, jitterPixels.y, static_cast<float>(width_),
+                                      static_cast<float>(height_));
         taaJitterPhase_ = (taaJitterPhase_ + 1) % seqLen;
     } else {
         currentViewProj_ = viewProjection;
@@ -3233,6 +3334,26 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         Vec4(settings_.lighting.ssrEnabled ? 1.0F : 0.0F, settings_.lighting.ssrIntensity,
              settings_.lighting.ssrRoughnessCutoff, settings_.lighting.ssrMaxDistance);
 
+    // Milestone 11I: Temporal luminance adaptation (Auto-Exposure)
+    if (postProcessSettings_.autoExposureEnabled) {
+        const auto lumaVec = [](const Vec4& c) -> float {
+            return (0.2126F * c.x + 0.7152F * c.y + 0.0722F * c.z) * std::max(0.0F, c.w);
+        };
+        float estSceneLuminance = lumaVec(Vec4(
+            lightingData.ambientColorAndShadowBias.x, lightingData.ambientColorAndShadowBias.y,
+            lightingData.ambientColorAndShadowBias.z, lightingData.cameraPosAndAmbientIntensity.w));
+        if (lightingData.dirLightActive != 0) {
+            estSceneLuminance += 0.25F * lumaVec(lightingData.dirLight.colorAndIntensity);
+        }
+        if (lightingData.iblParams.x > 0.0F) {
+            estSceneLuminance += 0.18F * std::max(0.0F, lightingData.iblParams.y);
+        }
+        for (uint32_t i = 0; i < lightingData.numPointLights && i < kMaxPointLights; ++i) {
+            estSceneLuminance += 0.05F * lumaVec(lightingData.pointLights[i].colorAndIntensity);
+        }
+        updateExposureAdaptation(std::max(1e-4F, estSceneLuminance), 1.0F / 60.0F);
+    }
+
     // Upload lighting data to GPU uniform buffer
     if (lightingUniformBuffer_.isValid()) {
         std::ignore =
@@ -3364,6 +3485,7 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     }
 
     updateTaaDescriptors();
+    updatePostProcessDescriptors();
 
     if (renderGraph_.isCompiled()) {
         auto execRes = renderGraph_.execute(device, cmdList);
@@ -3421,36 +3543,38 @@ Result<void> SceneRenderer::initGiResources() {
     }
     linearClampSampler_ = linRes.value();
 
-    // 2. Triple texture descriptor set layout (for temporal filter)
-    rhi::DescriptorSetLayoutDesc tripleDesc{
-        .bindings =
-            {
+    // 2. Triple texture descriptor set layout (for temporal filter & post-process)
+    if (!tripleTextureSetLayout_.isValid()) {
+        rhi::DescriptorSetLayoutDesc tripleDesc{
+            .bindings =
                 {
-                    .binding = 0,
-                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
-                    .descriptorCount = 1,
-                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                    {
+                        .binding = 0,
+                        .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                        .descriptorCount = 1,
+                        .stageFlags = rhi::ShaderStageFlags::Fragment,
+                    },
+                    {
+                        .binding = 1,
+                        .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                        .descriptorCount = 1,
+                        .stageFlags = rhi::ShaderStageFlags::Fragment,
+                    },
+                    {
+                        .binding = 2,
+                        .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                        .descriptorCount = 1,
+                        .stageFlags = rhi::ShaderStageFlags::Fragment,
+                    },
                 },
-                {
-                    .binding = 1,
-                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
-                    .descriptorCount = 1,
-                    .stageFlags = rhi::ShaderStageFlags::Fragment,
-                },
-                {
-                    .binding = 2,
-                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
-                    .descriptorCount = 1,
-                    .stageFlags = rhi::ShaderStageFlags::Fragment,
-                },
-            },
-        .debugName = "GiTripleTextureLayout",
-    };
-    auto tripleRes = device_->createDescriptorSetLayout(tripleDesc);
-    if (!tripleRes.hasValue()) {
-        return tripleRes.error();
+            .debugName = "GiTripleTextureLayout",
+        };
+        auto tripleRes = device_->createDescriptorSetLayout(tripleDesc);
+        if (!tripleRes.hasValue()) {
+            return tripleRes.error();
+        }
+        tripleTextureSetLayout_ = tripleRes.value();
     }
-    tripleTextureSetLayout_ = tripleRes.value();
 
     // 3. GI Descriptor Pool (max 16 sets, 32 image samplers)
     rhi::DescriptorPoolDesc poolDesc{
@@ -4888,6 +5012,7 @@ Result<void> SceneRenderer::createTaaTargets(uint32_t width, uint32_t height) {
     }
 
     updateTaaDescriptors();
+    updatePostProcessDescriptors();
     return Result<void>::success();
 }
 
@@ -4933,8 +5058,8 @@ void SceneRenderer::updateTaaDescriptors() {
             if (taaDescriptorSet_[i].isValid()) {
                 const uint32_t prevIdx = (i == 0) ? 1 : 0;
                 rhi::TextureHandle historyTex = hdrHistoryTarget_[prevIdx].isValid()
-                                                   ? hdrHistoryTarget_[prevIdx]
-                                                   : hdrRawTarget_;
+                                                    ? hdrHistoryTarget_[prevIdx]
+                                                    : hdrRawTarget_;
                 std::array<rhi::DescriptorWrite, 4> writes{
                     rhi::DescriptorWrite::makeCombinedImageSampler(0, hdrRawTarget_, linSamp),
                     rhi::DescriptorWrite::makeCombinedImageSampler(1, historyTex, linSamp),
@@ -4950,7 +5075,8 @@ void SceneRenderer::updateTaaDescriptors() {
         for (size_t i = 0; i < 2; ++i) {
             if (sharpenDescriptorSet_[i].isValid() && hdrHistoryTarget_[i].isValid()) {
                 std::array<rhi::DescriptorWrite, 1> writes{
-                    rhi::DescriptorWrite::makeCombinedImageSampler(0, hdrHistoryTarget_[i], linSamp),
+                    rhi::DescriptorWrite::makeCombinedImageSampler(0, hdrHistoryTarget_[i],
+                                                                   linSamp),
                 };
                 std::ignore = device_->updateDescriptorSet(sharpenDescriptorSet_[i], writes);
             }
@@ -5034,10 +5160,9 @@ void SceneRenderer::recordVelocityPass(rhi::RhiCommandList& cmdList) {
                 .curMvp = unjitteredViewProj_ * item.model,
                 .prevMvp = unjitteredPrevViewProj_ * item.prevModel,
             };
-            cmdList.pushConstants(
-                meshVelocityPipelineLayout_,
-                rhi::ShaderStageFlags::Vertex | rhi::ShaderStageFlags::Fragment, 0,
-                sizeof(MeshVelocityPushConstants), &mpc);
+            cmdList.pushConstants(meshVelocityPipelineLayout_,
+                                  rhi::ShaderStageFlags::Vertex | rhi::ShaderStageFlags::Fragment,
+                                  0, sizeof(MeshVelocityPushConstants), &mpc);
 
             cmdList.bindVertexBuffer(0, item.gpuMesh->getVertexBuffer(), 0);
             if (item.gpuMesh->getIndexBuffer().isValid() && item.gpuMesh->getIndexCount() > 0) {
@@ -5171,6 +5296,14 @@ Result<void> SceneRenderer::initPostProcessResources() {
     }
     postProcessSampler_ = sampRes.value();
 
+    // Default identity 3D LUT texture (256x16 unwrapped 16x16x16 identity)
+    auto defaultLutRes =
+        GpuTexture::create(*device_, createIdentityColorGradingLut(), false, &sampDesc);
+    if (!defaultLutRes.hasValue()) {
+        return defaultLutRes.error();
+    }
+    defaultLutTexture_ = std::move(defaultLutRes.value());
+
     // 2. Descriptor set layouts
     rhi::DescriptorSetLayoutDesc singleDesc{
         .bindings = {{
@@ -5211,12 +5344,44 @@ Result<void> SceneRenderer::initPostProcessResources() {
     }
     dualTextureSetLayout_ = dualRes.value();
 
-    // 3. Descriptor pool for 8 post-processing descriptor sets
+    if (!tripleTextureSetLayout_.isValid()) {
+        rhi::DescriptorSetLayoutDesc tripleDesc{
+            .bindings =
+                {
+                    {
+                        .binding = 0,
+                        .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                        .descriptorCount = 1,
+                        .stageFlags = rhi::ShaderStageFlags::Fragment,
+                    },
+                    {
+                        .binding = 1,
+                        .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                        .descriptorCount = 1,
+                        .stageFlags = rhi::ShaderStageFlags::Fragment,
+                    },
+                    {
+                        .binding = 2,
+                        .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                        .descriptorCount = 1,
+                        .stageFlags = rhi::ShaderStageFlags::Fragment,
+                    },
+                },
+            .debugName = "GiTripleTextureLayout",
+        };
+        auto tripleRes = device_->createDescriptorSetLayout(tripleDesc);
+        if (!tripleRes.hasValue()) {
+            return tripleRes.error();
+        }
+        tripleTextureSetLayout_ = tripleRes.value();
+    }
+
+    // 3. Descriptor pool for 12 post-processing descriptor sets
     rhi::DescriptorPoolDesc poolDesc{
-        .maxSets = 8,
+        .maxSets = 12,
         .poolSizes = {{
             .type = rhi::DescriptorType::CombinedImageSampler,
-            .count = 12,
+            .count = 24,
         }},
         .debugName = "PostProcessDescriptorPool",
     };
@@ -5244,8 +5409,22 @@ Result<void> SceneRenderer::initPostProcessResources() {
         bloomUpSets_[i] = setRes.value();
     }
 
-    auto tmSetRes =
+    auto dofSetRes =
         device_->allocateDescriptorSet(postProcessDescriptorPool_, dualTextureSetLayout_);
+    if (!dofSetRes.hasValue()) {
+        return dofSetRes.error();
+    }
+    dofSet_ = dofSetRes.value();
+
+    auto mbSetRes =
+        device_->allocateDescriptorSet(postProcessDescriptorPool_, tripleTextureSetLayout_);
+    if (!mbSetRes.hasValue()) {
+        return mbSetRes.error();
+    }
+    motionBlurSet_ = mbSetRes.value();
+
+    auto tmSetRes =
+        device_->allocateDescriptorSet(postProcessDescriptorPool_, tripleTextureSetLayout_);
     if (!tmSetRes.hasValue()) {
         return tmSetRes.error();
     }
@@ -5263,6 +5442,30 @@ Result<void> SceneRenderer::initPostProcessResources() {
         return fsVertRes.error();
     }
     fullscreenVertexShader_ = fsVertRes.value();
+
+    rhi::ShaderDesc dofFragDesc{
+        .stage = rhi::ShaderStageFlags::Fragment,
+        .spirvCode = kDofFragmentShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "DofFragmentShader",
+    };
+    auto dofFragRes = device_->createShader(dofFragDesc);
+    if (!dofFragRes.hasValue()) {
+        return dofFragRes.error();
+    }
+    dofFragmentShader_ = dofFragRes.value();
+
+    rhi::ShaderDesc mbFragDesc{
+        .stage = rhi::ShaderStageFlags::Fragment,
+        .spirvCode = kMotionBlurFragmentShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "MotionBlurFragmentShader",
+    };
+    auto mbFragRes = device_->createShader(mbFragDesc);
+    if (!mbFragRes.hasValue()) {
+        return mbFragRes.error();
+    }
+    motionBlurFragmentShader_ = mbFragRes.value();
 
     rhi::ShaderDesc bloomDownDesc{
         .stage = rhi::ShaderStageFlags::Fragment,
@@ -5301,6 +5504,38 @@ Result<void> SceneRenderer::initPostProcessResources() {
     toneMappingFragmentShader_ = tmRes.value();
 
     // 5. Pipeline layouts
+    rhi::PipelineLayoutDesc dofLayoutDesc{
+        .pushConstants = {{
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+            .offset = 0,
+            .size = sizeof(DofPushConstants),
+        }},
+        .descriptorSetLayoutHandles = {dualTextureSetLayout_},
+        .descriptorSetLayouts = {},
+        .debugName = "DofPipelineLayout",
+    };
+    auto dofLayoutRes = device_->createPipelineLayout(dofLayoutDesc);
+    if (!dofLayoutRes.hasValue()) {
+        return dofLayoutRes.error();
+    }
+    dofPipelineLayout_ = dofLayoutRes.value();
+
+    rhi::PipelineLayoutDesc mbLayoutDesc{
+        .pushConstants = {{
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+            .offset = 0,
+            .size = sizeof(MotionBlurPushConstants),
+        }},
+        .descriptorSetLayoutHandles = {tripleTextureSetLayout_},
+        .descriptorSetLayouts = {},
+        .debugName = "MotionBlurPipelineLayout",
+    };
+    auto mbLayoutRes = device_->createPipelineLayout(mbLayoutDesc);
+    if (!mbLayoutRes.hasValue()) {
+        return mbLayoutRes.error();
+    }
+    motionBlurPipelineLayout_ = mbLayoutRes.value();
+
     rhi::PipelineLayoutDesc downLayoutDesc{
         .pushConstants = {{
             .stageFlags = rhi::ShaderStageFlags::Fragment,
@@ -5339,7 +5574,7 @@ Result<void> SceneRenderer::initPostProcessResources() {
             .offset = 0,
             .size = sizeof(ToneMappingPushConstants),
         }},
-        .descriptorSetLayoutHandles = {dualTextureSetLayout_},
+        .descriptorSetLayoutHandles = {tripleTextureSetLayout_},
         .descriptorSetLayouts = {},
         .debugName = "ToneMappingPipelineLayout",
     };
@@ -5350,6 +5585,68 @@ Result<void> SceneRenderer::initPostProcessResources() {
     toneMappingPipelineLayout_ = tmLayoutRes.value();
 
     // 6. Graphics pipelines for fullscreen passes
+    rhi::GraphicsPipelineDesc dofPipeDesc{
+        .vertexShader = fullscreenVertexShader_,
+        .fragmentShader = dofFragmentShader_,
+        .vertexInput = {},
+        .topology = rhi::PrimitiveTopology::TriangleList,
+        .rasterization =
+            {
+                .polygonMode = rhi::PolygonMode::Fill,
+                .cullMode = rhi::CullMode::None,
+                .frontFace = rhi::FrontFace::CounterClockwise,
+            },
+        .depthStencil =
+            {
+                .depthTestEnable = false,
+                .depthWriteEnable = false,
+                .depthCompareOp = rhi::CompareOp::Always,
+            },
+        .colorBlendAttachments = {{
+            .blendEnable = false,
+            .colorWriteMask = rhi::ColorComponentFlags::All,
+        }},
+        .layout = dofPipelineLayout_,
+        .colorAttachmentFormats = {hdrFormat_},
+        .debugName = "DofGraphicsPipeline",
+    };
+    auto dofPipeRes = device_->createGraphicsPipeline(dofPipeDesc);
+    if (!dofPipeRes.hasValue()) {
+        return dofPipeRes.error();
+    }
+    dofPipeline_ = dofPipeRes.value();
+
+    rhi::GraphicsPipelineDesc mbPipeDesc{
+        .vertexShader = fullscreenVertexShader_,
+        .fragmentShader = motionBlurFragmentShader_,
+        .vertexInput = {},
+        .topology = rhi::PrimitiveTopology::TriangleList,
+        .rasterization =
+            {
+                .polygonMode = rhi::PolygonMode::Fill,
+                .cullMode = rhi::CullMode::None,
+                .frontFace = rhi::FrontFace::CounterClockwise,
+            },
+        .depthStencil =
+            {
+                .depthTestEnable = false,
+                .depthWriteEnable = false,
+                .depthCompareOp = rhi::CompareOp::Always,
+            },
+        .colorBlendAttachments = {{
+            .blendEnable = false,
+            .colorWriteMask = rhi::ColorComponentFlags::All,
+        }},
+        .layout = motionBlurPipelineLayout_,
+        .colorAttachmentFormats = {hdrFormat_},
+        .debugName = "MotionBlurGraphicsPipeline",
+    };
+    auto mbPipeRes = device_->createGraphicsPipeline(mbPipeDesc);
+    if (!mbPipeRes.hasValue()) {
+        return mbPipeRes.error();
+    }
+    motionBlurPipeline_ = mbPipeRes.value();
+
     rhi::GraphicsPipelineDesc downPipeDesc{
         .vertexShader = fullscreenVertexShader_,
         .fragmentShader = bloomDownFragmentShader_,
@@ -5470,6 +5767,23 @@ Result<void> SceneRenderer::createPostProcessTargets(uint32_t width, uint32_t he
     }
     hdrTarget_ = hdrRes.value();
 
+    // 1b. Intermediate HDR Targets for DoF and Motion Blur
+    rhi::TextureDesc dofTargetDesc = hdrDesc;
+    dofTargetDesc.debugName = "PostProcessDofTarget";
+    auto dofTargetRes = device_->createTexture(dofTargetDesc);
+    if (!dofTargetRes.hasValue()) {
+        return dofTargetRes.error();
+    }
+    postProcessTempTarget_[0] = dofTargetRes.value();
+
+    rhi::TextureDesc mbTargetDesc = hdrDesc;
+    mbTargetDesc.debugName = "PostProcessMotionBlurTarget";
+    auto mbTargetRes = device_->createTexture(mbTargetDesc);
+    if (!mbTargetRes.hasValue()) {
+        return mbTargetRes.error();
+    }
+    postProcessTempTarget_[1] = mbTargetRes.value();
+
     // 2. Bloom Downsample Pyramid Targets
     for (size_t i = 0; i < kBloomPyramidLevels; ++i) {
         uint32_t downW = std::max(1u, width >> (i + 1));
@@ -5525,11 +5839,40 @@ void SceneRenderer::updatePostProcessDescriptors() {
         return;
     }
 
+    const rhi::SamplerHandle depthSamp =
+        pointClampSampler_.isValid() ? pointClampSampler_ : postProcessSampler_;
+
+    const bool hasDof = postProcessSettings_.dofEnabled && dofPipeline_.isValid() &&
+                        postProcessTempTarget_[0].isValid() && depthTarget_.isValid();
+    const rhi::TextureHandle afterDofTex = hasDof ? postProcessTempTarget_[0] : hdrTarget_;
+
+    const bool hasMotionBlur =
+        postProcessSettings_.motionBlurEnabled && motionBlurPipeline_.isValid() &&
+        postProcessTempTarget_[1].isValid() && velocityTarget_.isValid() && depthTarget_.isValid();
+    const rhi::TextureHandle finalHdrTex = hasMotionBlur ? postProcessTempTarget_[1] : afterDofTex;
+
+    if (dofSet_.isValid() && depthTarget_.isValid()) {
+        std::array<rhi::DescriptorWrite, 2> writes{
+            rhi::DescriptorWrite::makeCombinedImageSampler(0, hdrTarget_, postProcessSampler_),
+            rhi::DescriptorWrite::makeCombinedImageSampler(1, depthTarget_, depthSamp),
+        };
+        std::ignore = device_->updateDescriptorSet(dofSet_, writes);
+    }
+
+    if (motionBlurSet_.isValid() && velocityTarget_.isValid() && depthTarget_.isValid()) {
+        std::array<rhi::DescriptorWrite, 3> writes{
+            rhi::DescriptorWrite::makeCombinedImageSampler(0, afterDofTex, postProcessSampler_),
+            rhi::DescriptorWrite::makeCombinedImageSampler(1, velocityTarget_, depthSamp),
+            rhi::DescriptorWrite::makeCombinedImageSampler(2, depthTarget_, depthSamp),
+        };
+        std::ignore = device_->updateDescriptorSet(motionBlurSet_, writes);
+    }
+
     for (size_t i = 0; i < kBloomPyramidLevels; ++i) {
         if (!bloomDownSets_[i].isValid()) {
             continue;
         }
-        rhi::TextureHandle srcTex = (i == 0) ? hdrTarget_ : bloomDownTarget_[i - 1];
+        rhi::TextureHandle srcTex = (i == 0) ? finalHdrTex : bloomDownTarget_[i - 1];
         if (srcTex.isValid()) {
             std::array<rhi::DescriptorWrite, 1> writes{
                 rhi::DescriptorWrite::makeCombinedImageSampler(0, srcTex, postProcessSampler_),
@@ -5555,11 +5898,18 @@ void SceneRenderer::updatePostProcessDescriptors() {
         }
     }
 
-    if (toneMappingSet_.isValid() && bloomUpTarget_[0].isValid()) {
-        std::array<rhi::DescriptorWrite, 2> writes{
-            rhi::DescriptorWrite::makeCombinedImageSampler(0, hdrTarget_, postProcessSampler_),
+    const rhi::TextureHandle lutTex =
+        (customLutTexture_ != nullptr && customLutTexture_->isValid())
+            ? customLutTexture_->getTexture()
+            : (defaultLutTexture_ != nullptr ? defaultLutTexture_->getTexture()
+                                             : rhi::TextureHandle{});
+
+    if (toneMappingSet_.isValid() && bloomUpTarget_[0].isValid() && lutTex.isValid()) {
+        std::array<rhi::DescriptorWrite, 3> writes{
+            rhi::DescriptorWrite::makeCombinedImageSampler(0, finalHdrTex, postProcessSampler_),
             rhi::DescriptorWrite::makeCombinedImageSampler(1, bloomUpTarget_[0],
                                                            postProcessSampler_),
+            rhi::DescriptorWrite::makeCombinedImageSampler(2, lutTex, postProcessSampler_),
         };
         std::ignore = device_->updateDescriptorSet(toneMappingSet_, writes);
     }
@@ -5570,6 +5920,12 @@ void SceneRenderer::destroyPostProcessTargets() {
         if (hdrTarget_.isValid()) {
             device_->destroyTexture(hdrTarget_);
             hdrTarget_ = {};
+        }
+        for (size_t i = 0; i < 2; ++i) {
+            if (postProcessTempTarget_[i].isValid()) {
+                device_->destroyTexture(postProcessTempTarget_[i]);
+                postProcessTempTarget_[i] = {};
+            }
         }
         for (size_t i = 0; i < kBloomPyramidLevels; ++i) {
             if (bloomDownTarget_[i].isValid()) {
@@ -5595,6 +5951,50 @@ void SceneRenderer::buildPostProcessGraph() {
 
     auto hdrId = postProcessGraph_.importTexture("HdrSceneTarget", hdrTarget_);
     auto ldrId = postProcessGraph_.importTexture("DisplayColorTarget", colorTarget_);
+    auto currentHdrId = hdrId;
+
+    const bool hasDof = postProcessSettings_.dofEnabled && dofPipeline_.isValid() &&
+                        postProcessTempTarget_[0].isValid() && depthTarget_.isValid();
+    const bool hasMotionBlur =
+        postProcessSettings_.motionBlurEnabled && motionBlurPipeline_.isValid() &&
+        postProcessTempTarget_[1].isValid() && velocityTarget_.isValid() && depthTarget_.isValid();
+
+    GraphTextureId depthId{};
+    if (hasDof || hasMotionBlur) {
+        depthId = postProcessGraph_.importTexture("PostProcessDepthTarget", depthTarget_);
+    }
+
+    if (hasDof) {
+        auto dofOutId =
+            postProcessGraph_.importTexture("PostProcessDofTarget", postProcessTempTarget_[0]);
+        postProcessGraph_.addPass(
+            "DofPass",
+            [currentHdrId, depthId, dofOutId](RenderPassBuilder& builder) {
+                builder.readTexture(currentHdrId, rhi::TextureUsageFlags::Sampled);
+                builder.readTexture(depthId, rhi::TextureUsageFlags::Sampled);
+                builder.writeTexture(dofOutId, rhi::TextureUsageFlags::ColorAttachment);
+            },
+            [this](rhi::RhiCommandList& cmdList) { recordDofPass(cmdList); });
+        currentHdrId = dofOutId;
+    }
+
+    if (hasMotionBlur) {
+        auto velId = postProcessGraph_.importTexture("PostProcessVelocityTarget", velocityTarget_);
+        auto mbOutId = postProcessGraph_.importTexture("PostProcessMotionBlurTarget",
+                                                       postProcessTempTarget_[1]);
+        postProcessGraph_.addPass(
+            "MotionBlurPass",
+            [currentHdrId, velId, depthId, mbOutId](RenderPassBuilder& builder) {
+                builder.readTexture(currentHdrId, rhi::TextureUsageFlags::Sampled);
+                builder.readTexture(velId, rhi::TextureUsageFlags::Sampled);
+                if (depthId.isValid()) {
+                    builder.readTexture(depthId, rhi::TextureUsageFlags::Sampled);
+                }
+                builder.writeTexture(mbOutId, rhi::TextureUsageFlags::ColorAttachment);
+            },
+            [this](rhi::RhiCommandList& cmdList) { recordMotionBlurPass(cmdList); });
+        currentHdrId = mbOutId;
+    }
 
     GraphTextureId bloomDownIds[kBloomPyramidLevels]{};
     GraphTextureId bloomUpIds[kBloomPyramidLevels - 1]{};
@@ -5618,7 +6018,7 @@ void SceneRenderer::buildPostProcessGraph() {
 
         // Bloom Downsample Passes
         for (size_t i = 0; i < kBloomPyramidLevels; ++i) {
-            auto srcId = (i == 0) ? hdrId : bloomDownIds[i - 1];
+            auto srcId = (i == 0) ? currentHdrId : bloomDownIds[i - 1];
             auto dstId = bloomDownIds[i];
             postProcessGraph_.addPass(
                 "BloomDownsample_" + std::to_string(i),
@@ -5653,8 +6053,8 @@ void SceneRenderer::buildPostProcessGraph() {
     if (toneMappingPipeline_.isValid()) {
         postProcessGraph_.addPass(
             "ToneMappingPass",
-            [hdrId, hasBloom, bloomUp0 = bloomUpIds[0], ldrId](RenderPassBuilder& builder) {
-                builder.readTexture(hdrId, rhi::TextureUsageFlags::Sampled);
+            [currentHdrId, hasBloom, bloomUp0 = bloomUpIds[0], ldrId](RenderPassBuilder& builder) {
+                builder.readTexture(currentHdrId, rhi::TextureUsageFlags::Sampled);
                 if (hasBloom && bloomUp0.isValid()) {
                     builder.readTexture(bloomUp0, rhi::TextureUsageFlags::Sampled);
                 }
@@ -5666,6 +6066,94 @@ void SceneRenderer::buildPostProcessGraph() {
     auto compileRes = postProcessGraph_.compile();
     if (!compileRes.hasValue()) {
         ENG_LOG_ERROR("SceneRenderer", "Failed to compile PostProcess RenderGraph");
+    }
+}
+
+void SceneRenderer::recordDofPass(rhi::RhiCommandList& cmdList) {
+    if (!dofPipeline_.isValid() || !dofSet_.isValid() || !postProcessTempTarget_[0].isValid()) {
+        return;
+    }
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 22, rhi::GpuTimestampStage::TopOfPipe);
+    }
+    rhi::RenderPassBeginInfo passInfo{
+        .colorTarget = postProcessTempTarget_[0],
+        .depthTarget = {},
+        .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
+        .clearDepth = 1.0F,
+        .clearTarget = true,
+        .clearDepthTarget = false,
+    };
+    cmdList.beginRenderPass(passInfo);
+    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
+    cmdList.setScissor(0, 0, width_, height_);
+    cmdList.bindPipeline(dofPipeline_);
+
+    const std::array<rhi::DescriptorSetHandle, 1> sets = {dofSet_};
+    cmdList.bindDescriptorSets(dofPipelineLayout_, 0, sets);
+
+    DofPushConstants pc{
+        .texelSize = Vec2(1.0F / static_cast<float>(std::max(1U, width_)),
+                          1.0F / static_cast<float>(std::max(1U, height_))),
+        .focusDistance = std::max(0.1F, postProcessSettings_.dofFocusDistance),
+        .focalLengthMm = std::max(1.0F, postProcessSettings_.dofFocalLength),
+        .aperture = std::max(0.7F, postProcessSettings_.dofAperture),
+        .maxBlurRadius = std::clamp(postProcessSettings_.dofMaxBlurRadius, 1.0F, 24.0F),
+        .zNear = 0.1F,
+        .zFar = 1000.0F,
+    };
+    cmdList.pushConstants(dofPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
+                          sizeof(DofPushConstants), &pc);
+    cmdList.draw(3, 1, 0, 0);
+    cmdList.endRenderPass();
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 23, rhi::GpuTimestampStage::BottomOfPipe);
+    }
+}
+
+void SceneRenderer::recordMotionBlurPass(rhi::RhiCommandList& cmdList) {
+    if (!motionBlurPipeline_.isValid() || !motionBlurSet_.isValid() ||
+        !postProcessTempTarget_[1].isValid()) {
+        return;
+    }
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 30, rhi::GpuTimestampStage::TopOfPipe);
+    }
+    rhi::RenderPassBeginInfo passInfo{
+        .colorTarget = postProcessTempTarget_[1],
+        .depthTarget = {},
+        .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
+        .clearDepth = 1.0F,
+        .clearTarget = true,
+        .clearDepthTarget = false,
+    };
+    cmdList.beginRenderPass(passInfo);
+    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
+    cmdList.setScissor(0, 0, width_, height_);
+    cmdList.bindPipeline(motionBlurPipeline_);
+
+    const std::array<rhi::DescriptorSetHandle, 1> sets = {motionBlurSet_};
+    cmdList.bindDescriptorSets(motionBlurPipelineLayout_, 0, sets);
+
+    MotionBlurPushConstants pc{
+        .texelSize = Vec2(1.0F / static_cast<float>(std::max(1U, width_)),
+                          1.0F / static_cast<float>(std::max(1U, height_))),
+        .intensity = std::clamp(postProcessSettings_.motionBlurIntensity, 0.0F, 2.0F),
+        .sampleCount =
+            static_cast<int32_t>(std::clamp(postProcessSettings_.motionBlurSamples, 4U, 16U)),
+        .maxVelocityPixels = 32.0F,
+        .zNear = 0.1F,
+        .zFar = 1000.0F,
+        .pad0 = 0.0F,
+    };
+    cmdList.pushConstants(motionBlurPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
+                          sizeof(MotionBlurPushConstants), &pc);
+    cmdList.draw(3, 1, 0, 0);
+    cmdList.endRenderPass();
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 31, rhi::GpuTimestampStage::BottomOfPipe);
     }
 }
 
@@ -5772,8 +6260,26 @@ void SceneRenderer::recordToneMappingPass(rhi::RhiCommandList& cmdList) {
     const std::array<rhi::DescriptorSetHandle, 1> tmSets = {toneMappingSet_};
     cmdList.bindDescriptorSets(toneMappingPipelineLayout_, 0, tmSets);
 
+    const float compGain = std::exp2(postProcessSettings_.exposureCompensation);
+    const float effectiveExposure = postProcessSettings_.autoExposureEnabled
+                                        ? (adaptedExposure_ * compGain)
+                                        : (postProcessSettings_.exposure * compGain);
+
+    const float lutStrength = postProcessSettings_.lutEnabled
+                                  ? std::clamp(postProcessSettings_.lutIntensity, 0.0F, 1.0F)
+                                  : 0.0F;
+    const float vigStrength = postProcessSettings_.vignetteEnabled
+                                  ? std::clamp(postProcessSettings_.vignetteIntensity, 0.0F, 1.0F)
+                                  : 0.0F;
+    const float grainStrength =
+        postProcessSettings_.filmGrainEnabled
+            ? std::clamp(postProcessSettings_.filmGrainIntensity, 0.0F, 0.25F)
+            : 0.0F;
+    const float aspectRatio =
+        (height_ > 0) ? (static_cast<float>(width_) / static_cast<float>(height_)) : 1.0F;
+
     ToneMappingPushConstants pc{
-        .exposure = postProcessSettings_.exposure,
+        .exposure = effectiveExposure,
         .toneMapOp = static_cast<int32_t>(postProcessSettings_.toneMapOp),
         .bloomIntensity =
             postProcessSettings_.bloomEnabled ? postProcessSettings_.bloomIntensity : 0.0F,
@@ -5782,6 +6288,14 @@ void SceneRenderer::recordToneMappingPass(rhi::RhiCommandList& cmdList) {
         .whiteBalance = postProcessSettings_.whiteBalance,
         .contrast = postProcessSettings_.contrast,
         .saturation = postProcessSettings_.saturation,
+        .lutIntensity = lutStrength,
+        .vignetteIntensity = vigStrength,
+        .vignetteSmoothness = std::max(0.05F, postProcessSettings_.vignetteSmoothness),
+        .vignetteRoundness = std::clamp(postProcessSettings_.vignetteRoundness, 0.0F, 1.0F),
+        .filmGrainIntensity = grainStrength,
+        .frameIndex = giFrameIndex_ % 1024U,
+        .aspectRatio = aspectRatio,
+        .pad0 = 0.0F,
     };
     cmdList.pushConstants(toneMappingPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
                           sizeof(ToneMappingPushConstants), &pc);
@@ -5814,6 +6328,152 @@ void SceneRenderer::renderPostProcess(rhi::RhiCommandList& cmdList) {
     }
 }
 
+void SceneRenderer::setPostProcessSettings(const PostProcessSettings& settings) noexcept {
+    const bool graphDirty = (postProcessSettings_.enabled != settings.enabled) ||
+                            (postProcessSettings_.bloomEnabled != settings.bloomEnabled) ||
+                            (postProcessSettings_.dofEnabled != settings.dofEnabled) ||
+                            (postProcessSettings_.motionBlurEnabled != settings.motionBlurEnabled);
+    const bool mainGraphDirty =
+        (postProcessSettings_.enabled != settings.enabled) ||
+        (postProcessSettings_.motionBlurEnabled != settings.motionBlurEnabled);
+    const bool lutPathChanged = (loadedLutPath_ != settings.lutFilePath);
+
+    postProcessSettings_ = settings;
+
+    if (device_ != nullptr && lutPathChanged) {
+        if (settings.lutFilePath.empty()) {
+            clearColorGradingLut();
+        } else {
+            auto res = loadColorGradingLutFromFile(settings.lutFilePath);
+            if (!res.hasValue()) {
+                ENG_LOG_WARN("SceneRenderer",
+                             "Failed to load Color Grading LUT: " + settings.lutFilePath + " (" +
+                                 std::string(res.error().message) + ")");
+            }
+        }
+    }
+
+    if (mainGraphDirty) {
+        renderGraph_.reset();
+    }
+    if (graphDirty) {
+        updatePostProcessDescriptors();
+        postProcessGraph_.reset();
+    }
+}
+
+ImageData SceneRenderer::createIdentityColorGradingLut() {
+    constexpr uint32_t kLutSize = 16;
+    constexpr uint32_t kWidth = kLutSize * kLutSize; // 256
+    constexpr uint32_t kHeight = kLutSize;           // 16
+
+    ImageData img{};
+    img.width = kWidth;
+    img.height = kHeight;
+    img.channels = 4;
+    img.format = rhi::TextureFormat::RGBA8_UNORM;
+    img.pixels.resize(static_cast<size_t>(kWidth) * kHeight * 4U);
+
+    for (uint32_t y = 0; y < kHeight; ++y) {
+        const uint8_t gByte = static_cast<uint8_t>((y * 255U + 7U) / 15U);
+        for (uint32_t bSlice = 0; bSlice < kLutSize; ++bSlice) {
+            const uint8_t bByte = static_cast<uint8_t>((bSlice * 255U + 7U) / 15U);
+            for (uint32_t rIdx = 0; rIdx < kLutSize; ++rIdx) {
+                const uint8_t rByte = static_cast<uint8_t>((rIdx * 255U + 7U) / 15U);
+                const uint32_t x = bSlice * kLutSize + rIdx;
+                const size_t offset = (static_cast<size_t>(y) * kWidth + x) * 4U;
+                img.pixels[offset + 0] = rByte;
+                img.pixels[offset + 1] = gByte;
+                img.pixels[offset + 2] = bByte;
+                img.pixels[offset + 3] = 255U;
+            }
+        }
+    }
+    return img;
+}
+
+Result<void> SceneRenderer::loadColorGradingLut(const ImageData& lutImage) {
+    if (device_ == nullptr) {
+        return Error{.code = ErrorCode::InvalidState, .message = "Device not initialized"};
+    }
+    if (!lutImage.isValid() || lutImage.width != 256U || lutImage.height != 16U ||
+        lutImage.channels != 4U) {
+        return Error{.code = ErrorCode::InvalidArgument,
+                     .message = "Color grading LUT must be a 256x16 RGBA8 unwrapped 16^3 strip"};
+    }
+
+    ImageData linearLut = lutImage;
+    linearLut.format = rhi::TextureFormat::RGBA8_UNORM;
+
+    rhi::SamplerDesc sampDesc{
+        .minFilter = rhi::Filter::Linear,
+        .magFilter = rhi::Filter::Linear,
+        .mipmapMode = rhi::Filter::Linear,
+        .addressU = rhi::SamplerAddressMode::ClampToEdge,
+        .addressV = rhi::SamplerAddressMode::ClampToEdge,
+        .addressW = rhi::SamplerAddressMode::ClampToEdge,
+        .debugName = "CustomLutLinearSampler",
+    };
+    auto texRes = GpuTexture::create(*device_, linearLut, false, &sampDesc);
+    if (!texRes.hasValue()) {
+        return texRes.error();
+    }
+    customLutTexture_ = std::move(texRes.value());
+    updatePostProcessDescriptors();
+    return Result<void>::success();
+}
+
+Result<void> SceneRenderer::loadColorGradingLutFromFile(std::string_view filePath) {
+    if (filePath.empty()) {
+        clearColorGradingLut();
+        return Result<void>::success();
+    }
+    auto imgRes = ImageDecoder::decodeFromFile(filePath, 4, false);
+    if (!imgRes.hasValue()) {
+        return imgRes.error();
+    }
+    auto loadRes = loadColorGradingLut(imgRes.value());
+    if (!loadRes.hasValue()) {
+        return loadRes.error();
+    }
+    loadedLutPath_ = std::string(filePath);
+    postProcessSettings_.lutFilePath = loadedLutPath_;
+    return Result<void>::success();
+}
+
+void SceneRenderer::clearColorGradingLut() noexcept {
+    customLutTexture_.reset();
+    loadedLutPath_.clear();
+    updatePostProcessDescriptors();
+}
+
+void SceneRenderer::updateExposureAdaptation(float sceneAverageLuminance,
+                                             float deltaSeconds) noexcept {
+    const float validLuma = (std::isfinite(sceneAverageLuminance) && sceneAverageLuminance > 1e-4F)
+                                ? sceneAverageLuminance
+                                : 1e-4F;
+    const float minEv =
+        std::min(postProcessSettings_.autoExposureMinEv, postProcessSettings_.autoExposureMaxEv);
+    const float maxEv =
+        std::max(postProcessSettings_.autoExposureMinEv, postProcessSettings_.autoExposureMaxEv);
+    const float minLuma = 0.18F * std::exp2(minEv);
+    const float maxLuma = 0.18F * std::exp2(maxEv);
+    const float clampedTargetLuma = std::clamp(validLuma, minLuma, maxLuma);
+
+    if (deltaSeconds <= 0.0F || !std::isfinite(deltaSeconds)) {
+        adaptedLuminance_ = clampedTargetLuma;
+    } else {
+        const float speed = (clampedTargetLuma > adaptedLuminance_)
+                                ? std::max(0.05F, postProcessSettings_.autoExposureSpeedUp)
+                                : std::max(0.05F, postProcessSettings_.autoExposureSpeedDown);
+        const float alpha = 1.0F - std::exp(-deltaSeconds * speed);
+        adaptedLuminance_ = adaptedLuminance_ +
+                            (clampedTargetLuma - adaptedLuminance_) * std::clamp(alpha, 0.0F, 1.0F);
+    }
+    adaptedLuminance_ = std::clamp(adaptedLuminance_, minLuma, maxLuma);
+    adaptedExposure_ = 0.18F / std::max(1e-4F, adaptedLuminance_);
+}
+
 void SceneRenderer::updateGpuTimings(rhi::RhiDevice& device) {
     if (!device.getCaps().features.timestampQueries) {
         gpuPassTimings_.valid = false;
@@ -5832,10 +6492,22 @@ void SceneRenderer::updateGpuTimings(rhi::RhiDevice& device) {
             device.getQueryTimeMs(readbackBase + 12, readbackBase + 13).value_or(0.0F);
         gpuPassTimings_.mainPbrPassMs =
             device.getQueryTimeMs(readbackBase + 4, readbackBase + 5).value_or(0.0F);
+        gpuPassTimings_.dofPassMs =
+            postProcessSettings_.dofEnabled
+                ? device.getQueryTimeMs(readbackBase + 22, readbackBase + 23).value_or(0.0F)
+                : 0.0F;
+        gpuPassTimings_.motionBlurPassMs =
+            postProcessSettings_.motionBlurEnabled
+                ? device.getQueryTimeMs(readbackBase + 30, readbackBase + 31).value_or(0.0F)
+                : 0.0F;
         gpuPassTimings_.bloomDownsampleMs =
-            device.getQueryTimeMs(readbackBase + 6, readbackBase + 7).value_or(0.0F);
+            postProcessSettings_.bloomEnabled
+                ? device.getQueryTimeMs(readbackBase + 6, readbackBase + 7).value_or(0.0F)
+                : 0.0F;
         gpuPassTimings_.bloomUpsampleMs =
-            device.getQueryTimeMs(readbackBase + 8, readbackBase + 9).value_or(0.0F);
+            postProcessSettings_.bloomEnabled
+                ? device.getQueryTimeMs(readbackBase + 8, readbackBase + 9).value_or(0.0F)
+                : 0.0F;
         gpuPassTimings_.toneMappingMs =
             device.getQueryTimeMs(readbackBase + 10, readbackBase + 11).value_or(0.0F);
         gpuPassTimings_.gtaoPassMs =
@@ -5854,6 +6526,10 @@ void SceneRenderer::updateGpuTimings(rhi::RhiDevice& device) {
             device.getQueryTimeMs(readbackBase + 28, readbackBase + 29).value_or(0.0F);
         gpuPassTimings_.totalGiMs = gpuPassTimings_.gtaoPassMs + gpuPassTimings_.ssgiPassMs +
                                     gpuPassTimings_.ssrPassMs + gpuPassTimings_.temporalDenoiseMs;
+        gpuPassTimings_.totalPostProcessMs =
+            gpuPassTimings_.dofPassMs + gpuPassTimings_.motionBlurPassMs +
+            gpuPassTimings_.bloomDownsampleMs + gpuPassTimings_.bloomUpsampleMs +
+            gpuPassTimings_.toneMappingMs;
         gpuPassTimings_.valid = true;
     }
 

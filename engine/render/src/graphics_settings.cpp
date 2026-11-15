@@ -183,6 +183,11 @@ GraphicsSettings GraphicsSettings::createPreset(GraphicsQualityPreset preset) no
         s.postProcess.bloomIntensity = 0.05F;
         s.postProcess.bloomThreshold = 0.9F;
         s.postProcess.toneMapOp = ToneMapOperator::AgX;
+        s.postProcess.vignetteEnabled = true;
+        s.postProcess.vignetteIntensity = 0.20F;
+        s.postProcess.vignetteSmoothness = 0.50F;
+        s.postProcess.filmGrainEnabled = true;
+        s.postProcess.filmGrainIntensity = 0.02F;
         break;
 
     case GraphicsQualityPreset::Custom:
@@ -327,16 +332,8 @@ GraphicsSettings::computeChangeSeverity(const GraphicsSettings& other) const noe
 
 bool GraphicsSettings::operator==(const GraphicsSettings& other) const noexcept {
     return quality == other.quality && lighting == other.lighting && shadows == other.shadows &&
-           postProcess.enabled == other.postProcess.enabled &&
-           postProcess.exposure == other.postProcess.exposure &&
-           postProcess.toneMapOp == other.postProcess.toneMapOp &&
-           postProcess.bloomEnabled == other.postProcess.bloomEnabled &&
-           postProcess.bloomThreshold == other.postProcess.bloomThreshold &&
-           postProcess.bloomKnee == other.postProcess.bloomKnee &&
-           postProcess.reinhardWhitePoint == other.postProcess.reinhardWhitePoint &&
-           postProcess.bloomIntensity == other.postProcess.bloomIntensity &&
-           postProcess.bloomFilterRadius == other.postProcess.bloomFilterRadius &&
-           performance == other.performance && debug == other.debug;
+           postProcess == other.postProcess && performance == other.performance &&
+           debug == other.debug;
 }
 
 } // namespace eng::render

@@ -95,6 +95,13 @@ struct GpuPassTimings {
     float taaPassMs{0.0F};
     /// Duration of contrast-adaptive sharpening pass (milliseconds).
     float sharpenPassMs{0.0F};
+    /// Duration of Depth of Field (DoF) pass (milliseconds).
+    float dofPassMs{0.0F};
+    /// Duration of directional Motion Blur pass (milliseconds).
+    float motionBlurPassMs{0.0F};
+    /// Combined total duration of all post-processing passes (DoF, Motion Blur, Bloom, ToneMap)
+    /// (milliseconds).
+    float totalPostProcessMs{0.0F};
     /// Combined total duration of all Global Illumination passes (milliseconds).
     float totalGiMs{0.0F};
     /// Whether these timings reflect valid GPU query results from the preceding frame.
@@ -213,18 +220,51 @@ public:
     [[nodiscard]] const PostProcessSettings& getPostProcessSettings() const noexcept {
         return postProcessSettings_;
     }
-    void setPostProcessSettings(const PostProcessSettings& settings) noexcept {
-        postProcessSettings_ = settings;
-        buildPostProcessGraph();
-        buildRenderGraph();
-    }
+    void setPostProcessSettings(const PostProcessSettings& settings) noexcept;
     [[nodiscard]] bool isPostProcessingEnabled() const noexcept {
         return postProcessSettings_.enabled;
     }
     void setPostProcessingEnabled(bool enabled) noexcept {
         postProcessSettings_.enabled = enabled;
+        updatePostProcessDescriptors();
         buildPostProcessGraph();
         buildRenderGraph();
+    }
+
+    /// @brief Generates a neutral identity 256x16 RGBA8 unwrapped 3D LUT strip (16x16x16).
+    [[nodiscard]] static ImageData createIdentityColorGradingLut();
+
+    /// @brief Uploads a 256x16 RGBA8 color grading LUT strip texture to the GPU.
+    [[nodiscard]] Result<void> loadColorGradingLut(const ImageData& lutImage);
+
+    /// @brief Loads a 256x16 RGBA8 color grading LUT strip from disk and binds it for
+    /// post-processing.
+    [[nodiscard]] Result<void> loadColorGradingLutFromFile(std::string_view filePath);
+
+    /// @brief Clears any custom color grading LUT and reverts to the neutral identity LUT.
+    void clearColorGradingLut() noexcept;
+
+    /// @brief Returns true if a custom color grading LUT texture is currently loaded.
+    [[nodiscard]] bool hasCustomColorGradingLut() const noexcept {
+        return customLutTexture_ != nullptr && customLutTexture_->isValid();
+    }
+
+    /// @brief Updates temporal exposure adaptation from measured or estimated scene luminance.
+    ///
+    /// Cost: Zero heap allocation, O(1) scalar math. Safe in hot path.
+    /// @param sceneLuminance Average logarithmic/photometric scene luminance (> 0).
+    /// @param dtSeconds Frame delta time in seconds.
+    void updateExposureAdaptation(float sceneLuminance, float dtSeconds) noexcept;
+
+    /// @brief Returns the current temporally-adapted exposure multiplier (including EV
+    /// compensation).
+    [[nodiscard]] float getAdaptedExposure() const noexcept { return adaptedExposure_; }
+
+    /// @brief Resets temporal exposure adaptation state to the current manual exposure baseline.
+    void resetExposureAdaptation() noexcept {
+        adaptedLuminance_ = 0.18F;
+        adaptedExposure_ =
+            postProcessSettings_.exposure * std::exp2(postProcessSettings_.exposureCompensation);
     }
 
     [[nodiscard]] const GpuEnvironmentMap& getEnvironmentMap() const noexcept { return envMap_; }
@@ -457,6 +497,8 @@ private:
     void recordSsrTemporalFilterPass(rhi::RhiCommandList& cmdList);
     void recordHistoryCopyPass(rhi::RhiCommandList& cmdList);
     void recordMainPbrPass(rhi::RhiCommandList& cmdList);
+    void recordDofPass(rhi::RhiCommandList& cmdList);
+    void recordMotionBlurPass(rhi::RhiCommandList& cmdList);
     void recordBloomDownsamplePass(rhi::RhiCommandList& cmdList, size_t level);
     void recordBloomUpsamplePass(rhi::RhiCommandList& cmdList, size_t step, size_t targetLevel);
     void recordToneMappingPass(rhi::RhiCommandList& cmdList);
@@ -492,27 +534,41 @@ private:
 
     // HDR and Post-Processing Resources
     rhi::TextureHandle hdrTarget_{};
+    rhi::TextureHandle postProcessTempTarget_[2]{};
     rhi::TextureFormat hdrFormat_{rhi::TextureFormat::RGBA16_FLOAT};
     PostProcessSettings postProcessSettings_{};
     rhi::TextureHandle bloomDownTarget_[kBloomPyramidLevels]{};
     rhi::TextureHandle bloomUpTarget_[kBloomPyramidLevels - 1]{};
     rhi::SamplerHandle postProcessSampler_{};
     rhi::ShaderHandle fullscreenVertexShader_{};
+    rhi::ShaderHandle dofFragmentShader_{};
+    rhi::ShaderHandle motionBlurFragmentShader_{};
     rhi::ShaderHandle bloomDownFragmentShader_{};
     rhi::ShaderHandle bloomUpFragmentShader_{};
     rhi::ShaderHandle toneMappingFragmentShader_{};
     rhi::DescriptorSetLayoutHandle singleTextureSetLayout_{};
     rhi::DescriptorSetLayoutHandle dualTextureSetLayout_{};
     rhi::DescriptorPoolHandle postProcessDescriptorPool_{};
+    rhi::DescriptorSetHandle dofSet_{};
+    rhi::DescriptorSetHandle motionBlurSet_{};
     rhi::DescriptorSetHandle bloomDownSets_[kBloomPyramidLevels]{};
     rhi::DescriptorSetHandle bloomUpSets_[kBloomPyramidLevels - 1]{};
     rhi::DescriptorSetHandle toneMappingSet_{};
+    rhi::PipelineLayoutHandle dofPipelineLayout_{};
+    rhi::PipelineLayoutHandle motionBlurPipelineLayout_{};
     rhi::PipelineLayoutHandle bloomDownPipelineLayout_{};
     rhi::PipelineLayoutHandle bloomUpPipelineLayout_{};
     rhi::PipelineLayoutHandle toneMappingPipelineLayout_{};
+    rhi::PipelineHandle dofPipeline_{};
+    rhi::PipelineHandle motionBlurPipeline_{};
     rhi::PipelineHandle bloomDownPipeline_{};
     rhi::PipelineHandle bloomUpPipeline_{};
     rhi::PipelineHandle toneMappingPipeline_{};
+    std::unique_ptr<GpuTexture> defaultLutTexture_{};
+    std::unique_ptr<GpuTexture> customLutTexture_{};
+    std::string loadedLutPath_{};
+    float adaptedLuminance_{0.18F};
+    float adaptedExposure_{1.0F};
     rhi::PipelineHandle hdrPipeline_{};
     rhi::PipelineHandle hdrPipelineOpaque_{};
     rhi::PipelineHandle pipelineDoubleSided_{};

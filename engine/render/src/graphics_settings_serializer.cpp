@@ -325,6 +325,17 @@ Result<std::string> GraphicsSettingsSerializer::serializeToString(const Graphics
     postObj.set("exposure", JsonValue(static_cast<double>(settings.postProcess.exposure)));
     postObj.set("reinhardWhitePoint",
                 JsonValue(static_cast<double>(settings.postProcess.reinhardWhitePoint)));
+    postObj.set("autoExposureEnabled", JsonValue(settings.postProcess.autoExposureEnabled));
+    postObj.set("autoExposureMinEv",
+                JsonValue(static_cast<double>(settings.postProcess.autoExposureMinEv)));
+    postObj.set("autoExposureMaxEv",
+                JsonValue(static_cast<double>(settings.postProcess.autoExposureMaxEv)));
+    postObj.set("autoExposureSpeedUp",
+                JsonValue(static_cast<double>(settings.postProcess.autoExposureSpeedUp)));
+    postObj.set("autoExposureSpeedDown",
+                JsonValue(static_cast<double>(settings.postProcess.autoExposureSpeedDown)));
+    postObj.set("exposureCompensation",
+                JsonValue(static_cast<double>(settings.postProcess.exposureCompensation)));
     postObj.set("bloomEnabled", JsonValue(settings.postProcess.bloomEnabled));
     postObj.set("bloomThreshold",
                 JsonValue(static_cast<double>(settings.postProcess.bloomThreshold)));
@@ -333,9 +344,35 @@ Result<std::string> GraphicsSettingsSerializer::serializeToString(const Graphics
                 JsonValue(static_cast<double>(settings.postProcess.bloomIntensity)));
     postObj.set("bloomFilterRadius",
                 JsonValue(static_cast<double>(settings.postProcess.bloomFilterRadius)));
+    postObj.set("dofEnabled", JsonValue(settings.postProcess.dofEnabled));
+    postObj.set("dofFocusDistance",
+                JsonValue(static_cast<double>(settings.postProcess.dofFocusDistance)));
+    postObj.set("dofFocalLength",
+                JsonValue(static_cast<double>(settings.postProcess.dofFocalLength)));
+    postObj.set("dofAperture", JsonValue(static_cast<double>(settings.postProcess.dofAperture)));
+    postObj.set("dofMaxBlurRadius",
+                JsonValue(static_cast<double>(settings.postProcess.dofMaxBlurRadius)));
+    postObj.set("motionBlurEnabled", JsonValue(settings.postProcess.motionBlurEnabled));
+    postObj.set("motionBlurIntensity",
+                JsonValue(static_cast<double>(settings.postProcess.motionBlurIntensity)));
+    postObj.set("motionBlurSamples",
+                JsonValue(static_cast<int>(settings.postProcess.motionBlurSamples)));
     postObj.set("whiteBalance", JsonValue(static_cast<double>(settings.postProcess.whiteBalance)));
     postObj.set("contrast", JsonValue(static_cast<double>(settings.postProcess.contrast)));
     postObj.set("saturation", JsonValue(static_cast<double>(settings.postProcess.saturation)));
+    postObj.set("lutEnabled", JsonValue(settings.postProcess.lutEnabled));
+    postObj.set("lutIntensity", JsonValue(static_cast<double>(settings.postProcess.lutIntensity)));
+    postObj.set("lutFilePath", JsonValue(settings.postProcess.lutFilePath));
+    postObj.set("vignetteEnabled", JsonValue(settings.postProcess.vignetteEnabled));
+    postObj.set("vignetteIntensity",
+                JsonValue(static_cast<double>(settings.postProcess.vignetteIntensity)));
+    postObj.set("vignetteSmoothness",
+                JsonValue(static_cast<double>(settings.postProcess.vignetteSmoothness)));
+    postObj.set("vignetteRoundness",
+                JsonValue(static_cast<double>(settings.postProcess.vignetteRoundness)));
+    postObj.set("filmGrainEnabled", JsonValue(settings.postProcess.filmGrainEnabled));
+    postObj.set("filmGrainIntensity",
+                JsonValue(static_cast<double>(settings.postProcess.filmGrainIntensity)));
     root.set("postProcess", std::move(postObj));
 
     // Performance
@@ -550,6 +587,18 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
         settings.postProcess.exposure = pp->getFloat("exposure", settings.postProcess.exposure);
         settings.postProcess.reinhardWhitePoint =
             pp->getFloat("reinhardWhitePoint", settings.postProcess.reinhardWhitePoint);
+        settings.postProcess.autoExposureEnabled =
+            pp->getBool("autoExposureEnabled", settings.postProcess.autoExposureEnabled);
+        settings.postProcess.autoExposureMinEv =
+            pp->getFloat("autoExposureMinEv", settings.postProcess.autoExposureMinEv);
+        settings.postProcess.autoExposureMaxEv =
+            pp->getFloat("autoExposureMaxEv", settings.postProcess.autoExposureMaxEv);
+        settings.postProcess.autoExposureSpeedUp =
+            pp->getFloat("autoExposureSpeedUp", settings.postProcess.autoExposureSpeedUp);
+        settings.postProcess.autoExposureSpeedDown =
+            pp->getFloat("autoExposureSpeedDown", settings.postProcess.autoExposureSpeedDown);
+        settings.postProcess.exposureCompensation =
+            pp->getFloat("exposureCompensation", settings.postProcess.exposureCompensation);
         settings.postProcess.bloomEnabled =
             pp->getBool("bloomEnabled", settings.postProcess.bloomEnabled);
         settings.postProcess.bloomThreshold =
@@ -559,11 +608,48 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
             pp->getFloat("bloomIntensity", settings.postProcess.bloomIntensity);
         settings.postProcess.bloomFilterRadius =
             pp->getFloat("bloomFilterRadius", settings.postProcess.bloomFilterRadius);
+        settings.postProcess.dofEnabled =
+            pp->getBool("dofEnabled", settings.postProcess.dofEnabled);
+        settings.postProcess.dofFocusDistance =
+            pp->getFloat("dofFocusDistance", settings.postProcess.dofFocusDistance);
+        settings.postProcess.dofFocalLength =
+            pp->getFloat("dofFocalLength", settings.postProcess.dofFocalLength);
+        settings.postProcess.dofAperture =
+            pp->getFloat("dofAperture", settings.postProcess.dofAperture);
+        settings.postProcess.dofMaxBlurRadius =
+            pp->getFloat("dofMaxBlurRadius", settings.postProcess.dofMaxBlurRadius);
+        settings.postProcess.motionBlurEnabled =
+            pp->getBool("motionBlurEnabled", settings.postProcess.motionBlurEnabled);
+        settings.postProcess.motionBlurIntensity =
+            pp->getFloat("motionBlurIntensity", settings.postProcess.motionBlurIntensity);
+        settings.postProcess.motionBlurSamples = static_cast<uint32_t>(
+            std::max(1, pp->getInt("motionBlurSamples",
+                                   static_cast<int>(settings.postProcess.motionBlurSamples))));
         settings.postProcess.whiteBalance =
             pp->getFloat("whiteBalance", settings.postProcess.whiteBalance);
         settings.postProcess.contrast = pp->getFloat("contrast", settings.postProcess.contrast);
         settings.postProcess.saturation =
             pp->getFloat("saturation", settings.postProcess.saturation);
+        settings.postProcess.lutEnabled =
+            pp->getBool("lutEnabled", settings.postProcess.lutEnabled);
+        settings.postProcess.lutIntensity =
+            pp->getFloat("lutIntensity", settings.postProcess.lutIntensity);
+        if (pp->contains("lutFilePath")) {
+            settings.postProcess.lutFilePath =
+                std::string(pp->getString("lutFilePath", settings.postProcess.lutFilePath));
+        }
+        settings.postProcess.vignetteEnabled =
+            pp->getBool("vignetteEnabled", settings.postProcess.vignetteEnabled);
+        settings.postProcess.vignetteIntensity =
+            pp->getFloat("vignetteIntensity", settings.postProcess.vignetteIntensity);
+        settings.postProcess.vignetteSmoothness =
+            pp->getFloat("vignetteSmoothness", settings.postProcess.vignetteSmoothness);
+        settings.postProcess.vignetteRoundness =
+            pp->getFloat("vignetteRoundness", settings.postProcess.vignetteRoundness);
+        settings.postProcess.filmGrainEnabled =
+            pp->getBool("filmGrainEnabled", settings.postProcess.filmGrainEnabled);
+        settings.postProcess.filmGrainIntensity =
+            pp->getFloat("filmGrainIntensity", settings.postProcess.filmGrainIntensity);
     }
 
     // 5. Performance
