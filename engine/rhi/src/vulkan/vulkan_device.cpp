@@ -116,6 +116,7 @@ VulkanDevice::~VulkanDevice() noexcept {
         }
         commandLists_.clear();
     }
+    reclaimCompletedResources();
 
     for (auto& slot : buffers_) {
         if (slot.alive) {
@@ -482,13 +483,24 @@ void VulkanDevice::destroyBuffer(BufferHandle handle) {
         return;
     }
     auto& slot = buffers_[handle.index()];
-    if (slot.buffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(device_, slot.buffer, nullptr);
+    if (device_ != VK_NULL_HANDLE && currentSubmissionSerial_ > pollCompletedSubmissionSerial()) {
+        std::lock_guard<std::mutex> lock(deferredMutex_);
+        pendingDestroyBuffers_.push_back(PendingDestroyBuffer{
+            .buffer = slot.buffer,
+            .memory = slot.memory,
+            .retireSerial = currentSubmissionSerial_,
+        });
         slot.buffer = VK_NULL_HANDLE;
-    }
-    if (slot.memory != VK_NULL_HANDLE) {
-        VulkanMemoryManager::freeMemory(device_, slot.memory);
         slot.memory = VK_NULL_HANDLE;
+    } else {
+        if (slot.buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device_, slot.buffer, nullptr);
+            slot.buffer = VK_NULL_HANDLE;
+        }
+        if (slot.memory != VK_NULL_HANDLE) {
+            VulkanMemoryManager::freeMemory(device_, slot.memory);
+            slot.memory = VK_NULL_HANDLE;
+        }
     }
     slot.alive = false;
     slot.mappedData = nullptr;
@@ -675,17 +687,30 @@ void VulkanDevice::destroyTexture(TextureHandle handle) {
         return;
     }
     auto& slot = textures_[handle.index()];
-    if (slot.view != VK_NULL_HANDLE) {
-        vkDestroyImageView(device_, slot.view, nullptr);
+    if (device_ != VK_NULL_HANDLE && currentSubmissionSerial_ > pollCompletedSubmissionSerial()) {
+        std::lock_guard<std::mutex> lock(deferredMutex_);
+        pendingDestroyTextures_.push_back(PendingDestroyTexture{
+            .view = slot.view,
+            .image = slot.image,
+            .memory = slot.memory,
+            .retireSerial = currentSubmissionSerial_,
+        });
         slot.view = VK_NULL_HANDLE;
-    }
-    if (slot.image != VK_NULL_HANDLE) {
-        vkDestroyImage(device_, slot.image, nullptr);
         slot.image = VK_NULL_HANDLE;
-    }
-    if (slot.memory != VK_NULL_HANDLE) {
-        VulkanMemoryManager::freeMemory(device_, slot.memory);
         slot.memory = VK_NULL_HANDLE;
+    } else {
+        if (slot.view != VK_NULL_HANDLE) {
+            vkDestroyImageView(device_, slot.view, nullptr);
+            slot.view = VK_NULL_HANDLE;
+        }
+        if (slot.image != VK_NULL_HANDLE) {
+            vkDestroyImage(device_, slot.image, nullptr);
+            slot.image = VK_NULL_HANDLE;
+        }
+        if (slot.memory != VK_NULL_HANDLE) {
+            VulkanMemoryManager::freeMemory(device_, slot.memory);
+            slot.memory = VK_NULL_HANDLE;
+        }
     }
     slot.alive = false;
     ++slot.generation;
@@ -1361,7 +1386,8 @@ Result<void> VulkanDevice::submit(RhiCommandList* commandList) {
             .commandBufferCount = 1,
             .pCommandBuffers = &cmd,
             .signalSemaphoreCount = (renderFinishedSem != VK_NULL_HANDLE) ? 1U : 0U,
-            .pSignalSemaphores = (renderFinishedSem != VK_NULL_HANDLE) ? &renderFinishedSem : nullptr,
+            .pSignalSemaphores =
+                (renderFinishedSem != VK_NULL_HANDLE) ? &renderFinishedSem : nullptr,
         };
 
         const Timestamp tSubmitStart = Timestamp::now();
@@ -1371,16 +1397,45 @@ Result<void> VulkanDevice::submit(RhiCommandList* commandList) {
             static_cast<float>((tSubmitEnd - tSubmitStart).asMilliseconds());
 
         if (res != VK_SUCCESS) {
+            if (res == VK_ERROR_DEVICE_LOST) {
+                deviceLost_ = true;
+                ENG_LOG_FORMAT(LogLevel::Error, "Vulkan",
+                               "vkQueueSubmit (swapchain) returned VK_ERROR_DEVICE_LOST at "
+                               "submissionSerial=%llu",
+                               static_cast<unsigned long long>(submissionSerial));
+                return Error{.code = ErrorCode::CommandSubmissionFailed,
+                             .message = "vkQueueSubmit returned VK_ERROR_DEVICE_LOST"};
+            }
             return Error{.code = ErrorCode::CommandSubmissionFailed,
                          .message = "vkQueueSubmit failed"};
         }
 
-        vkCmd->cleanupStagingResources();
+        vkCmd->setSubmittedSerial(submissionSerial);
+        auto staged = vkCmd->takeStagingBuffers();
+        if (!staged.empty()) {
+            std::lock_guard<std::mutex> lock(deferredMutex_);
+            for (const auto& s : staged) {
+                pendingStagingBuffers_.push_back(PendingStagingBuffer{
+                    .buffer = s.buffer,
+                    .memory = s.memory,
+                    .retireSerial = submissionSerial,
+                });
+            }
+        }
         return Result<void>::success();
     }
 
     // Headless or offscreen path: synchronize via persistent headlessFence_
-    vkWaitForFences(device_, 1, &headlessFence_, VK_TRUE, 500000000ULL);
+    VkResult preWaitRes = vkWaitForFences(device_, 1, &headlessFence_, VK_TRUE, 500000000ULL);
+    if (preWaitRes == VK_ERROR_DEVICE_LOST) {
+        deviceLost_ = true;
+        return Error{.code = ErrorCode::CommandSubmissionFailed,
+                     .message = "headlessFence wait returned VK_ERROR_DEVICE_LOST"};
+    }
+    if (preWaitRes != VK_SUCCESS) {
+        return Error{.code = ErrorCode::CommandSubmissionFailed,
+                     .message = "headlessFence wait timed out before submit"};
+    }
     vkResetFences(device_, 1, &headlessFence_);
 
     VkSubmitInfo submitInfo{
@@ -1402,8 +1457,15 @@ Result<void> VulkanDevice::submit(RhiCommandList* commandList) {
         static_cast<float>((tSubmitEnd - tSubmitStart).asMilliseconds());
 
     if (res != VK_SUCCESS) {
+        if (res == VK_ERROR_DEVICE_LOST) {
+            deviceLost_ = true;
+            return Error{.code = ErrorCode::CommandSubmissionFailed,
+                         .message = "vkQueueSubmit returned VK_ERROR_DEVICE_LOST"};
+        }
         return Error{.code = ErrorCode::CommandSubmissionFailed, .message = "vkQueueSubmit failed"};
     }
+
+    vkCmd->setSubmittedSerial(submissionSerial);
 
     const Timestamp tFenceStart = Timestamp::now();
     res = vkWaitForFences(device_, 1, &headlessFence_, VK_TRUE, 500000000ULL);
@@ -1411,23 +1473,125 @@ Result<void> VulkanDevice::submit(RhiCommandList* commandList) {
     queueTimingStats_.fenceWaitTimeMs =
         static_cast<float>((tFenceEnd - tFenceStart).asMilliseconds());
 
-    vkCmd->cleanupStagingResources();
-
-    if (res != VK_SUCCESS) {
-        ENG_LOG_FORMAT(LogLevel::Error, "Vulkan", "vkWaitForFences failed with VkResult: %d",
-                       static_cast<int>(res));
-        return Error{.code = ErrorCode::CommandSubmissionFailed,
-                     .message = "vkWaitForFences failed"};
+    if (res == VK_SUCCESS) {
+        vkCmd->cleanupStagingResources();
+        completedSubmissionSerial_ = std::max(completedSubmissionSerial_, submissionSerial);
+        reclaimCompletedResources();
+        return Result<void>::success();
     }
 
-    completedSubmissionSerial_ = submissionSerial;
-    return Result<void>::success();
+    // Fence did not signal cleanly; defer staging buffers instead of destroying in-flight memory.
+    auto staged = vkCmd->takeStagingBuffers();
+    if (!staged.empty()) {
+        std::lock_guard<std::mutex> lock(deferredMutex_);
+        for (const auto& s : staged) {
+            pendingStagingBuffers_.push_back(PendingStagingBuffer{
+                .buffer = s.buffer,
+                .memory = s.memory,
+                .retireSerial = submissionSerial,
+            });
+        }
+    }
+    if (res == VK_ERROR_DEVICE_LOST) {
+        deviceLost_ = true;
+        ENG_LOG_FORMAT(LogLevel::Error, "Vulkan",
+                       "vkWaitForFences returned VK_ERROR_DEVICE_LOST at submissionSerial=%llu",
+                       static_cast<unsigned long long>(submissionSerial));
+        return Error{.code = ErrorCode::CommandSubmissionFailed,
+                     .message = "vkWaitForFences returned VK_ERROR_DEVICE_LOST"};
+    }
+    ENG_LOG_FORMAT(LogLevel::Error, "Vulkan", "vkWaitForFences failed with VkResult: %d",
+                   static_cast<int>(res));
+    return Error{.code = ErrorCode::CommandSubmissionFailed, .message = "vkWaitForFences failed"};
+}
+
+void VulkanDevice::deferStagingBuffer(VkBuffer buffer, VkDeviceMemory memory,
+                                      uint64_t retireSerial) {
+    if (buffer == VK_NULL_HANDLE && memory == VK_NULL_HANDLE) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(deferredMutex_);
+    pendingStagingBuffers_.push_back(PendingStagingBuffer{
+        .buffer = buffer,
+        .memory = memory,
+        .retireSerial = retireSerial,
+    });
+}
+
+void VulkanDevice::deferCommandBufferFree(VkCommandPool pool, VkCommandBuffer cmd,
+                                          uint64_t retireSerial) {
+    if (pool == VK_NULL_HANDLE || cmd == VK_NULL_HANDLE) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(deferredMutex_);
+    pendingCommandBuffers_.push_back(PendingCommandBuffer{
+        .pool = pool,
+        .cmd = cmd,
+        .retireSerial = retireSerial,
+    });
+}
+
+void VulkanDevice::reclaimCompletedResources() noexcept {
+    if (device_ == VK_NULL_HANDLE) {
+        return;
+    }
+    const uint64_t completed = completedSubmissionSerial_;
+    std::lock_guard<std::mutex> lock(deferredMutex_);
+
+    auto reclaimVec = [&](auto& vec, auto&& destroyFn) {
+        size_t writeIdx = 0;
+        for (size_t i = 0; i < vec.size(); ++i) {
+            if (vec[i].retireSerial <= completed) {
+                destroyFn(vec[i]);
+            } else {
+                if (writeIdx != i) {
+                    vec[writeIdx] = vec[i];
+                }
+                ++writeIdx;
+            }
+        }
+        vec.resize(writeIdx);
+    };
+
+    reclaimVec(pendingCommandBuffers_, [&](PendingCommandBuffer& item) {
+        if (item.cmd != VK_NULL_HANDLE && item.pool != VK_NULL_HANDLE) {
+            vkFreeCommandBuffers(device_, item.pool, 1, &item.cmd);
+        }
+    });
+    reclaimVec(pendingStagingBuffers_, [&](PendingStagingBuffer& item) {
+        if (item.buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device_, item.buffer, nullptr);
+        }
+        if (item.memory != VK_NULL_HANDLE) {
+            VulkanMemoryManager::freeMemory(device_, item.memory);
+        }
+    });
+    reclaimVec(pendingDestroyBuffers_, [&](PendingDestroyBuffer& item) {
+        if (item.buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device_, item.buffer, nullptr);
+        }
+        if (item.memory != VK_NULL_HANDLE) {
+            VulkanMemoryManager::freeMemory(device_, item.memory);
+        }
+    });
+    reclaimVec(pendingDestroyTextures_, [&](PendingDestroyTexture& item) {
+        if (item.view != VK_NULL_HANDLE) {
+            vkDestroyImageView(device_, item.view, nullptr);
+        }
+        if (item.image != VK_NULL_HANDLE) {
+            vkDestroyImage(device_, item.image, nullptr);
+        }
+        if (item.memory != VK_NULL_HANDLE) {
+            VulkanMemoryManager::freeMemory(device_, item.memory);
+        }
+    });
 }
 
 void VulkanDevice::waitIdle() {
     if (device_ != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device_);
         completedSubmissionSerial_ = currentSubmissionSerial_;
+        reclaimCompletedResources();
     }
 }
 
@@ -1618,11 +1782,25 @@ Result<uint32_t> VulkanDevice::acquireNextImage() {
     queueTimingStats_.fenceWaitTimeMs =
         static_cast<float>((tFenceEnd - tFenceStart).asMilliseconds());
 
-    if (fenceRes == VK_SUCCESS) {
-        if (sync.submissionSerial > completedSubmissionSerial_) {
-            completedSubmissionSerial_ = sync.submissionSerial;
-        }
+    if (fenceRes == VK_ERROR_DEVICE_LOST) {
+        deviceLost_ = true;
+        frameActive_ = false;
+        ENG_LOG_FORMAT(LogLevel::Error, "Vulkan",
+                       "inFlightFence wait returned VK_ERROR_DEVICE_LOST at slot=%u",
+                       currentFrameSlot_);
+        return Error{.code = ErrorCode::SwapchainCreationFailed,
+                     .message = "inFlightFence wait returned VK_ERROR_DEVICE_LOST"};
     }
+    if (fenceRes != VK_SUCCESS) {
+        frameActive_ = false;
+        return Error{.code = ErrorCode::SwapchainCreationFailed,
+                     .message = "inFlightFence wait timed out"};
+    }
+
+    if (sync.submissionSerial > completedSubmissionSerial_) {
+        completedSubmissionSerial_ = sync.submissionSerial;
+    }
+    reclaimCompletedResources();
 
     const Timestamp tAcqStart = Timestamp::now();
     auto acqRes = swapchain_->acquireNextImage(sync.imageAvailableSemaphore);
@@ -1674,6 +1852,7 @@ uint64_t VulkanDevice::pollCompletedSubmissionSerial() noexcept {
     if (device_ == VK_NULL_HANDLE) {
         return completedSubmissionSerial_;
     }
+    const uint64_t prevCompleted = completedSubmissionSerial_;
     for (const auto& sync : frameSync_) {
         if (sync.submissionSerial > completedSubmissionSerial_ &&
             sync.inFlightFence != VK_NULL_HANDLE) {
@@ -1682,6 +1861,9 @@ uint64_t VulkanDevice::pollCompletedSubmissionSerial() noexcept {
                     std::max(completedSubmissionSerial_, sync.submissionSerial);
             }
         }
+    }
+    if (completedSubmissionSerial_ > prevCompleted) {
+        reclaimCompletedResources();
     }
     return completedSubmissionSerial_;
 }

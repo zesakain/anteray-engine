@@ -101,13 +101,29 @@ public:
     [[nodiscard]] uint32_t getPushConstantCount() const noexcept { return pushConstantCount_; }
     [[nodiscard]] bool targetsSwapchain() const noexcept { return targetsSwapchain_; }
 
+    struct StagingBuffer {
+        VkBuffer buffer{VK_NULL_HANDLE};
+        VkDeviceMemory memory{VK_NULL_HANDLE};
+    };
+
     void cleanupStagingResources() noexcept;
     void onDeviceDestroyed() noexcept;
+    void setSubmittedSerial(uint64_t serial) noexcept;
+    [[nodiscard]] std::vector<StagingBuffer> takeStagingBuffers() noexcept {
+        return std::move(stagingBuffers_);
+    }
 
 private:
+    struct CommandSlot {
+        VkCommandBuffer cmd{VK_NULL_HANDLE};
+        uint64_t submittedSerial{0};
+    };
+
     VulkanDevice* device_{nullptr};
     VkCommandPool pool_{VK_NULL_HANDLE};
     VkCommandBuffer cmdBuffer_{VK_NULL_HANDLE};
+    std::vector<CommandSlot> slots_{};
+    size_t activeSlotIndex_{0};
     bool isRecording_{false};
     bool isInsideRenderPass_{false};
     bool targetsSwapchain_{false};
@@ -127,10 +143,6 @@ private:
     uint32_t bindDescriptorSetsCount_{0};
     uint32_t pushConstantCount_{0};
 
-    struct StagingBuffer {
-        VkBuffer buffer{VK_NULL_HANDLE};
-        VkDeviceMemory memory{VK_NULL_HANDLE};
-    };
     std::vector<StagingBuffer> stagingBuffers_;
 };
 

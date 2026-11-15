@@ -153,10 +153,18 @@ Result<std::unique_ptr<VulkanPhysicalDevice>> VulkanPhysicalDevice::select(VkIns
     caps.features.meshShaders = false;
     caps.features.fillModeNonSolid = (selected.features.fillModeNonSolid == VK_TRUE);
 
-    ENG_LOG_INFO("Vulkan", "Selected GPU device: " + deviceName +
-                               " (TimestampPeriod: " + std::to_string(caps.limits.timestampPeriod) +
-                               "ns, ValidBits: " + std::to_string(caps.limits.timestampValidBits) +
-                               ")");
+    uint64_t deviceLocalMb = 0;
+    for (uint32_t i = 0; i < selected.memory.memoryHeapCount; ++i) {
+        if ((selected.memory.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0) {
+            deviceLocalMb += selected.memory.memoryHeaps[i].size / (1024ULL * 1024ULL);
+        }
+    }
+    ENG_LOG_FORMAT(LogLevel::Info, "Vulkan",
+                   "Selected GPU device: %s (Vendor: 0x%04x, Device: 0x%04x, VRAM: %llu MiB, "
+                   "TimestampPeriod: %.3fns, ValidBits: %u)",
+                   deviceName.c_str(), selected.properties.vendorID, selected.properties.deviceID,
+                   static_cast<unsigned long long>(deviceLocalMb), caps.limits.timestampPeriod,
+                   caps.limits.timestampValidBits);
 
     return std::unique_ptr<VulkanPhysicalDevice>(
         new VulkanPhysicalDevice(selected.device, selected.queues, caps, std::move(deviceName)));

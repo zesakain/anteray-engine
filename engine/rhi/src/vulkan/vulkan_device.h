@@ -156,6 +156,10 @@ public:
 
     void registerCommandList(VulkanCommandList* cmdList);
     void unregisterCommandList(VulkanCommandList* cmdList);
+    void deferStagingBuffer(VkBuffer buffer, VkDeviceMemory memory, uint64_t retireSerial);
+    void deferCommandBufferFree(VkCommandPool pool, VkCommandBuffer cmd, uint64_t retireSerial);
+    void reclaimCompletedResources() noexcept;
+    [[nodiscard]] bool isDeviceLost() const noexcept { return deviceLost_; }
 
 private:
     explicit VulkanDevice(std::unique_ptr<VulkanInstance> instance,
@@ -191,7 +195,35 @@ private:
     uint32_t currentFrameSlot_{0};
     bool frameActive_{false};
     bool swapchainNeedsRecreate_{false};
+    bool deviceLost_{false};
     VkFence headlessFence_{VK_NULL_HANDLE};
+
+    struct PendingStagingBuffer {
+        VkBuffer buffer{VK_NULL_HANDLE};
+        VkDeviceMemory memory{VK_NULL_HANDLE};
+        uint64_t retireSerial{0};
+    };
+    struct PendingCommandBuffer {
+        VkCommandPool pool{VK_NULL_HANDLE};
+        VkCommandBuffer cmd{VK_NULL_HANDLE};
+        uint64_t retireSerial{0};
+    };
+    struct PendingDestroyBuffer {
+        VkBuffer buffer{VK_NULL_HANDLE};
+        VkDeviceMemory memory{VK_NULL_HANDLE};
+        uint64_t retireSerial{0};
+    };
+    struct PendingDestroyTexture {
+        VkImageView view{VK_NULL_HANDLE};
+        VkImage image{VK_NULL_HANDLE};
+        VkDeviceMemory memory{VK_NULL_HANDLE};
+        uint64_t retireSerial{0};
+    };
+    std::vector<PendingStagingBuffer> pendingStagingBuffers_{};
+    std::vector<PendingCommandBuffer> pendingCommandBuffers_{};
+    std::vector<PendingDestroyBuffer> pendingDestroyBuffers_{};
+    std::vector<PendingDestroyTexture> pendingDestroyTextures_{};
+    mutable std::mutex deferredMutex_{};
 
     void syncSwapchainSemaphores() noexcept;
 

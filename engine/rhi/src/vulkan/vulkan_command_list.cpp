@@ -62,6 +62,9 @@ struct LayoutAccessInfo {
 VulkanCommandList::VulkanCommandList(VulkanDevice& device, VkCommandPool pool,
                                      VkCommandBuffer cmdBuffer) noexcept
     : device_(&device), pool_(pool), cmdBuffer_(cmdBuffer) {
+    if (cmdBuffer != VK_NULL_HANDLE) {
+        slots_.push_back(CommandSlot{.cmd = cmdBuffer, .submittedSerial = 0});
+    }
     if (device_ != nullptr) {
         device_->registerCommandList(this);
     }
@@ -69,11 +72,33 @@ VulkanCommandList::VulkanCommandList(VulkanDevice& device, VkCommandPool pool,
 
 VulkanCommandList::~VulkanCommandList() noexcept {
     if (device_ != nullptr) {
-        cleanupStagingResources();
-        if (cmdBuffer_ != VK_NULL_HANDLE && pool_ != VK_NULL_HANDLE) {
-            vkFreeCommandBuffers(device_->getLogicalDevice(), pool_, 1, &cmdBuffer_);
-            cmdBuffer_ = VK_NULL_HANDLE;
+        const uint64_t completed = device_->pollCompletedSubmissionSerial();
+        const uint64_t activeSerial =
+            (activeSlotIndex_ < slots_.size()) ? slots_[activeSlotIndex_].submittedSerial : 0;
+        if (!stagingBuffers_.empty()) {
+            if (activeSerial > completed) {
+                for (auto& staging : stagingBuffers_) {
+                    device_->deferStagingBuffer(staging.buffer, staging.memory, activeSerial);
+                }
+                stagingBuffers_.clear();
+            } else {
+                cleanupStagingResources();
+            }
         }
+        if (pool_ != VK_NULL_HANDLE) {
+            for (auto& slot : slots_) {
+                if (slot.cmd != VK_NULL_HANDLE) {
+                    if (slot.submittedSerial > completed) {
+                        device_->deferCommandBufferFree(pool_, slot.cmd, slot.submittedSerial);
+                    } else {
+                        vkFreeCommandBuffers(device_->getLogicalDevice(), pool_, 1, &slot.cmd);
+                    }
+                    slot.cmd = VK_NULL_HANDLE;
+                }
+            }
+        }
+        slots_.clear();
+        cmdBuffer_ = VK_NULL_HANDLE;
         device_->unregisterCommandList(this);
         device_ = nullptr;
     }
@@ -82,9 +107,16 @@ VulkanCommandList::~VulkanCommandList() noexcept {
 void VulkanCommandList::onDeviceDestroyed() noexcept {
     if (device_ != nullptr) {
         cleanupStagingResources();
+        slots_.clear();
         cmdBuffer_ = VK_NULL_HANDLE;
         pool_ = VK_NULL_HANDLE;
         device_ = nullptr;
+    }
+}
+
+void VulkanCommandList::setSubmittedSerial(uint64_t serial) noexcept {
+    if (activeSlotIndex_ < slots_.size()) {
+        slots_[activeSlotIndex_].submittedSerial = serial;
     }
 }
 
@@ -92,6 +124,38 @@ void VulkanCommandList::begin() {
     if (device_ == nullptr || cmdBuffer_ == VK_NULL_HANDLE) {
         return;
     }
+    const uint64_t completed = device_->pollCompletedSubmissionSerial();
+    size_t chosenSlot = slots_.size();
+    for (size_t i = 0; i < slots_.size(); ++i) {
+        if (slots_[i].submittedSerial <= completed) {
+            chosenSlot = i;
+            break;
+        }
+    }
+    if (chosenSlot == slots_.size() && slots_.size() < 4 && pool_ != VK_NULL_HANDLE) {
+        VkCommandBufferAllocateInfo allocInfo{
+            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .commandPool = pool_,
+            .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = 1,
+        };
+        VkCommandBuffer newCmd = VK_NULL_HANDLE;
+        if (vkAllocateCommandBuffers(device_->getLogicalDevice(), &allocInfo, &newCmd) ==
+                VK_SUCCESS &&
+            newCmd != VK_NULL_HANDLE) {
+            chosenSlot = slots_.size();
+            slots_.push_back(CommandSlot{.cmd = newCmd, .submittedSerial = 0});
+        }
+    }
+    if (chosenSlot == slots_.size()) {
+        // All command buffer slots are still executing on the GPU; drain before reusing slot 0.
+        device_->waitIdle();
+        chosenSlot = 0;
+    }
+    activeSlotIndex_ = chosenSlot;
+    cmdBuffer_ = slots_[activeSlotIndex_].cmd;
+
     cleanupStagingResources();
     vkResetCommandBuffer(cmdBuffer_, 0);
 
