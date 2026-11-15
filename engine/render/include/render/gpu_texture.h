@@ -79,6 +79,11 @@ public:
     [[nodiscard]] uint32_t getMipLevels() const noexcept { return mipLevels_; }
     [[nodiscard]] rhi::TextureFormat getFormat() const noexcept { return format_; }
     [[nodiscard]] bool isValid() const noexcept { return texture_.isValid(); }
+    [[nodiscard]] bool ownsSampler() const noexcept { return ownsSampler_; }
+
+    /// Sets an externally managed sampler handle (e.g. from SamplerCache).
+    /// Disables GpuTexture ownership of the sampler destruction.
+    void setSharedSampler(rhi::SamplerHandle sampler) noexcept;
 
 private:
     GpuTexture(rhi::RhiDevice& device, rhi::TextureHandle texture, rhi::SamplerHandle sampler,
@@ -92,6 +97,7 @@ private:
     uint32_t height_{0};
     uint32_t mipLevels_{1};
     rhi::TextureFormat format_{rhi::TextureFormat::RGBA8_UNORM};
+    bool ownsSampler_{true};
 };
 
 } // namespace eng::render

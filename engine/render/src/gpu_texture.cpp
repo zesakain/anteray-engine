@@ -20,7 +20,7 @@ GpuTexture::GpuTexture(rhi::RhiDevice& device, rhi::TextureHandle texture,
 
 GpuTexture::~GpuTexture() noexcept {
     if (device_ != nullptr) {
-        if (sampler_.isValid()) {
+        if (ownsSampler_ && sampler_.isValid()) {
             device_->destroySampler(sampler_);
             sampler_ = {};
         }
@@ -35,19 +35,20 @@ GpuTexture::~GpuTexture() noexcept {
 GpuTexture::GpuTexture(GpuTexture&& other) noexcept
     : device_(other.device_), texture_(other.texture_), sampler_(other.sampler_),
       width_(other.width_), height_(other.height_), mipLevels_(other.mipLevels_),
-      format_(other.format_) {
+      format_(other.format_), ownsSampler_(other.ownsSampler_) {
     other.device_ = nullptr;
     other.texture_ = {};
     other.sampler_ = {};
     other.width_ = 0;
     other.height_ = 0;
     other.mipLevels_ = 1;
+    other.ownsSampler_ = false;
 }
 
 GpuTexture& GpuTexture::operator=(GpuTexture&& other) noexcept {
     if (this != &other) {
         if (device_ != nullptr) {
-            if (sampler_.isValid()) {
+            if (ownsSampler_ && sampler_.isValid()) {
                 device_->destroySampler(sampler_);
             }
             if (texture_.isValid()) {
@@ -61,6 +62,7 @@ GpuTexture& GpuTexture::operator=(GpuTexture&& other) noexcept {
         height_ = other.height_;
         mipLevels_ = other.mipLevels_;
         format_ = other.format_;
+        ownsSampler_ = other.ownsSampler_;
 
         other.device_ = nullptr;
         other.texture_ = {};
@@ -68,8 +70,17 @@ GpuTexture& GpuTexture::operator=(GpuTexture&& other) noexcept {
         other.width_ = 0;
         other.height_ = 0;
         other.mipLevels_ = 1;
+        other.ownsSampler_ = false;
     }
     return *this;
+}
+
+void GpuTexture::setSharedSampler(rhi::SamplerHandle sampler) noexcept {
+    if (device_ != nullptr && ownsSampler_ && sampler_.isValid()) {
+        device_->destroySampler(sampler_);
+    }
+    sampler_ = sampler;
+    ownsSampler_ = false;
 }
 
 Result<std::unique_ptr<GpuTexture>> GpuTexture::create(rhi::RhiDevice& device,

@@ -18,6 +18,7 @@ add_library(engine_render STATIC
     src/mesh_component.cpp
     src/obj_importer.cpp
     src/render_graph.cpp
+    src/sampler_cache.cpp
     src/scene_renderer.cpp
 )
 add_library(hikari::engine_render ALIAS engine_render)
