@@ -31,6 +31,7 @@
 #include <memory>
 #include <numeric>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #if defined(__SANITIZE_ADDRESS__)
@@ -85,6 +86,8 @@ struct SceneBenchmarkTelemetry {
     double avgBloomMs{0.0};
     size_t residentGpuBytes{0};
     size_t totalGpuBytes{0};
+    size_t geometryGpuBytes{0};
+    size_t totalVramEstimatedBytes{0};
     uint32_t residentTextures{0};
     uint32_t evictionCount{0};
 };
@@ -143,7 +146,9 @@ int main(int argc, char** argv) {
                                    const Mat4& view, float fovDeg, float nearP, float farP,
                                    const std::string& primaryCaptureFilename,
                                    const std::vector<std::pair<Mat4, std::string>>& extraViews = {},
-                                   bool enableSsr = false) {
+                                   bool enableSsr = false,
+                                   std::optional<render::ToneMapOperator> toneMapOverride =
+                                       std::nullopt) {
         std::cout << "\n>>> Benchmarking & Capturing Scene: " << sceneName << " (" << scenePath
                   << ")" << (enableSsr ? " [SSR ON]" : " [SSR OFF]") << "\n";
 
@@ -173,6 +178,11 @@ int main(int argc, char** argv) {
         if (desRes.value().postProcessSettings.has_value()) {
             renderer.setPostProcessSettings(*desRes.value().postProcessSettings);
         }
+        if (toneMapOverride.has_value()) {
+            auto pp = renderer.getPostProcessSettings();
+            pp.toneMapOp = *toneMapOverride;
+            renderer.setPostProcessSettings(pp);
+        }
 
         Mat4 proj = Mat4::perspective(toRadians(fovDeg), aspect, nearP, farP);
         Mat4 primaryViewProj = proj * view;
@@ -194,8 +204,8 @@ int main(int argc, char** argv) {
             renderer.updateGpuTimings(*device);
         }
 
-        // Benchmark 50 frames
-        constexpr int kBenchFrames = 50;
+        // Benchmark 1000 frames
+        constexpr int kBenchFrames = 1000;
         std::vector<double> frameTimes;
         std::vector<double> cpuRecordTimes;
         std::vector<double> gpuTotalTimes;
@@ -359,6 +369,25 @@ int main(int argc, char** argv) {
 
         const auto& memMetrics = assetMgr.getTextureMemoryMetrics();
 
+        // Compute unique geometry VRAM footprint (vertex and index buffers)
+        size_t geometryGpuBytes = 0;
+        std::unordered_set<render::AssetId> countedMeshes;
+        for (auto entity : world.getAllEntities()) {
+            const auto* mc = world.getComponent<render::MeshComponent>(entity);
+            if (mc != nullptr && mc->meshAsset.isValid() &&
+                countedMeshes.insert(mc->meshAsset).second) {
+                if (const auto* meshData = assetMgr.getMeshData(mc->meshAsset)) {
+                    geometryGpuBytes += meshData->getVertices().size() * sizeof(render::Vertex);
+                    geometryGpuBytes += meshData->getIndices().size() * sizeof(uint32_t);
+                }
+            }
+        }
+        // Baseline 1080p render targets: HDR (16.6 MB) + Depth (8.3 MB) + Normals/Mat (16.6 MB)
+        // + Shadows (16.8 MB) + GTAO/SSR (8.3 MB) + Bloom (5.5 MB) ≈ 72.1 MB
+        constexpr size_t kEstimatedRenderTargetBytes = static_cast<size_t>(72.1 * 1024.0 * 1024.0);
+        size_t totalVramEst =
+            memMetrics.residentGpuMemoryBytes + geometryGpuBytes + kEstimatedRenderTargetBytes;
+
         SceneBenchmarkTelemetry t{
             .sceneName = sceneName,
             .entities = entityCount,
@@ -380,6 +409,8 @@ int main(int argc, char** argv) {
             .avgBloomMs = avgBloom,
             .residentGpuBytes = memMetrics.residentGpuMemoryBytes,
             .totalGpuBytes = memMetrics.estimatedTotalGpuMemoryBytes,
+            .geometryGpuBytes = geometryGpuBytes,
+            .totalVramEstimatedBytes = totalVramEst,
             .residentTextures = memMetrics.residentTextureCount,
             .evictionCount = memMetrics.evictionCountLifetime,
         };
@@ -395,11 +426,20 @@ int main(int argc, char** argv) {
                   << " ms | Temporal: " << t.avgTemporalMs
                   << " ms | ToneMap: " << t.avgToneMappingMs << " ms | Bloom: " << t.avgBloomMs
                   << " ms\n";
-        std::cout << "  [TEXTURE RESIDENCY] Resident: "
+        std::cout << "  [VRAM ALLOCATION] Textures: "
                   << (static_cast<double>(t.residentGpuBytes) / (1024.0 * 1024.0)) << " MB ("
-                  << t.residentTextures << " textures) | Total Allocated: "
-                  << (static_cast<double>(t.totalGpuBytes) / (1024.0 * 1024.0))
-                  << " MB | Lifetime Evictions: " << t.evictionCount << "\n";
+                  << t.residentTextures << " textures) | Geometry: "
+                  << (static_cast<double>(t.geometryGpuBytes) / (1024.0 * 1024.0))
+                  << " MB | Render Targets (Est): "
+                  << (static_cast<double>(kEstimatedRenderTargetBytes) / (1024.0 * 1024.0))
+                  << " MB | Total Est VRAM: "
+                  << (static_cast<double>(t.totalVramEstimatedBytes) / (1024.0 * 1024.0))
+                  << " MB\n";
+        if (t.residentTextures == 0) {
+            std::cout << "  [VRAM NOTE] " << sceneName
+                      << " uses procedural/analytic material parameters (0 image texture assets); "
+                         "Texture VRAM is 0.00 MB as expected.\n";
+        }
 
         benchmarkSummary.push_back(t);
     };
@@ -448,7 +488,7 @@ int main(int argc, char** argv) {
                              {viewFacadeWindows, "bistro_building_facade_windows.ppm"}});
     }
 
-    // 4. MaterialLab
+    // 4. MaterialLab (AgX Tone Mapping - Default)
     {
         Mat4 viewGrid =
             Mat4::lookAt(Vec3(0.0F, 3.8F, 7.2F), Vec3(0.0F, 0.45F, 0.0F), Vec3::unitY());
@@ -462,49 +502,66 @@ int main(int argc, char** argv) {
             Mat4::lookAt(Vec3(0.0F, 1.8F, 5.0F), Vec3(0.0F, 0.45F, 2.1F), Vec3::unitY());
 
         benchmarkAndCapture("MaterialLab", "assets/benchmark-scenes/MaterialLab_Benchmark.hikari",
-                            viewGrid, 50.0F, 0.1F, 500.0F, "material_lab_1080p_grid.ppm",
+                            viewGrid, 50.0F, 0.1F, 500.0F, "material_lab_1080p_agx.ppm",
                             {{viewDielectrics, "material_lab_dielectrics.ppm"},
                              {viewMetals, "material_lab_metals.ppm"},
                              {viewClearcoatSheen, "material_lab_clearcoat_sheen.ppm"},
-                             {viewAnisoTrans, "material_lab_anisotropy_transmission.ppm"}});
+                             {viewAnisoTrans, "material_lab_anisotropy_transmission.ppm"}},
+                            false, render::ToneMapOperator::AgX);
     }
 
-    // 5. MaterialLab with Screen-Space Reflections (SSR Comparison)
+    // 5. MaterialLab with ACES Fitted Tone Mapping (Tone Mapper Comparison)
+    {
+        Mat4 viewGrid =
+            Mat4::lookAt(Vec3(0.0F, 3.8F, 7.2F), Vec3(0.0F, 0.45F, 0.0F), Vec3::unitY());
+
+        benchmarkAndCapture("MaterialLab_ACES",
+                            "assets/benchmark-scenes/MaterialLab_Benchmark.hikari", viewGrid, 50.0F,
+                            0.1F, 500.0F, "material_lab_1080p_aces.ppm", {}, false,
+                            render::ToneMapOperator::AcesFitted);
+    }
+
+    // 6. MaterialLab with Screen-Space Reflections (SSR Comparison)
     {
         Mat4 viewGrid =
             Mat4::lookAt(Vec3(0.0F, 3.8F, 7.2F), Vec3(0.0F, 0.45F, 0.0F), Vec3::unitY());
 
         benchmarkAndCapture("MaterialLab_SSR",
                             "assets/benchmark-scenes/MaterialLab_Benchmark.hikari", viewGrid, 50.0F,
-                            0.1F, 500.0F, "material_lab_1080p_ssr.ppm", {}, true);
+                            0.1F, 500.0F, "material_lab_1080p_ssr.ppm", {}, true,
+                            render::ToneMapOperator::AgX);
     }
 
     // Final Consolidated Report
     std::cout << "\n==============================================================================="
-                 "====================\n";
-    std::cout << "  CONSOLIDATED 1080p BENCHMARK TELEMETRY (Pascal Tier 0 Hardware Baseline)\n";
+                 "=========================================\n";
+    std::cout << "  CONSOLIDATED 1000-FRAME 1080p BENCHMARK TELEMETRY (Pascal Tier 0 Baseline)\n";
     std::cout << "================================================================================="
-                 "==================\n";
-    std::cout << std::left << std::setw(15) << "Scene" << std::right << std::setw(10) << "Entities"
-              << std::setw(10) << "Avg(ms)" << std::setw(10) << "Med(ms)" << std::setw(10)
-              << "P95(ms)" << std::setw(10) << "P99(ms)" << std::setw(10) << "Max(ms)"
-              << std::setw(10) << "FPS" << std::setw(12) << "GpuTex(MB)"
+                 "=======================================\n";
+    std::cout << std::left << std::setw(17) << "Scene" << std::right << std::setw(8) << "Entities"
+              << std::setw(9) << "Avg(ms)" << std::setw(9) << "Med(ms)" << std::setw(9) << "P95(ms)"
+              << std::setw(9) << "P99(ms)" << std::setw(9) << "Max(ms)" << std::setw(9) << "FPS"
+              << std::setw(11) << "Tex(MB)" << std::setw(11) << "Geom(MB)" << std::setw(14)
+              << "TotalVRAM(MB)"
               << "\n";
     std::cout << "---------------------------------------------------------------------------------"
-                 "------------------\n";
+                 "---------------------------------------\n";
     for (const auto& b : benchmarkSummary) {
-        std::cout << std::left << std::setw(15) << b.sceneName << std::right << std::setw(10)
-                  << b.entities << std::fixed << std::setprecision(2) << std::setw(10)
-                  << b.avgFrameMs << std::setw(10) << b.medianFrameMs << std::setw(10)
-                  << b.p95FrameMs << std::setw(10) << b.p99FrameMs << std::setw(10) << b.maxFrameMs
-                  << std::setw(10) << b.avgFps << std::setw(12)
-                  << (static_cast<double>(b.residentGpuBytes) / (1024.0 * 1024.0)) << "\n";
+        std::cout << std::left << std::setw(17) << b.sceneName << std::right << std::setw(8)
+                  << b.entities << std::fixed << std::setprecision(2) << std::setw(9)
+                  << b.avgFrameMs << std::setw(9) << b.medianFrameMs << std::setw(9) << b.p95FrameMs
+                  << std::setw(9) << b.p99FrameMs << std::setw(9) << b.maxFrameMs << std::setw(9)
+                  << b.avgFps << std::setw(11)
+                  << (static_cast<double>(b.residentGpuBytes) / (1024.0 * 1024.0)) << std::setw(11)
+                  << (static_cast<double>(b.geometryGpuBytes) / (1024.0 * 1024.0)) << std::setw(14)
+                  << (static_cast<double>(b.totalVramEstimatedBytes) / (1024.0 * 1024.0)) << "\n";
     }
     std::cout << "================================================================================="
-                 "==================\n\n";
+                 "=======================================\n\n";
 
     device->destroyBuffer(rbHandle);
     renderer.shutdown();
-    std::cout << "Visual certification captures and 1080p benchmarks completed successfully.\n";
+    std::cout << "Visual certification captures and 1000-frame 1080p benchmarks completed "
+                 "successfully.\n";
     return 0;
 }
