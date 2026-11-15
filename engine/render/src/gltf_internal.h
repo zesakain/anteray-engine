@@ -299,6 +299,27 @@ parseTextureInfo(const cgltf_data* data, const cgltf_texture_view& view, std::st
                                                      baseDir, TextureColorSpace::sRGB, sourcePath);
     }
 
+    // 6. KHR_materials_anisotropy
+    if (cgMat.has_anisotropy) {
+        mat.anisotropy.strength = cgMat.anisotropy.anisotropy_strength;
+        mat.anisotropy.rotation = cgMat.anisotropy.anisotropy_rotation;
+        mat.anisotropy.texture = parseTextureInfo(data, cgMat.anisotropy.anisotropy_texture,
+                                                  baseDir, TextureColorSpace::Linear, sourcePath);
+    }
+
+    // 7. KHR_materials_sheen
+    if (cgMat.has_sheen) {
+        mat.sheen.colorFactor =
+            Vec3{cgMat.sheen.sheen_color_factor[0], cgMat.sheen.sheen_color_factor[1],
+                 cgMat.sheen.sheen_color_factor[2]};
+        mat.sheen.roughnessFactor = cgMat.sheen.sheen_roughness_factor;
+        mat.sheen.colorTexture = parseTextureInfo(data, cgMat.sheen.sheen_color_texture, baseDir,
+                                                  TextureColorSpace::sRGB, sourcePath);
+        mat.sheen.roughnessTexture =
+            parseTextureInfo(data, cgMat.sheen.sheen_roughness_texture, baseDir,
+                             TextureColorSpace::Linear, sourcePath);
+    }
+
     return mat;
 }
 

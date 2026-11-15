@@ -29,7 +29,7 @@ static int testMaterialDescriptorSetLayoutCreation() {
     auto& device = *devRes.value();
 
     const auto layoutDesc = createMaterialDescriptorSetLayoutDesc();
-    TEST_CHECK(layoutDesc.bindings.size() == 13);
+    TEST_CHECK(layoutDesc.bindings.size() == 16);
 
     auto layoutRes = device.createDescriptorSetLayout(layoutDesc);
     TEST_CHECK(layoutRes.hasValue());

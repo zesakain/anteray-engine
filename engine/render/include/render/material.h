@@ -103,6 +103,23 @@ struct SpecularExtension {
     TextureInfo colorTexture{};
 };
 
+/// @struct AnisotropyExtension
+/// @brief KHR_materials_anisotropy extension properties.
+struct AnisotropyExtension {
+    float strength{0.0F};  ///< Anisotropy strength [0..1]
+    float rotation{0.0F};  ///< Rotation angle in radians
+    TextureInfo texture{}; ///< Texture encoding direction (RG) and strength (B)
+};
+
+/// @struct SheenExtension
+/// @brief KHR_materials_sheen extension properties.
+struct SheenExtension {
+    Vec3 colorFactor{0.0F, 0.0F, 0.0F}; ///< Sheen color factor (linear RGB)
+    float roughnessFactor{0.0F};        ///< Sheen roughness factor [0..1]
+    TextureInfo colorTexture{};         ///< Sheen color texture (sRGB)
+    TextureInfo roughnessTexture{};     ///< Sheen roughness texture (linear alpha)
+};
+
 /// @struct Material
 /// @brief Surface shading properties supporting standard glTF 2.0 PBR metallic-roughness workflow.
 struct Material {
@@ -130,6 +147,8 @@ struct Material {
     VolumeExtension volume{};
     IorExtension iorExt{};
     SpecularExtension specular{};
+    AnisotropyExtension anisotropy{};
+    SheenExtension sheen{};
 
     // Backward-compatibility alias
     AssetId textureAsset{}; // references primary baseColorTexture
@@ -156,6 +175,8 @@ struct Material {
             .volume = {},
             .iorExt = {},
             .specular = {},
+            .anisotropy = {},
+            .sheen = {},
             .textureAsset = {},
         };
     }

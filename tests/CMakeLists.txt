@@ -195,6 +195,12 @@ target_link_libraries(gltf_material_extensions_test PRIVATE hikari::engine_rende
 add_test(NAME gltf_material_extensions_test COMMAND gltf_material_extensions_test)
 set_tests_properties(gltf_material_extensions_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Advanced PBR Pipeline Unit Tests (Milestone 11F Phase 4)
+add_executable(advanced_pbr_pipeline_test unit/render/advanced_pbr_pipeline_test.cpp)
+target_link_libraries(advanced_pbr_pipeline_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
+add_test(NAME advanced_pbr_pipeline_test COMMAND advanced_pbr_pipeline_test)
+set_tests_properties(advanced_pbr_pipeline_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Full glTF Metallic-Roughness PBR Verification Tests (Milestone 10D)
 add_executable(pbr_render_test unit/render/pbr_render_test.cpp)
 target_link_libraries(pbr_render_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)

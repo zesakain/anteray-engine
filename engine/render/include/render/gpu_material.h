@@ -63,10 +63,17 @@ struct alignas(16) MaterialUniformBufferData {
                                        0.0F}; // offset 128..143 (xyz: color, w: hasSpecTex)
     Vec4 specularColorFactorAndHasColorTex{1.0F, 1.0F, 1.0F,
                                            0.0F}; // offset 144..159 (xyz: color, w: hasColorTex)
+    float anisotropyStrength{0.0F};               // offset 160..163
+    float anisotropyRotation{0.0F};               // offset 164..167
+    uint32_t hasAnisotropyTex{0};                 // offset 168..171
+    float sheenRoughness{0.0F};                   // offset 172..175
+    Vec4 sheenColorFactorAndFlags{
+        0.0F, 0.0F, 0.0F,
+        0.0F}; // offset 176..191 (xyz: color, w: packed hasSheenColorTex + hasSheenRoughnessTex*2)
 };
 
-static_assert(sizeof(MaterialUniformBufferData) == 160,
-              "MaterialUniformBufferData must be 160 bytes (std140 alignment)");
+static_assert(sizeof(MaterialUniformBufferData) == 192,
+              "MaterialUniformBufferData must be 192 bytes (std140 alignment)");
 
 /// @brief Generates standard DescriptorSetLayoutDesc for glTF materials (set 0).
 [[nodiscard]] inline rhi::DescriptorSetLayoutDesc createMaterialDescriptorSetLayoutDesc() noexcept {
@@ -151,6 +158,24 @@ static_assert(sizeof(MaterialUniformBufferData) == 160,
             .descriptorCount = 1,
             .stageFlags = rhi::ShaderStageFlags::Fragment,
         },
+        rhi::DescriptorBindingDesc{
+            .binding = 13,
+            .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+        },
+        rhi::DescriptorBindingDesc{
+            .binding = 14,
+            .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+        },
+        rhi::DescriptorBindingDesc{
+            .binding = 15,
+            .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+        },
     };
     return desc;
 }
@@ -227,10 +252,10 @@ public:
         return descriptorSet_.isValid() && uniformBuffer_.isValid();
     }
 
-    /// @brief Rebinds material descriptor set texture bindings (0..4, 6..12) with updated handles.
+    /// @brief Rebinds material descriptor set texture bindings (0..4, 6..15) with updated handles.
     void updateTextureDescriptors(
         rhi::RhiDevice& device,
-        const std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 12>& textureSlots);
+        const std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 15>& textureSlots);
 
 private:
     GpuMaterial(rhi::RhiDevice& device, rhi::DescriptorPoolHandle pool,

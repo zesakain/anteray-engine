@@ -79,7 +79,7 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
     rhi::DescriptorPoolDesc poolDesc{};
     poolDesc.maxSets = 1;
     poolDesc.poolSizes = {
-        rhi::DescriptorPoolSize{.type = rhi::DescriptorType::CombinedImageSampler, .count = 12},
+        rhi::DescriptorPoolSize{.type = rhi::DescriptorType::CombinedImageSampler, .count = 15},
         rhi::DescriptorPoolSize{.type = rhi::DescriptorType::UniformBuffer, .count = 1},
     };
     poolDesc.debugName = "GpuMaterial_DescriptorPool";
@@ -216,6 +216,29 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
     const auto specularColorSlot =
         resolveSlot(material.specular.colorTexture, DefaultTextureType::WhiteSRGB, hasSpecColorTex);
 
+    const auto anisotropySlot =
+        resolveSlot(material.anisotropy.texture, DefaultTextureType::FlatNormalLinear,
+                    uboData.hasAnisotropyTex);
+
+    uint32_t hasSheenColorTex = 0u;
+    const auto sheenColorSlot =
+        resolveSlot(material.sheen.colorTexture, DefaultTextureType::BlackSRGB, hasSheenColorTex);
+
+    uint32_t hasSheenRoughnessTex = 0u;
+    const auto sheenRoughnessSlot = resolveSlot(
+        material.sheen.roughnessTexture, DefaultTextureType::WhiteLinear, hasSheenRoughnessTex);
+
+    uboData.anisotropyStrength = material.anisotropy.strength;
+    uboData.anisotropyRotation = material.anisotropy.rotation;
+    uboData.sheenRoughness = material.sheen.roughnessFactor;
+    uboData.sheenColorFactorAndFlags = Vec4{
+        material.sheen.colorFactor.x,
+        material.sheen.colorFactor.y,
+        material.sheen.colorFactor.z,
+        hasSheenColorTex != 0u ? (hasSheenRoughnessTex != 0u ? 3.0F : 1.0F)
+                               : (hasSheenRoughnessTex != 0u ? 2.0F : 0.0F),
+    };
+
     uboData.attenuationColorAndHasSpecTex = Vec4{
         material.volume.attenuationColor.x,
         material.volume.attenuationColor.y,
@@ -250,9 +273,9 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
         return writeRes.error();
     }
 
-    // 5. Update descriptor set with textures and uniform buffer (13 writes total)
+    // 5. Update descriptor set with textures and uniform buffer (16 writes total)
     std::vector<rhi::DescriptorWrite> writes;
-    writes.reserve(13);
+    writes.reserve(16);
     writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(0, baseColorSlot.first,
                                                                     baseColorSlot.second));
     writes.push_back(
@@ -279,6 +302,12 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
                                                                     specularSlot.second));
     writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(12, specularColorSlot.first,
                                                                     specularColorSlot.second));
+    writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(13, anisotropySlot.first,
+                                                                    anisotropySlot.second));
+    writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(14, sheenColorSlot.first,
+                                                                    sheenColorSlot.second));
+    writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(15, sheenRoughnessSlot.first,
+                                                                    sheenRoughnessSlot.second));
 
     device.updateDescriptorSet(setHandle, writes);
 
@@ -288,16 +317,16 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
 
 void GpuMaterial::updateTextureDescriptors(
     rhi::RhiDevice& device,
-    const std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 12>& textureSlots) {
+    const std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 15>& textureSlots) {
     if (!descriptorSet_.isValid()) {
         return;
     }
-    std::array<rhi::DescriptorWrite, 12> writes{};
+    std::array<rhi::DescriptorWrite, 15> writes{};
     for (uint32_t b = 0; b < 5; ++b) {
         writes[b] = rhi::DescriptorWrite::makeCombinedImageSampler(b, textureSlots[b].first,
                                                                    textureSlots[b].second);
     }
-    for (uint32_t b = 5; b < 12; ++b) {
+    for (uint32_t b = 5; b < 15; ++b) {
         writes[b] = rhi::DescriptorWrite::makeCombinedImageSampler(b + 1, textureSlots[b].first,
                                                                    textureSlots[b].second);
     }

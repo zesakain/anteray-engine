@@ -65,6 +65,15 @@ void testMaterialDefaults() {
     TEST_APPROX(mat.volume.thicknessFactor, 0.0F, 1e-5F);
     TEST_APPROX(mat.iorExt.ior, 1.5F, 1e-5F);
     TEST_APPROX(mat.specular.factor, 1.0F, 1e-5F);
+    TEST_APPROX(mat.anisotropy.strength, 0.0F, 1e-5F);
+    TEST_APPROX(mat.anisotropy.rotation, 0.0F, 1e-5F);
+    TEST_CHECK(!mat.anisotropy.texture.isPresent);
+    TEST_APPROX(mat.sheen.roughnessFactor, 0.0F, 1e-5F);
+    TEST_APPROX(mat.sheen.colorFactor.x, 0.0F, 1e-5F);
+    TEST_APPROX(mat.sheen.colorFactor.y, 0.0F, 1e-5F);
+    TEST_APPROX(mat.sheen.colorFactor.z, 0.0F, 1e-5F);
+    TEST_CHECK(!mat.sheen.colorTexture.isPresent);
+    TEST_CHECK(!mat.sheen.roughnessTexture.isPresent);
 
     // Verify default extension values when constructed explicitly
     ClearcoatExtension cc{};
@@ -101,12 +110,12 @@ void testMaterialDefaults() {
 }
 
 // -----------------------------------------------------------------------------
-// Test 2: MaterialUniformBufferData std140 Layout (160 Bytes)
+// Test 2: MaterialUniformBufferData std140 Layout (192 Bytes)
 // -----------------------------------------------------------------------------
 void testUniformBufferDataLayout() {
     std::cout << "[Test 2] MaterialUniformBufferData std140 Layout..." << std::endl;
 
-    TEST_CHECK(sizeof(MaterialUniformBufferData) == 160);
+    TEST_CHECK(sizeof(MaterialUniformBufferData) == 192);
     TEST_CHECK(alignof(MaterialUniformBufferData) == 16);
 
     // Verify critical field offsets per std140
@@ -135,6 +144,12 @@ void testUniformBufferDataLayout() {
     TEST_CHECK(offsetof(MaterialUniformBufferData, attenuationColorAndHasSpecTex) == 128);
     TEST_CHECK(offsetof(MaterialUniformBufferData, specularColorFactorAndHasColorTex) == 144);
 
+    TEST_CHECK(offsetof(MaterialUniformBufferData, anisotropyStrength) == 160);
+    TEST_CHECK(offsetof(MaterialUniformBufferData, anisotropyRotation) == 164);
+    TEST_CHECK(offsetof(MaterialUniformBufferData, hasAnisotropyTex) == 168);
+    TEST_CHECK(offsetof(MaterialUniformBufferData, sheenRoughness) == 172);
+    TEST_CHECK(offsetof(MaterialUniformBufferData, sheenColorFactorAndFlags) == 176);
+
     std::cout << "  Passed." << std::endl;
 }
 
@@ -148,7 +163,7 @@ void testGltfImporterExtensions() {
     TEST_CHECK(result.hasValue());
 
     const auto& sceneData = result.value();
-    TEST_CHECK(sceneData.materials.size() == 7);
+    TEST_CHECK(sceneData.materials.size() == 10);
 
     // 0: ClearcoatMaterial
     {
@@ -249,6 +264,39 @@ void testGltfImporterExtensions() {
         TEST_APPROX(mat.specular.colorFactor.z, 1.0F, 1e-4F);
     }
 
+    // 7: AnisotropyMaterial
+    {
+        const auto& mat = sceneData.materials[7];
+        TEST_CHECK(mat.name == "AnisotropyMaterial");
+        TEST_APPROX(mat.anisotropy.strength, 0.75F, 1e-4F);
+        TEST_APPROX(mat.anisotropy.rotation, 1.570796F, 1e-4F);
+    }
+
+    // 8: SheenMaterial
+    {
+        const auto& mat = sceneData.materials[8];
+        TEST_CHECK(mat.name == "SheenMaterial");
+        TEST_APPROX(mat.sheen.colorFactor.x, 0.9F, 1e-4F);
+        TEST_APPROX(mat.sheen.colorFactor.y, 0.8F, 1e-4F);
+        TEST_APPROX(mat.sheen.colorFactor.z, 0.7F, 1e-4F);
+        TEST_APPROX(mat.sheen.roughnessFactor, 0.35F, 1e-4F);
+    }
+
+    // 9: CompleteAdvancedMaterial
+    {
+        const auto& mat = sceneData.materials[9];
+        TEST_CHECK(mat.name == "CompleteAdvancedMaterial");
+        TEST_APPROX(mat.clearcoat.factor, 0.6F, 1e-4F);
+        TEST_APPROX(mat.clearcoat.roughnessFactor, 0.2F, 1e-4F);
+        TEST_APPROX(mat.transmission.factor, 0.5F, 1e-4F);
+        TEST_APPROX(mat.volume.thicknessFactor, 1.0F, 1e-4F);
+        TEST_APPROX(mat.ior, 1.6F, 1e-4F);
+        TEST_APPROX(mat.specular.factor, 0.9F, 1e-4F);
+        TEST_APPROX(mat.anisotropy.strength, 0.5F, 1e-4F);
+        TEST_APPROX(mat.sheen.colorFactor.x, 0.7F, 1e-4F);
+        TEST_APPROX(mat.sheen.roughnessFactor, 0.4F, 1e-4F);
+    }
+
     std::cout << "  Passed." << std::endl;
 }
 
@@ -268,12 +316,20 @@ void testGltfSceneImporterEquivalence() {
     std::string meshUri = kFixturesPath + "#mesh_0";
     const MeshData* meshData = assetMgr.getMeshData(meshUri);
     TEST_CHECK(meshData != nullptr);
-    TEST_CHECK(meshData->materials.size() == 7);
+    TEST_CHECK(meshData->materials.size() == 10);
 
     // Verify that the materials created in GltfSceneImporter match GltfImporter
     const auto& clearcoatMat = meshData->materials[0];
     TEST_CHECK(clearcoatMat.name == "ClearcoatMaterial");
     TEST_APPROX(clearcoatMat.clearcoat.factor, 0.85F, 1e-4F);
+
+    const auto& anisoMat = meshData->materials[7];
+    TEST_CHECK(anisoMat.name == "AnisotropyMaterial");
+    TEST_APPROX(anisoMat.anisotropy.strength, 0.75F, 1e-4F);
+
+    const auto& sheenMat = meshData->materials[8];
+    TEST_CHECK(sheenMat.name == "SheenMaterial");
+    TEST_APPROX(sheenMat.sheen.roughnessFactor, 0.35F, 1e-4F);
 
     const auto& volumeMat = meshData->materials[2];
     TEST_APPROX(volumeMat.volume.thicknessFactor, 2.5F, 1e-4F);
@@ -295,10 +351,10 @@ void testGpuMaterialIntegration() {
     std::cout << "[Test 5] GpuMaterial Descriptor Layout & UBO Synchronization..." << std::endl;
 
     auto desc = createMaterialDescriptorSetLayoutDesc();
-    TEST_CHECK(desc.bindings.size() == 13);
+    TEST_CHECK(desc.bindings.size() == 16);
 
-    // Check bindings: 12 samplers (0..4, 6..12) and 1 UBO (5)
-    for (uint32_t i = 0; i < 13; ++i) {
+    // Check bindings: 15 samplers (0..4, 6..15) and 1 UBO (5)
+    for (uint32_t i = 0; i < 16; ++i) {
         TEST_CHECK(desc.bindings[i].binding == i);
         if (i == 5) {
             TEST_CHECK(desc.bindings[i].descriptorType == rhi::DescriptorType::UniformBuffer);
@@ -378,8 +434,8 @@ void testGpuMaterialIntegration() {
     TEST_APPROX(ubo.specularColorFactorAndHasColorTex.y, 0.9F, 1e-4F);
     TEST_APPROX(ubo.specularColorFactorAndHasColorTex.z, 0.8F, 1e-4F);
 
-    // Verify updateTextureDescriptors works with 12 slots
-    std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 12> textureSlots{};
+    // Verify updateTextureDescriptors works with 15 slots
+    std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 15> textureSlots{};
     gpuMat->updateTextureDescriptors(*rhiDevice, textureSlots);
 
     rhiDevice->destroyDescriptorSetLayout(layout);

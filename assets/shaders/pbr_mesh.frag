@@ -45,6 +45,11 @@ layout(std140, set = 0, binding = 5) uniform MaterialData {
     float specularFactor;
     vec4 attenuationColorAndHasSpecTex;
     vec4 specularColorFactorAndHasColorTex;
+    float anisotropyStrength;
+    float anisotropyRotation;
+    uint hasAnisotropyTex;
+    float sheenRoughness;
+    vec4 sheenColorFactorAndFlags;
 }
 material;
 
@@ -55,6 +60,9 @@ layout(set = 0, binding = 9) uniform sampler2D uTransmissionMap;
 layout(set = 0, binding = 10) uniform sampler2D uThicknessMap;
 layout(set = 0, binding = 11) uniform sampler2D uSpecularMap;
 layout(set = 0, binding = 12) uniform sampler2D uSpecularColorMap;
+layout(set = 0, binding = 13) uniform sampler2D uAnisotropyMap;
+layout(set = 0, binding = 14) uniform sampler2D uSheenColorMap;
+layout(set = 0, binding = 15) uniform sampler2D uSheenRoughnessMap;
 
 // Set 1: Scene Lighting and Shadow Map
 struct GpuDirectionalLight {
@@ -174,32 +182,82 @@ vec3 evaluateClearcoat(vec3 L, vec3 radiance, vec3 Nc, vec3 V, float clearcoatRo
     return specScalar * Fc_out * radiance * NdotL;
 }
 
-// Fused Cook-Torrance BRDF (Single-Division Karis Smith-GGX + GGX NDF) with Clearcoat & Transmission
+// Charlie sheen microfacet distribution (Estevez and Kulla 2017)
+vec3 evaluateSheen(vec3 L, vec3 radiance, vec3 N, vec3 V, vec3 sheenColor, float sheenRoughness) {
+    vec3 H = normalize(V + L);
+    float NdotL = max(dot(N, L), 0.0);
+    float NdotV = max(dot(N, V), 0.0001);
+    float NdotH = clamp(dot(N, H), 0.0, 1.0);
+
+    float invR = 1.0 / max(sheenRoughness, 0.001);
+    float sinTheta2 = max(0.0, 1.0 - NdotH * NdotH);
+    float D = ((2.0 + invR) * 0.5 * INV_PI) * pow(sinTheta2, max(invR * 0.5, 0.001));
+
+    float V_sheen = 1.0 / (4.0 * (NdotL + NdotV - NdotL * NdotV) + 0.0001);
+    return sheenColor * (D * V_sheen * radiance * NdotL);
+}
+
+// Fused Cook-Torrance BRDF (Single-Division Karis Smith-GGX + GGX / Anisotropic NDF) with Sheen, Clearcoat & Transmission
 vec3 evaluateDirectLight(vec3 L, vec3 radiance, vec3 N, vec3 V, vec3 albedo, float metallic,
                          float roughness, vec3 F0, float NdotL, float transmission,
+                         vec3 T_aniso, vec3 B_aniso, float anisoStrength,
+                         vec3 sheenColor, float sheenRoughness,
                          vec3 Nc, float clearcoat, float clearcoatRoughness) {
     vec3 H = normalize(V + L);
     float NdotV = max(dot(N, V), 0.0001);
     float NdotH = max(dot(N, H), 0.0);
     float VdotH = max(dot(V, H), 0.0);
 
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH2 = NdotH * NdotH;
-    float denom = NdotH2 * (a2 - 1.0) + 1.0;
+    float specScalar;
+    if (anisoStrength > 0.001) {
+        float aspect = sqrt(1.0 - anisoStrength * 0.9);
+        float ax = max(0.001, roughness * roughness / aspect);
+        float ay = max(0.001, roughness * roughness * aspect);
 
-    float k = (roughness + 1.0) * (roughness + 1.0) * 0.125;
-    float gv = NdotV * (1.0 - k) + k;
-    float gl = NdotL * (1.0 - k) + k;
+        float XdotH = dot(T_aniso, H);
+        float YdotH = dot(B_aniso, H);
+        float ZdotH = NdotH;
 
-    float specScalar = (0.5 * INV_PI * a2) / max(denom * denom * gv * gl, 0.0000001);
+        float dTerm = (XdotH * XdotH) / (ax * ax) + (YdotH * YdotH) / (ay * ay) + ZdotH * ZdotH;
+        float D_aniso = 1.0 / (PI * ax * ay * max(dTerm * dTerm, 1e-7));
+
+        float XdotV = dot(T_aniso, V);
+        float YdotV = dot(B_aniso, V);
+        float ZdotV = NdotV;
+        float XdotL = dot(T_aniso, L);
+        float YdotL = dot(B_aniso, L);
+        float ZdotL = NdotL;
+
+        float lambdaV = sqrt(ax * ax * XdotV * XdotV + ay * ay * YdotV * YdotV + ZdotV * ZdotV);
+        float lambdaL = sqrt(ax * ax * XdotL * XdotL + ay * ay * YdotL * YdotL + ZdotL * ZdotL);
+        float V_aniso = 0.5 / (ZdotV * lambdaL + ZdotL * lambdaV + 1e-5);
+
+        specScalar = D_aniso * V_aniso;
+    } else {
+        float a = roughness * roughness;
+        float a2 = a * a;
+        float NdotH2 = NdotH * NdotH;
+        float denom = NdotH2 * (a2 - 1.0) + 1.0;
+
+        float k = (roughness + 1.0) * (roughness + 1.0) * 0.125;
+        float gv = NdotV * (1.0 - k) + k;
+        float gl = NdotL * (1.0 - k) + k;
+
+        specScalar = (0.5 * INV_PI * a2) / max(denom * denom * gv * gl, 0.0000001);
+    }
+
     vec3 F = fresnelSchlick(VdotH, F0);
-
     vec3 kD = (vec3(1.0) - F) * (1.0 - metallic);
     vec3 diffTerm = kD * (albedo * INV_PI) * (1.0 - transmission);
     vec3 specTerm = specScalar * F;
 
     vec3 baseDirect = (diffTerm + specTerm) * radiance * NdotL;
+
+    if (dot(sheenColor, sheenColor) > 1e-6) {
+        vec3 sheenDirect = evaluateSheen(L, radiance, N, V, sheenColor, sheenRoughness);
+        float sheenScaling = 1.0 - max(max(sheenColor.r, sheenColor.g), sheenColor.b) * 0.15;
+        baseDirect = baseDirect * sheenScaling + sheenDirect;
+    }
 
     if (clearcoat > 0.001) {
         vec3 Fc;
@@ -468,6 +526,36 @@ void main() {
         baseColor.rgb *= volumeTransmittance;
     }
 
+    // 4f. KHR_materials_anisotropy
+    float anisoStrength = clamp(material.anisotropyStrength, 0.0, 1.0);
+    float anisoRot = material.anisotropyRotation;
+    vec2 anisoDir = vec2(cos(anisoRot), sin(anisoRot));
+    if (material.hasAnisotropyTex != 0u) {
+        vec3 anisoSample = texture(uAnisotropyMap, inUV).xyz;
+        vec2 texDir = anisoSample.xy * 2.0 - 1.0;
+        anisoDir = mat2(cos(anisoRot), -sin(anisoRot), sin(anisoRot), cos(anisoRot)) * texDir;
+        anisoStrength = clamp(anisoStrength * anisoSample.z, 0.0, 1.0);
+    }
+    vec3 T_aniso = tbn[0];
+    vec3 B_aniso = tbn[1];
+    float dirLenSq = dot(anisoDir, anisoDir);
+    if (dirLenSq > 1e-6) {
+        anisoDir *= inversesqrt(dirLenSq);
+        T_aniso = normalize(tbn[0] * anisoDir.x + tbn[1] * anisoDir.y);
+        B_aniso = cross(N, T_aniso);
+    }
+
+    // 4g. KHR_materials_sheen
+    vec3 sheenColor = material.sheenColorFactorAndFlags.rgb;
+    float sheenFlags = material.sheenColorFactorAndFlags.w;
+    if (sheenFlags >= 1.0 && sheenFlags != 2.0) { // hasSheenColorTex
+        sheenColor *= texture(uSheenColorMap, inUV).rgb;
+    }
+    float sheenRoughness = clamp(material.sheenRoughness, 0.045, 1.0);
+    if (sheenFlags >= 2.0) { // hasSheenRoughnessTex
+        sheenRoughness = clamp(sheenRoughness * texture(uSheenRoughnessMap, inUV).a, 0.045, 1.0);
+    }
+
     // 5. Direct Light Accumulation
     vec3 directLighting = vec3(0.0);
 
@@ -495,6 +583,8 @@ void main() {
                 directLighting +=
                     shadow * evaluateDirectLight(L, radiance, N, V, baseColor.rgb, metallic,
                                                  roughness, F0, NdotL, transmission,
+                                                 T_aniso, B_aniso, anisoStrength,
+                                                 sheenColor, sheenRoughness,
                                                  Nc, clearcoat, clearcoatRoughness);
             }
         }
@@ -522,6 +612,8 @@ void main() {
                     directLighting +=
                         evaluateDirectLight(L, radiance, N, V, baseColor.rgb, metallic, roughness,
                                             F0, NdotL, transmission,
+                                            T_aniso, B_aniso, anisoStrength,
+                                            sheenColor, sheenRoughness,
                                             Nc, clearcoat, clearcoatRoughness);
                 }
             }
@@ -561,6 +653,8 @@ void main() {
                         directLighting +=
                             evaluateDirectLight(L, radiance, N, V, baseColor.rgb, metallic,
                                                 roughness, F0, NdotL, transmission,
+                                                T_aniso, B_aniso, anisoStrength,
+                                                sheenColor, sheenRoughness,
                                                 Nc, clearcoat, clearcoatRoughness);
                     }
                 }
@@ -599,8 +693,14 @@ void main() {
         vec3 diffuseRadiance = irradiance + ssgiRadiance + probeRadiance;
         vec3 diffuseAmbient = kD_ibl * diffuseRadiance * baseColor.rgb * diffTransScale;
 
-        // Specular IBL (Split-Sum Cook-Torrance with roughness-compensated Fresnel)
-        vec3 R = reflect(-V, N);
+        // Specular IBL (Anisotropic Reflection bending + Split-Sum Cook-Torrance)
+        vec3 effN = N;
+        if (anisoStrength > 0.001) {
+            vec3 anisoCross = cross(T_aniso, V);
+            vec3 bentN = normalize(cross(anisoCross, T_aniso));
+            effN = normalize(mix(N, bentN, anisoStrength * 0.5));
+        }
+        vec3 R = reflect(-V, effN);
         float maxMip = uLighting.iblParams.z;
         vec3 prefilteredColor = textureLod(uPrefilteredEnvMap, R, roughness * maxMip).rgb;
         vec2 envBRDF = texture(uBrdfLut, vec2(NdotV, roughness)).rg;
@@ -615,6 +715,16 @@ void main() {
         vec3 ambientDiffuse = baseColor.rgb * (1.0 - metallic) * diffuseRadiance * diffTransScale;
         vec3 ambientSpecular = mix(F0, baseColor.rgb, metallic) * (1.0 - roughness) * ambLight;
         ambient = ambientDiffuse + ambientSpecular;
+    }
+
+    // Sheen IBL specular highlight
+    if (dot(sheenColor, sheenColor) > 1e-6) {
+        float NdotV = max(dot(N, V), 0.0);
+        float sheenFresnel = pow(clamp(1.0 - NdotV, 0.0, 1.0), 5.0);
+        vec3 sheenEnv = textureLod(uPrefilteredEnvMap, N, sheenRoughness * uLighting.iblParams.z).rgb;
+        vec3 sheenAmbient = sheenColor * sheenEnv * sheenFresnel;
+        float sheenScaling = 1.0 - max(max(sheenColor.r, sheenColor.g), sheenColor.b) * sheenFresnel;
+        ambient = ambient * sheenScaling + sheenAmbient;
     }
 
     // Clearcoat IBL specular
