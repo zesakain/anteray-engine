@@ -96,38 +96,67 @@ struct CascadeSplits {
 inline void getFrustumSliceCorners(const Mat4& invViewProj, float sliceNearZ, float sliceFarZ,
                                    float camNearZ, float camFarZ,
                                    std::array<Vec3, 8>& outCorners) noexcept {
-    // Standard NDC corners
-    static constexpr std::array<Vec4, 8> kNdcCorners = {{
-        {-1.0F, -1.0F, 0.0F, 1.0F},
-        {1.0F, -1.0F, 0.0F, 1.0F},
-        {-1.0F, 1.0F, 0.0F, 1.0F},
-        {1.0F, 1.0F, 0.0F, 1.0F},
-        {-1.0F, -1.0F, 1.0F, 1.0F},
-        {1.0F, -1.0F, 1.0F, 1.0F},
-        {-1.0F, 1.0F, 1.0F, 1.0F},
-        {1.0F, 1.0F, 1.0F, 1.0F},
-    }};
+    (void)camNearZ;
+    (void)camFarZ;
 
-    std::array<Vec3, 8> fullCorners{};
-    for (size_t i = 0; i < 8; ++i) {
-        float w = 0.0F;
-        Vec3 pt = invViewProj.transformPointWithW(
-            Vec3{kNdcCorners[i].x, kNdcCorners[i].y, kNdcCorners[i].z}, w);
-        if (std::abs(w) > 1e-6F) {
-            pt = pt / w;
-        }
-        fullCorners[i] = pt;
+    // Extract camera center of projection (eye) in world space
+    Vec3 eye = Vec3::zero();
+    if (std::abs(invViewProj.m[11]) > 1e-6F) {
+        eye = Vec3(-invViewProj.m[8] / invViewProj.m[11], -invViewProj.m[9] / invViewProj.m[11],
+                   -invViewProj.m[10] / invViewProj.m[11]);
+    } else {
+        float w0 = 0.0F;
+        eye = invViewProj.transformPointWithW(Vec3::zero(), w0);
     }
 
-    // Interpolate near and far slice corners based on linear depth fraction
-    const float totalRange = std::max(1e-4F, camFarZ - camNearZ);
-    const float nearFraction = std::clamp((sliceNearZ - camNearZ) / totalRange, 0.0F, 1.0F);
-    const float farFraction = std::clamp((sliceFarZ - camNearZ) / totalRange, 0.0F, 1.0F);
+    // Extract camera forward direction in world space
+    float wn = 0.0F;
+    float wf = 0.0F;
+    Vec3 nearCenter = invViewProj.transformPointWithW(Vec3(0.0F, 0.0F, 0.0F), wn);
+    if (std::abs(wn) > 1e-6F) {
+        nearCenter = nearCenter * (1.0F / wn);
+    }
+    Vec3 farCenter = invViewProj.transformPointWithW(Vec3(0.0F, 0.0F, 1.0F), wf);
+    if (std::abs(wf) > 1e-6F) {
+        farCenter = farCenter * (1.0F / wf);
+    }
+    Vec3 forward = farCenter - nearCenter;
+    if (forward.lengthSq() > 1e-6F) {
+        forward = forward.normalized();
+    } else {
+        forward = Vec3(0.0F, 0.0F, -1.0F);
+    }
+
+    // 4 NDC corners on the far plane (Vulkan depth Z = 1.0)
+    static constexpr std::array<Vec3, 4> kNdcFarCorners = {{
+        {-1.0F, -1.0F, 1.0F},
+        {1.0F, -1.0F, 1.0F},
+        {-1.0F, 1.0F, 1.0F},
+        {1.0F, 1.0F, 1.0F},
+    }};
+
+    std::array<Vec3, 4> rayDirs{};
+    for (size_t i = 0; i < 4; ++i) {
+        float wc = 0.0F;
+        Vec3 pt = invViewProj.transformPointWithW(kNdcFarCorners[i], wc);
+        if (std::abs(wc) > 1e-6F) {
+            pt = pt * (1.0F / wc);
+        }
+        const Vec3 dir = pt - eye;
+        const float depth = Vec3::dot(dir, forward);
+        if (std::abs(depth) > 1e-4F) {
+            rayDirs[i] = dir * (1.0F / depth);
+        } else {
+            rayDirs[i] = dir;
+        }
+    }
+
+    const float nearZ = std::max(0.01F, sliceNearZ);
+    const float farZ = std::max(nearZ + 0.01F, sliceFarZ);
 
     for (size_t i = 0; i < 4; ++i) {
-        const Vec3 ray = fullCorners[i + 4] - fullCorners[i];
-        outCorners[i] = fullCorners[i] + (ray * nearFraction);
-        outCorners[i + 4] = fullCorners[i] + (ray * farFraction);
+        outCorners[i] = eye + (rayDirs[i] * nearZ);
+        outCorners[i + 4] = eye + (rayDirs[i] * farZ);
     }
 }
 
@@ -224,7 +253,9 @@ inline void computeShadowCascades(const Mat4& cameraView, const Mat4& cameraProj
         const float worldTexelSize = (2.0F * sphereRadius) / cascadeResolution;
         cascade.texelSizeWorld = worldTexelSize;
 
-        Mat4 lightView = Mat4::lookAt(center + (normLightDir * (sphereRadius * 2.0F)), center, up);
+        // Pull light eye backward along light direction to encompass all offscreen occluders
+        const float maxOccluderDistance = std::max(sphereRadius * 4.0F, config.maxDistance * 2.0F);
+        Mat4 lightView = Mat4::lookAt(center + (normLightDir * maxOccluderDistance), center, up);
 
         if (config.stabilizeCascades && worldTexelSize > 1e-6F) {
             const Vec3 centerLight = lightView.transformPoint(center);
@@ -235,15 +266,14 @@ inline void computeShadowCascades(const Mat4& cameraView, const Mat4& cameraProj
             auto invLvOpt = lightView.inverse();
             if (invLvOpt.has_value()) {
                 center = invLvOpt->transformPoint(snappedLightCenter);
-                lightView =
-                    Mat4::lookAt(center + (normLightDir * (sphereRadius * 2.0F)), center, up);
+                lightView = Mat4::lookAt(center + (normLightDir * maxOccluderDistance), center, up);
             }
         }
 
         // 5. Build orthographic projection matrix covering the sphere bounds
         // Extend z-range backwards to encompass potential shadow casters behind camera
         const float zNear = 0.0F;
-        const float zFar = sphereRadius * 6.0F;
+        const float zFar = maxOccluderDistance + (sphereRadius * 2.0F);
         const Mat4 lightProj = Mat4::orthographic(-sphereRadius, sphereRadius, -sphereRadius,
                                                   sphereRadius, zNear, zFar);
 
@@ -262,8 +292,8 @@ inline void computeShadowCascades(const Mat4& cameraView, const Mat4& cameraProj
         bounds.expand(center - Vec3(sphereRadius, sphereRadius, sphereRadius));
         bounds.expand(center + Vec3(sphereRadius, sphereRadius, sphereRadius));
         // Expand bounds along light direction to include offscreen casters
-        bounds.expand(bounds.minBound + (normLightDir * (sphereRadius * 2.0F)));
-        bounds.expand(bounds.maxBound + (normLightDir * (sphereRadius * 2.0F)));
+        bounds.expand(bounds.minBound + (normLightDir * maxOccluderDistance));
+        bounds.expand(bounds.maxBound + (normLightDir * maxOccluderDistance));
         cascade.worldBounds = bounds;
     }
 }
