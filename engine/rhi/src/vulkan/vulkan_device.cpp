@@ -57,7 +57,6 @@ VulkanDevice::VulkanDevice(std::unique_ptr<VulkanInstance> instance,
             .flags = 0,
         };
         (void)vkCreateSemaphore(device_, &semInfo, nullptr, &frameSync_[i].imageAvailableSemaphore);
-        (void)vkCreateSemaphore(device_, &semInfo, nullptr, &frameSync_[i].renderFinishedSemaphore);
 
         VkFenceCreateInfo fenceInfo{
             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -66,6 +65,8 @@ VulkanDevice::VulkanDevice(std::unique_ptr<VulkanInstance> instance,
         };
         (void)vkCreateFence(device_, &fenceInfo, nullptr, &frameSync_[i].inFlightFence);
     }
+
+    syncSwapchainSemaphores();
 
     VkFenceCreateInfo headlessFenceInfo{
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
@@ -83,15 +84,17 @@ VulkanDevice::~VulkanDevice() noexcept {
             vkDestroySemaphore(device_, frameSync_[i].imageAvailableSemaphore, nullptr);
             frameSync_[i].imageAvailableSemaphore = VK_NULL_HANDLE;
         }
-        if (frameSync_[i].renderFinishedSemaphore != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device_, frameSync_[i].renderFinishedSemaphore, nullptr);
-            frameSync_[i].renderFinishedSemaphore = VK_NULL_HANDLE;
-        }
         if (frameSync_[i].inFlightFence != VK_NULL_HANDLE) {
             vkDestroyFence(device_, frameSync_[i].inFlightFence, nullptr);
             frameSync_[i].inFlightFence = VK_NULL_HANDLE;
         }
     }
+    for (VkSemaphore sem : swapchainRenderFinishedSemaphores_) {
+        if (sem != VK_NULL_HANDLE) {
+            vkDestroySemaphore(device_, sem, nullptr);
+        }
+    }
+    swapchainRenderFinishedSemaphores_.clear();
     if (headlessFence_ != VK_NULL_HANDLE) {
         vkDestroyFence(device_, headlessFence_, nullptr);
         headlessFence_ = VK_NULL_HANDLE;
@@ -1329,9 +1332,24 @@ Result<void> VulkanDevice::submit(RhiCommandList* commandList) {
     ++currentSubmissionSerial_;
     const uint64_t submissionSerial = currentSubmissionSerial_;
 
-    if (swapchain_ != nullptr && frameActive_ && vkCmd->targetsSwapchain()) {
+    if (swapchain_ != nullptr && vkCmd->targetsSwapchain()) {
+        if (!frameActive_) {
+            // No swapchain image was acquired this frame (e.g., minimized, out-of-date, or
+            // acquire timeout); skip swapchain submission cleanly without falling through to
+            // headlessFence_.
+            vkCmd->cleanupStagingResources();
+            return Result<void>::success();
+        }
+
         auto& sync = frameSync_[currentFrameSlot_];
         sync.submissionSerial = submissionSerial;
+
+        VkSemaphore renderFinishedSem =
+            (currentSwapchainImageIndex_ < swapchainRenderFinishedSemaphores_.size())
+                ? swapchainRenderFinishedSemaphores_[currentSwapchainImageIndex_]
+                : VK_NULL_HANDLE;
+
+        vkResetFences(device_, 1, &sync.inFlightFence);
 
         VkPipelineStageFlags waitDstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         VkSubmitInfo submitInfo{
@@ -1342,8 +1360,8 @@ Result<void> VulkanDevice::submit(RhiCommandList* commandList) {
             .pWaitDstStageMask = &waitDstStageMask,
             .commandBufferCount = 1,
             .pCommandBuffers = &cmd,
-            .signalSemaphoreCount = 1,
-            .pSignalSemaphores = &sync.renderFinishedSemaphore,
+            .signalSemaphoreCount = (renderFinishedSem != VK_NULL_HANDLE) ? 1U : 0U,
+            .pSignalSemaphores = (renderFinishedSem != VK_NULL_HANDLE) ? &renderFinishedSem : nullptr,
         };
 
         const Timestamp tSubmitStart = Timestamp::now();
@@ -1548,21 +1566,47 @@ const GraphicsPipelineDesc* VulkanDevice::getPipelineDesc(PipelineHandle handle)
     return nullptr;
 }
 
+void VulkanDevice::syncSwapchainSemaphores() noexcept {
+    for (VkSemaphore sem : swapchainRenderFinishedSemaphores_) {
+        if (sem != VK_NULL_HANDLE) {
+            vkDestroySemaphore(device_, sem, nullptr);
+        }
+    }
+    swapchainRenderFinishedSemaphores_.clear();
+
+    if (!swapchain_ || device_ == VK_NULL_HANDLE) {
+        return;
+    }
+
+    const size_t imgCount = swapchain_->getImageCount();
+    swapchainRenderFinishedSemaphores_.resize(imgCount, VK_NULL_HANDLE);
+    VkSemaphoreCreateInfo semInfo{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+    };
+    for (size_t i = 0; i < imgCount; ++i) {
+        (void)vkCreateSemaphore(device_, &semInfo, nullptr, &swapchainRenderFinishedSemaphores_[i]);
+    }
+}
+
 Result<uint32_t> VulkanDevice::acquireNextImage() {
     if (!swapchain_) {
         return 0;
     }
-    if (pendingVsync_.has_value()) {
-        const bool targetVsync = *pendingVsync_;
+
+    if (pendingVsync_.has_value() || swapchainNeedsRecreate_ || swapchain_->isSuboptimal()) {
+        const bool targetVsync = pendingVsync_.value_or(swapchain_->isVsyncEnabled());
         pendingVsync_ = std::nullopt;
-        if (swapchain_->isVsyncEnabled() != targetVsync) {
-            waitIdle();
-            const auto ext = swapchain_->getExtent();
-            auto recRes = swapchain_->recreate(ext.width, ext.height, targetVsync);
-            if (!recRes.hasValue()) {
-                return recRes.error();
-            }
+        swapchainNeedsRecreate_ = false;
+        waitIdle();
+        const auto ext = swapchain_->getExtent();
+        auto recRes = swapchain_->recreate(ext.width, ext.height, targetVsync);
+        if (!recRes.hasValue()) {
+            frameActive_ = false;
+            return recRes.error();
         }
+        syncSwapchainSemaphores();
     }
 
     currentFrameSlot_ = (currentFrameSlot_ + 1) % kMaxFramesInFlight;
@@ -1579,10 +1623,20 @@ Result<uint32_t> VulkanDevice::acquireNextImage() {
             completedSubmissionSerial_ = sync.submissionSerial;
         }
     }
-    vkResetFences(device_, 1, &sync.inFlightFence);
 
     const Timestamp tAcqStart = Timestamp::now();
     auto acqRes = swapchain_->acquireNextImage(sync.imageAvailableSemaphore);
+    if (!acqRes.hasValue() && swapchain_->isSuboptimal()) {
+        // Swapchain became out-of-date before present; recreate immediately and retry once.
+        const bool targetVsync = swapchain_->isVsyncEnabled();
+        waitIdle();
+        const auto ext = swapchain_->getExtent();
+        auto recRes = swapchain_->recreate(ext.width, ext.height, targetVsync);
+        if (recRes.hasValue()) {
+            syncSwapchainSemaphores();
+            acqRes = swapchain_->acquireNextImage(sync.imageAvailableSemaphore);
+        }
+    }
     const Timestamp tAcqEnd = Timestamp::now();
     queueTimingStats_.acquireTimeMs = static_cast<float>((tAcqEnd - tAcqStart).asMilliseconds());
     if (acqRes.hasValue()) {
@@ -1599,13 +1653,20 @@ Result<void> VulkanDevice::present() {
         return Result<void>::success();
     }
     frameActive_ = false;
-    auto& sync = frameSync_[currentFrameSlot_];
+
+    VkSemaphore renderFinishedSem =
+        (currentSwapchainImageIndex_ < swapchainRenderFinishedSemaphores_.size())
+            ? swapchainRenderFinishedSemaphores_[currentSwapchainImageIndex_]
+            : VK_NULL_HANDLE;
 
     const Timestamp tPresStart = Timestamp::now();
-    auto presRes = swapchain_->present(presentQueue_, currentSwapchainImageIndex_,
-                                       sync.renderFinishedSemaphore);
+    auto presRes =
+        swapchain_->present(presentQueue_, currentSwapchainImageIndex_, renderFinishedSem);
     const Timestamp tPresEnd = Timestamp::now();
     queueTimingStats_.presentTimeMs = static_cast<float>((tPresEnd - tPresStart).asMilliseconds());
+    if (!presRes.hasValue() || swapchain_->isSuboptimal()) {
+        swapchainNeedsRecreate_ = true;
+    }
     return presRes;
 }
 
@@ -1686,7 +1747,12 @@ Result<void> VulkanDevice::resize(uint32_t width, uint32_t height) {
     }
     const bool vsync = isVsyncEnabled();
     pendingVsync_ = std::nullopt;
-    return swapchain_->recreate(width, height, vsync);
+    swapchainNeedsRecreate_ = false;
+    auto res = swapchain_->recreate(width, height, vsync);
+    if (res.hasValue()) {
+        syncSwapchainSemaphores();
+    }
+    return res;
 }
 
 Result<void> VulkanDevice::setVsync(bool enabled) {

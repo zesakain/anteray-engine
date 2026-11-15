@@ -49,6 +49,8 @@ public:
     [[nodiscard]] Result<void> recreate(uint32_t newWidth, uint32_t newHeight, bool vsync = false);
 
     [[nodiscard]] bool isVsyncEnabled() const noexcept { return vsync_; }
+    [[nodiscard]] bool isSuboptimal() const noexcept { return suboptimal_; }
+    void clearSuboptimal() noexcept { suboptimal_ = false; }
     [[nodiscard]] VkSurfaceKHR getSurface() const noexcept { return surface_; }
     [[nodiscard]] VkSwapchainKHR getSwapchain() const noexcept { return swapchain_; }
     [[nodiscard]] VkFormat getImageFormat() const noexcept { return imageFormat_; }
@@ -80,6 +82,7 @@ private:
     VkExtent2D extent_{.width = 0, .height = 0};
     VkSemaphore acquireSemaphore_{VK_NULL_HANDLE};
     bool vsync_{false};
+    bool suboptimal_{false};
     std::vector<VkImage> images_;
     std::vector<VkImageView> imageViews_;
 };

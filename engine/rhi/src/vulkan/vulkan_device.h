@@ -182,15 +182,18 @@ private:
 
     struct FrameSyncResources {
         VkSemaphore imageAvailableSemaphore{VK_NULL_HANDLE};
-        VkSemaphore renderFinishedSemaphore{VK_NULL_HANDLE};
         VkFence inFlightFence{VK_NULL_HANDLE};
         uint64_t submissionSerial{0};
     };
     static constexpr uint32_t kMaxFramesInFlight = 2;
     std::array<FrameSyncResources, kMaxFramesInFlight> frameSync_{};
+    std::vector<VkSemaphore> swapchainRenderFinishedSemaphores_{};
     uint32_t currentFrameSlot_{0};
     bool frameActive_{false};
+    bool swapchainNeedsRecreate_{false};
     VkFence headlessFence_{VK_NULL_HANDLE};
+
+    void syncSwapchainSemaphores() noexcept;
 
     std::vector<VulkanBufferSlot> buffers_;
     std::vector<VulkanTextureSlot> textures_;

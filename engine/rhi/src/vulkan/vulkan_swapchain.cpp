@@ -24,6 +24,10 @@ VulkanSwapchain::VulkanSwapchain(VkInstance instance, VkPhysicalDevice physicalD
 
 VulkanSwapchain::~VulkanSwapchain() noexcept {
     cleanup();
+    if (acquireSemaphore_ != VK_NULL_HANDLE) {
+        vkDestroySemaphore(device_, acquireSemaphore_, nullptr);
+        acquireSemaphore_ = VK_NULL_HANDLE;
+    }
     if (surface_ != VK_NULL_HANDLE && instance_ != VK_NULL_HANDLE) {
         SDL_Vulkan_DestroySurface(instance_, surface_, nullptr);
         surface_ = VK_NULL_HANDLE;
@@ -31,11 +35,6 @@ VulkanSwapchain::~VulkanSwapchain() noexcept {
 }
 
 void VulkanSwapchain::cleanup() noexcept {
-    if (acquireSemaphore_ != VK_NULL_HANDLE) {
-        vkDestroySemaphore(device_, acquireSemaphore_, nullptr);
-        acquireSemaphore_ = VK_NULL_HANDLE;
-    }
-
     for (VkImageView view : imageViews_) {
         if (view != VK_NULL_HANDLE) {
             vkDestroyImageView(device_, view, nullptr);
@@ -191,6 +190,7 @@ Result<void> VulkanSwapchain::recreate(uint32_t newWidth, uint32_t newHeight, bo
 
     cleanup();
     swapchain_ = newSwapchain;
+    suboptimal_ = false;
 
     // 6. Retrieve images and create views
     uint32_t actualImageCount = 0;
@@ -245,12 +245,25 @@ Result<uint32_t> VulkanSwapchain::acquireNextImage(VkSemaphore semaphore) noexce
         return 0;
     }
 
+    // Use a bounded timeout (100 ms) so WSI/compositor stalls never freeze the main loop
+    // indefinitely and prevent OS event pumping.
+    constexpr uint64_t kAcquireTimeoutNs = 100'000'000ULL;
     uint32_t imageIndex = 0;
-    VkResult res = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, semaphore, VK_NULL_HANDLE,
-                                         &imageIndex);
-    if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) {
+    VkResult res = vkAcquireNextImageKHR(device_, swapchain_, kAcquireTimeoutNs, semaphore,
+                                         VK_NULL_HANDLE, &imageIndex);
+    if (res == VK_SUBOPTIMAL_KHR) {
+        // Image was acquired and semaphore will be signaled; defer swapchain recreation.
+        suboptimal_ = true;
+        return imageIndex;
+    }
+    if (res == VK_ERROR_OUT_OF_DATE_KHR) {
+        suboptimal_ = true;
         return Error{.code = ErrorCode::SwapchainCreationFailed,
-                     .message = "Swapchain out of date or suboptimal"};
+                     .message = "Swapchain out of date"};
+    }
+    if (res == VK_TIMEOUT || res == VK_NOT_READY) {
+        return Error{.code = ErrorCode::SwapchainCreationFailed,
+                     .message = "vkAcquireNextImageKHR timed out"};
     }
     if (res != VK_SUCCESS) {
         return Error{.code = ErrorCode::SwapchainCreationFailed,
@@ -277,7 +290,12 @@ Result<void> VulkanSwapchain::present(VkQueue queue, uint32_t imageIndex,
     };
 
     VkResult res = vkQueuePresentKHR(queue, &presentInfo);
-    if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR) {
+    if (res == VK_SUBOPTIMAL_KHR) {
+        suboptimal_ = true;
+        return Result<void>::success();
+    }
+    if (res == VK_ERROR_OUT_OF_DATE_KHR) {
+        suboptimal_ = true;
         return Error{.code = ErrorCode::SwapchainCreationFailed,
                      .message = "Swapchain out of date during present"};
     }
