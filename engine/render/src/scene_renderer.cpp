@@ -1489,6 +1489,15 @@ Result<void> SceneRenderer::applyGraphicsSettings(const GraphicsSettings& newSet
         }
     }
 
+    // 3b. Material texture quality and anisotropic filtering propagation
+    if (settings_.quality.anisotropicFiltering != validated.quality.anisotropicFiltering ||
+        settings_.quality.textureQuality != validated.quality.textureQuality) {
+        if (device_ != nullptr && currentAssetManager_ != nullptr) {
+            device_->waitIdle();
+            std::ignore = currentAssetManager_->updateSamplerQuality(validated.quality, *device_);
+        }
+    }
+
     // 4. Synchronize post-processing runtime controls
     postProcessSettings_.enabled = validated.postProcess.enabled;
     postProcessSettings_.bloomEnabled = validated.postProcess.bloomEnabled;
@@ -2708,6 +2717,9 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     currentWorld_ = &world;
     currentAssetManager_ = &assetManager;
     currentDevice_ = &device;
+    if (assetManager.getQualitySettings() != settings_.quality) {
+        assetManager.setQualitySettings(settings_.quality);
+    }
     currentViewProj_ = viewProjection;
     currentCameraPos_ = Vec3(lightingData.cameraPosAndAmbientIntensity.x,
                              lightingData.cameraPosAndAmbientIntensity.y,

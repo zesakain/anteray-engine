@@ -382,6 +382,8 @@ Result<AssetId> AssetManager::registerTexture(std::string_view path, ImageData i
 Result<GpuTexture*> AssetManager::uploadTexture(AssetId id, rhi::RhiDevice& device,
                                                 bool generateMips,
                                                 const rhi::SamplerDesc* samplerDesc) {
+    device_ = &device;
+
     auto it = textureEntries_.find(id);
     if (it == textureEntries_.end() || it->second.metadata.loadState != AssetLoadState::Loaded) {
         return Error{.code = ErrorCode::InvalidArgument,
@@ -400,6 +402,12 @@ Result<GpuTexture*> AssetManager::uploadTexture(AssetId id, rhi::RhiDevice& devi
     }
 
     it->second.gpuTexture = std::move(gpuRes.value());
+    if (samplerDesc != nullptr) {
+        auto cachedSmpRes = samplerCache_.getOrCreate(device, *samplerDesc);
+        if (cachedSmpRes.hasValue()) {
+            it->second.gpuTexture->setSharedSampler(cachedSmpRes.value());
+        }
+    }
     return Result<GpuTexture*>::success(it->second.gpuTexture.get());
 }
 
@@ -572,6 +580,90 @@ void AssetManager::unloadAll() noexcept {
     textureEntries_.clear();
     failedIds_.clear();
     failedPaths_.clear();
+    if (device_ != nullptr) {
+        samplerCache_.clear(*device_);
+        device_ = nullptr;
+    }
+}
+
+Result<void> AssetManager::updateSamplerQuality(const QualitySettings& settings,
+                                                rhi::RhiDevice& device) {
+    device_ = &device;
+    qualitySettings_ = settings;
+    const auto& caps = device.getCaps();
+
+    // 1. Destroy existing cached samplers (caller must ensure device is idle via waitIdle())
+    samplerCache_.clear(device);
+
+    const float maxCapsAniso =
+        caps.features.samplerAnisotropy ? caps.limits.maxSamplerAnisotropy : 1.0F;
+    const AnisotropicFiltering effectiveAniso = caps.features.samplerAnisotropy
+                                                    ? qualitySettings_.anisotropicFiltering
+                                                    : AnisotropicFiltering::Off;
+
+    // 2. Re-evaluate and reassign samplers for all resident textures
+    for (auto& [texId, texEntry] : textureEntries_) {
+        if (texEntry.gpuTexture != nullptr && texEntry.gpuTexture->isValid()) {
+            const uint32_t mipLevels = texEntry.gpuTexture->getMipLevels();
+            float minLod = 0.0F;
+            if (qualitySettings_.textureQuality == TextureQuality::Medium) {
+                minLod = (mipLevels > 1) ? 1.0F : 0.0F;
+            } else if (qualitySettings_.textureQuality == TextureQuality::Low) {
+                minLod = (mipLevels > 2) ? 2.0F : ((mipLevels > 1) ? 1.0F : 0.0F);
+            }
+            const float maxLod = static_cast<float>(mipLevels);
+
+            TextureSamplerDesc defaultAuthorDesc{};
+            rhi::SamplerDesc smp =
+                toRhiSamplerDesc(defaultAuthorDesc, effectiveAniso, maxCapsAniso, minLod, maxLod);
+
+            auto cachedSmpRes = samplerCache_.getOrCreate(device, smp);
+            if (cachedSmpRes.hasValue()) {
+                texEntry.gpuTexture->setSharedSampler(cachedSmpRes.value());
+            }
+        }
+    }
+
+    // 3. Update descriptor sets on all resident materials
+    auto resolveTexSlot =
+        [&](const TextureInfo& info,
+            DefaultTextureType fallbackType) -> std::pair<rhi::TextureHandle, rhi::SamplerHandle> {
+        if (info.isPresent && !info.uri.empty()) {
+            AssetId texId = info.textureAsset;
+            if (isLoaded(texId)) {
+                GpuTexture* tex = getGpuTexture(texId);
+                if (tex != nullptr && tex->isValid()) {
+                    return {tex->getTexture(), tex->getSampler()};
+                }
+            }
+        }
+        auto fallbackRes = getOrCreateDefaultTexture(device, fallbackType);
+        if (fallbackRes.hasValue() && fallbackRes.value() != nullptr) {
+            return {fallbackRes.value()->getTexture(), fallbackRes.value()->getSampler()};
+        }
+        return {rhi::TextureHandle{}, rhi::SamplerHandle{}};
+    };
+
+    for (auto& [meshId, meshEntry] : meshEntries_) {
+        for (size_t matIdx = 0; matIdx < meshEntry.gpuMaterials.size(); ++matIdx) {
+            auto& gpuMat = meshEntry.gpuMaterials[matIdx];
+            if (gpuMat != nullptr && gpuMat->isValid() &&
+                matIdx < meshEntry.cpuMesh.materials.size()) {
+                const auto& cpuMat = meshEntry.cpuMesh.materials[matIdx];
+                std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 5> slots{
+                    resolveTexSlot(cpuMat.baseColorTexture, DefaultTextureType::WhiteSRGB),
+                    resolveTexSlot(cpuMat.metallicRoughnessTexture,
+                                   DefaultTextureType::WhiteLinear),
+                    resolveTexSlot(cpuMat.normalTexture, DefaultTextureType::FlatNormalLinear),
+                    resolveTexSlot(cpuMat.occlusionTexture, DefaultTextureType::WhiteLinear),
+                    resolveTexSlot(cpuMat.emissiveTexture, DefaultTextureType::BlackSRGB),
+                };
+                gpuMat->updateTextureDescriptors(device, slots);
+            }
+        }
+    }
+
+    return Result<void>::success();
 }
 
 std::vector<AssetMetadata> AssetManager::getAllMetadata() const {

@@ -22,9 +22,11 @@
 #include "render/gpu_material.h"
 #include "render/gpu_mesh.h"
 #include "render/gpu_texture.h"
+#include "render/graphics_settings.h"
 #include "render/image.h"
 #include "render/material.h"
 #include "render/mesh.h"
+#include "render/sampler_cache.h"
 #include "rhi/rhi_device.h"
 
 #include <memory>
@@ -171,6 +173,25 @@ public:
     /// @brief Returns a copy of all registered asset metadata records.
     [[nodiscard]] std::vector<AssetMetadata> getAllMetadata() const;
 
+    /// @brief Configures quality settings (anisotropic filtering, texture quality) governing
+    /// material samplers.
+    void setQualitySettings(const QualitySettings& settings) noexcept {
+        qualitySettings_ = settings;
+    }
+
+    /// @brief Retrieves the active quality settings governing material samplers.
+    [[nodiscard]] const QualitySettings& getQualitySettings() const noexcept {
+        return qualitySettings_;
+    }
+
+    /// @brief Accesses the internal SamplerCache deduplicating RHI samplers.
+    [[nodiscard]] SamplerCache& getSamplerCache() noexcept { return samplerCache_; }
+    [[nodiscard]] const SamplerCache& getSamplerCache() const noexcept { return samplerCache_; }
+
+    /// @brief Reconfigures material samplers and updates descriptor sets when anisotropic
+    /// filtering or texture quality settings change.
+    Result<void> updateSamplerQuality(const QualitySettings& settings, rhi::RhiDevice& device);
+
 private:
     struct MeshEntry {
         AssetMetadata metadata{};
@@ -192,6 +213,9 @@ private:
     std::unordered_map<std::string, std::string> failedPaths_{};
     std::unordered_map<DefaultTextureType, std::unique_ptr<GpuTexture>> defaultTextures_{};
     std::unique_ptr<GpuMaterial> defaultMaterial_{nullptr};
+    SamplerCache samplerCache_{};
+    QualitySettings qualitySettings_{};
+    rhi::RhiDevice* device_{nullptr};
 };
 
 } // namespace eng::render
