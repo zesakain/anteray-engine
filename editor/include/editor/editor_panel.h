@@ -68,6 +68,7 @@ struct EditorContext {
     EditorCamera* editorCamera{nullptr};
 
     void* viewportTextureId{nullptr};
+    void* logoTextureId{nullptr};
     uint32_t sceneRenderWidth{0};
     uint32_t sceneRenderHeight{0};
     bool gpuRenderingActive{false};

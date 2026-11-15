@@ -178,6 +178,10 @@ public:
     /// Returns the centralized selection model governing entity selection across panels (const).
     [[nodiscard]] const SelectionModel& getSelectionModel() const noexcept;
 
+    /// Returns the registered ImTextureID descriptor for the official Hikari branding logo, or
+    /// nullptr.
+    [[nodiscard]] void* getLogoTextureId() const noexcept;
+
     /// Returns the central asset manager repository.
     [[nodiscard]] render::AssetManager& getAssetManager() noexcept;
 

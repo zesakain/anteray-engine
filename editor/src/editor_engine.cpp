@@ -21,7 +21,9 @@
 #include "panels/viewport_panel.h"
 #include "platform/input_snapshot.h"
 #include "render/asset_manager.h"
+#include "render/gpu_texture.h"
 #include "render/graphics_settings_serializer.h"
+#include "render/image.h"
 #include "render/scene_renderer.h"
 #include "rhi/command_list.h"
 #include "rhi/rhi_device.h"
@@ -241,6 +243,8 @@ struct EditorEngine::Impl {
     JobSystem* jobSystem{nullptr};
 
     render::SceneRenderer sceneRenderer{};
+    std::unique_ptr<render::GpuTexture> logoGpuTexture_{nullptr};
+    VkDescriptorSet logoDescriptorSet_{VK_NULL_HANDLE};
     rhi::SamplerHandle viewportSampler{};
     VkDescriptorSet viewportDescriptorSet{VK_NULL_HANDLE};
     void* registeredColorTargetView_{nullptr};
@@ -474,6 +478,31 @@ bool EditorEngine::initialize(rhi::RhiDevice& rhiDevice, const EditorConfig& con
         }
         impl_->vulkanBackendInitialized = true;
         ENG_LOG_INFO("Editor", "Dear ImGui Vulkan backend initialized with Dynamic Rendering");
+
+        // Load official Hikari branding logo asset for loading screen and UI
+        const std::string logoPath = "assets/textures/branding/hikari_logo.jpg";
+        if (std::filesystem::exists(logoPath)) {
+            auto imgRes = render::ImageDecoder::decodeFromFile(logoPath, 4, true);
+            if (imgRes.hasValue()) {
+                auto texRes = render::GpuTexture::create(rhiDevice, imgRes.value(), false);
+                if (texRes.hasValue()) {
+                    impl_->logoGpuTexture_ = std::move(texRes.value());
+                    void* nativeView =
+                        rhiDevice.getNativeTextureView(impl_->logoGpuTexture_->getTexture());
+                    void* nativeSampler =
+                        rhiDevice.getNativeSampler(impl_->logoGpuTexture_->getSampler());
+                    if (nativeView != nullptr && nativeSampler != nullptr) {
+                        impl_->logoDescriptorSet_ =
+                            ImGui_ImplVulkan_AddTexture(static_cast<VkSampler>(nativeSampler),
+                                                        static_cast<VkImageView>(nativeView),
+                                                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                        ENG_LOG_INFO(
+                            "Editor",
+                            "Official Hikari branding logo successfully registered with ImGui");
+                    }
+                }
+            }
+        }
     } else {
         ENG_LOG_INFO("Editor", "Dear ImGui initialized in headless/null RHI mode");
     }
@@ -540,6 +569,12 @@ void EditorEngine::shutdown() {
         }
 
         if (impl_->vulkanBackendInitialized) {
+            if (impl_->logoDescriptorSet_ != VK_NULL_HANDLE) {
+                ImGui_ImplVulkan_RemoveTexture(impl_->logoDescriptorSet_);
+                impl_->logoDescriptorSet_ = VK_NULL_HANDLE;
+            }
+            impl_->logoGpuTexture_.reset();
+
             if (impl_->viewportDescriptorSet != VK_NULL_HANDLE) {
                 ImGui_ImplVulkan_RemoveTexture(impl_->viewportDescriptorSet);
                 impl_->viewportDescriptorSet = VK_NULL_HANDLE;
@@ -671,6 +706,7 @@ void EditorEngine::beginFrame(Duration dt, uint32_t width, uint32_t height) {
     impl_->context.editorEngine = this;
     impl_->context.sceneRenderer = &impl_->sceneRenderer;
     impl_->context.viewportTextureId = static_cast<void*>(impl_->viewportDescriptorSet);
+    impl_->context.logoTextureId = static_cast<void*>(impl_->logoDescriptorSet_);
     impl_->context.sceneRenderWidth = impl_->viewportWidth;
     impl_->context.sceneRenderHeight = impl_->viewportHeight;
     impl_->context.gpuRenderingActive = (impl_->viewportDescriptorSet != VK_NULL_HANDLE);
@@ -1081,6 +1117,10 @@ bool EditorEngine::isSdrFallbackActive() const noexcept {
 
 bool EditorEngine::isGpuViewportActive() const noexcept {
     return impl_->context.gpuRenderingActive && (impl_->viewportDescriptorSet != VK_NULL_HANDLE);
+}
+
+void* EditorEngine::getLogoTextureId() const noexcept {
+    return impl_ ? static_cast<void*>(impl_->logoDescriptorSet_) : nullptr;
 }
 
 } // namespace eng::editor
