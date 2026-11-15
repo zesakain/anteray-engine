@@ -89,6 +89,12 @@ struct GpuPassTimings {
     float ssrPassMs{0.0F};
     /// Duration of temporal accumulation and denoising pass (milliseconds).
     float temporalDenoiseMs{0.0F};
+    /// Duration of screen-space motion vector / velocity pass (milliseconds).
+    float velocityPassMs{0.0F};
+    /// Duration of Temporal Anti-Aliasing accumulation pass (milliseconds).
+    float taaPassMs{0.0F};
+    /// Duration of contrast-adaptive sharpening pass (milliseconds).
+    float sharpenPassMs{0.0F};
     /// Combined total duration of all Global Illumination passes (milliseconds).
     float totalGiMs{0.0F};
     /// Whether these timings reflect valid GPU query results from the preceding frame.
@@ -309,6 +315,16 @@ public:
     [[nodiscard]] rhi::TextureHandle getGtaoTarget() const noexcept { return gtaoFilteredTarget_; }
     [[nodiscard]] rhi::TextureHandle getGtaoRawTarget() const noexcept { return gtaoRawTarget_; }
     [[nodiscard]] rhi::TextureHandle getSsgiTarget() const noexcept { return ssgiFilteredTarget_; }
+    [[nodiscard]] rhi::TextureHandle getVelocityTarget() const noexcept { return velocityTarget_; }
+    [[nodiscard]] rhi::TextureHandle getTaaHistoryTarget() const noexcept {
+        return hdrHistoryTarget_[frameSlotIndex_ % 2];
+    }
+    [[nodiscard]] bool isTaaEnabled() const noexcept {
+        return settings_.quality.antiAliasing == AntiAliasingMode::TAA &&
+               settings_.quality.taa.enabled;
+    }
+    /// Invalidates temporal history accumulation (e.g. upon camera cuts, teleports, or resize).
+    void invalidateTaaHistory() noexcept { isTaaHistoryValid_ = false; }
     [[nodiscard]] const std::vector<ShadowCascade>& getShadowCascades() const noexcept {
         return shadowCascades_;
     }
@@ -357,6 +373,50 @@ public:
         float pad0{0.0F};
     };
 
+    // Milestone 11H: Motion Vectors, TAA, and Sharpening Push Constants
+    struct VelocityPushConstants {
+        Mat4 unjitteredInvViewProj{Mat4::identity()};
+        Mat4 unjitteredPrevViewProj{Mat4::identity()};
+        Vec2 resolution{1920.0F, 1080.0F};
+        Vec2 invResolution{1.0F / 1920.0F, 1.0F / 1080.0F};
+        uint32_t hasHistory{0};
+        float pad0{0.0F};
+        float pad1{0.0F};
+        float pad2{0.0F};
+    };
+    static_assert(sizeof(VelocityPushConstants) == 160,
+                  "VelocityPushConstants must be exactly 160 bytes");
+
+    struct MeshVelocityPushConstants {
+        Mat4 curMvp{Mat4::identity()};
+        Mat4 prevMvp{Mat4::identity()};
+        uint32_t isValid{0};
+        float pad0{0.0F};
+        float pad1{0.0F};
+        float pad2{0.0F};
+    };
+    static_assert(sizeof(MeshVelocityPushConstants) == 144,
+                  "MeshVelocityPushConstants must be exactly 144 bytes");
+
+    struct TaaPushConstants {
+        Vec4 taaParams{0.90F, 1.25F, 0.0F, 0.0F}; // historyWeight, varianceGamma, pad, pad
+        Vec2 resolution{1920.0F, 1080.0F};
+        Vec2 invResolution{1.0F / 1920.0F, 1.0F / 1080.0F};
+        uint32_t isHistoryValid{0};
+        uint32_t useMotionVectors{1};
+        float pad0{0.0F};
+        float pad1{0.0F};
+    };
+    static_assert(sizeof(TaaPushConstants) == 48, "TaaPushConstants must be exactly 48 bytes");
+
+    struct SharpenPushConstants {
+        Vec2 invResolution{1.0F / 1920.0F, 1.0F / 1080.0F};
+        float intensity{0.50F};
+        float pad0{0.0F};
+    };
+    static_assert(sizeof(SharpenPushConstants) == 16,
+                  "SharpenPushConstants must be exactly 16 bytes");
+
 private:
     struct ShadowCasterItem {
         GpuMesh* gpuMesh{nullptr};
@@ -377,6 +437,16 @@ private:
     [[nodiscard]] Result<void> createGiTargets(uint32_t width, uint32_t height);
     void destroyGiTargets();
     void updateGiDescriptors();
+
+    // Milestone 11H: Motion Vectors, TAA, and Sharpening Resource Management
+    [[nodiscard]] Result<void> initTaaResources();
+    void destroyTaaResources();
+    [[nodiscard]] Result<void> createTaaTargets(uint32_t width, uint32_t height);
+    void destroyTaaTargets();
+    void updateTaaDescriptors();
+    void recordVelocityPass(rhi::RhiCommandList& cmdList);
+    void recordTaaPass(rhi::RhiCommandList& cmdList);
+    void recordSharpenPass(rhi::RhiCommandList& cmdList);
 
     void buildRenderGraph();
     void buildPostProcessGraph();
@@ -499,6 +569,44 @@ private:
     rhi::PipelineHandle ssrPipeline_{};
     rhi::PipelineHandle temporalFilterPipeline_{};
 
+    // Milestone 11H: Motion Vectors, TAA, and Sharpening Resources
+    rhi::TextureHandle velocityTarget_{};
+    rhi::TextureHandle hdrRawTarget_{};
+    rhi::ShaderHandle velocityFragmentShader_{};
+    rhi::ShaderHandle meshVelocityVertexShader_{};
+    rhi::ShaderHandle meshVelocityFragmentShader_{};
+    rhi::ShaderHandle taaFragmentShader_{};
+    rhi::ShaderHandle sharpenFragmentShader_{};
+
+    rhi::DescriptorSetLayoutHandle velocitySetLayout_{};
+    rhi::DescriptorSetLayoutHandle taaSetLayout_{};
+    rhi::DescriptorSetLayoutHandle sharpenSetLayout_{};
+    rhi::DescriptorPoolHandle taaDescriptorPool_{};
+    rhi::DescriptorSetHandle velocityDescriptorSet_{};
+    rhi::DescriptorSetHandle taaDescriptorSet_[2]{};
+    rhi::DescriptorSetHandle sharpenDescriptorSet_[2]{};
+
+    rhi::PipelineLayoutHandle velocityPipelineLayout_{};
+    rhi::PipelineLayoutHandle meshVelocityPipelineLayout_{};
+    rhi::PipelineLayoutHandle taaPipelineLayout_{};
+    rhi::PipelineLayoutHandle sharpenPipelineLayout_{};
+
+    rhi::PipelineHandle velocityPipeline_{};
+    rhi::PipelineHandle meshVelocityPipeline_{};
+    rhi::PipelineHandle taaPipeline_{};
+    rhi::PipelineHandle sharpenPipeline_{};
+
+    Mat4 unjitteredViewProj_{Mat4::identity()};
+    Mat4 unjitteredPrevViewProj_{Mat4::identity()};
+    uint32_t taaJitterPhase_{0};
+    bool isTaaHistoryValid_{false};
+
+    struct EntityTransformCache {
+        uint64_t entityId{0};
+        Mat4 model{Mat4::identity()};
+    };
+    std::vector<EntityTransformCache> prevEntityTransforms_{};
+
     Mat4 prevViewProj_{Mat4::identity()};
     bool isHistoryValid_{false};
     uint32_t giFrameIndex_{0};
@@ -532,11 +640,13 @@ private:
         GpuMesh* gpuMesh{nullptr};
         rhi::DescriptorSetHandle materialSet{};
         Mat4 model{Mat4::identity()};
+        Mat4 prevModel{Mat4::identity()};
         uint32_t submeshIndex{0};
         float depthSq{0.0F};
         bool isAlphaMasked{false};
         bool isDoubleSided{false};
         bool isTransparent{false};
+        bool hasValidPrevTransform{false};
     };
 
     std::vector<VisibleMeshItem> visibleItems_{};

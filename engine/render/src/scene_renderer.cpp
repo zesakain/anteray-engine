@@ -163,6 +163,37 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
     giFrameIndex_ = other.giFrameIndex_;
     staticShadowDirty_ = other.staticShadowDirty_;
 
+    // Milestone 11H: Motion Vectors, TAA, and Sharpening
+    velocityTarget_ = other.velocityTarget_;
+    hdrRawTarget_ = other.hdrRawTarget_;
+    velocityFragmentShader_ = other.velocityFragmentShader_;
+    meshVelocityVertexShader_ = other.meshVelocityVertexShader_;
+    meshVelocityFragmentShader_ = other.meshVelocityFragmentShader_;
+    taaFragmentShader_ = other.taaFragmentShader_;
+    sharpenFragmentShader_ = other.sharpenFragmentShader_;
+    velocitySetLayout_ = other.velocitySetLayout_;
+    taaSetLayout_ = other.taaSetLayout_;
+    sharpenSetLayout_ = other.sharpenSetLayout_;
+    taaDescriptorPool_ = other.taaDescriptorPool_;
+    velocityDescriptorSet_ = other.velocityDescriptorSet_;
+    taaDescriptorSet_[0] = other.taaDescriptorSet_[0];
+    taaDescriptorSet_[1] = other.taaDescriptorSet_[1];
+    sharpenDescriptorSet_[0] = other.sharpenDescriptorSet_[0];
+    sharpenDescriptorSet_[1] = other.sharpenDescriptorSet_[1];
+    velocityPipelineLayout_ = other.velocityPipelineLayout_;
+    meshVelocityPipelineLayout_ = other.meshVelocityPipelineLayout_;
+    taaPipelineLayout_ = other.taaPipelineLayout_;
+    sharpenPipelineLayout_ = other.sharpenPipelineLayout_;
+    velocityPipeline_ = other.velocityPipeline_;
+    meshVelocityPipeline_ = other.meshVelocityPipeline_;
+    taaPipeline_ = other.taaPipeline_;
+    sharpenPipeline_ = other.sharpenPipeline_;
+    unjitteredViewProj_ = other.unjitteredViewProj_;
+    unjitteredPrevViewProj_ = other.unjitteredPrevViewProj_;
+    taaJitterPhase_ = other.taaJitterPhase_;
+    isTaaHistoryValid_ = other.isTaaHistoryValid_;
+    prevEntityTransforms_ = std::move(other.prevEntityTransforms_);
+
     other.device_ = nullptr;
     other.colorTarget_ = {};
     other.depthTarget_ = {};
@@ -253,6 +284,36 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
     other.temporalFilterPipeline_ = {};
     other.isHistoryValid_ = false;
     other.giFrameIndex_ = 0;
+
+    // Milestone 11H: Motion Vectors, TAA, and Sharpening
+    other.velocityTarget_ = {};
+    other.hdrRawTarget_ = {};
+    other.velocityFragmentShader_ = {};
+    other.meshVelocityVertexShader_ = {};
+    other.meshVelocityFragmentShader_ = {};
+    other.taaFragmentShader_ = {};
+    other.sharpenFragmentShader_ = {};
+    other.velocitySetLayout_ = {};
+    other.taaSetLayout_ = {};
+    other.sharpenSetLayout_ = {};
+    other.taaDescriptorPool_ = {};
+    other.velocityDescriptorSet_ = {};
+    other.taaDescriptorSet_[0] = {};
+    other.taaDescriptorSet_[1] = {};
+    other.sharpenDescriptorSet_[0] = {};
+    other.sharpenDescriptorSet_[1] = {};
+    other.velocityPipelineLayout_ = {};
+    other.meshVelocityPipelineLayout_ = {};
+    other.taaPipelineLayout_ = {};
+    other.sharpenPipelineLayout_ = {};
+    other.velocityPipeline_ = {};
+    other.meshVelocityPipeline_ = {};
+    other.taaPipeline_ = {};
+    other.sharpenPipeline_ = {};
+    other.isTaaHistoryValid_ = false;
+    other.taaJitterPhase_ = 0;
+    other.prevEntityTransforms_.clear();
+
     other.width_ = 0;
     other.height_ = 0;
     other.shadowResolution_ = 2048;
@@ -377,6 +438,37 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         isHistoryValid_ = other.isHistoryValid_;
         giFrameIndex_ = other.giFrameIndex_;
 
+        // Milestone 11H: Motion Vectors, TAA, and Sharpening
+        velocityTarget_ = other.velocityTarget_;
+        hdrRawTarget_ = other.hdrRawTarget_;
+        velocityFragmentShader_ = other.velocityFragmentShader_;
+        meshVelocityVertexShader_ = other.meshVelocityVertexShader_;
+        meshVelocityFragmentShader_ = other.meshVelocityFragmentShader_;
+        taaFragmentShader_ = other.taaFragmentShader_;
+        sharpenFragmentShader_ = other.sharpenFragmentShader_;
+        velocitySetLayout_ = other.velocitySetLayout_;
+        taaSetLayout_ = other.taaSetLayout_;
+        sharpenSetLayout_ = other.sharpenSetLayout_;
+        taaDescriptorPool_ = other.taaDescriptorPool_;
+        velocityDescriptorSet_ = other.velocityDescriptorSet_;
+        taaDescriptorSet_[0] = other.taaDescriptorSet_[0];
+        taaDescriptorSet_[1] = other.taaDescriptorSet_[1];
+        sharpenDescriptorSet_[0] = other.sharpenDescriptorSet_[0];
+        sharpenDescriptorSet_[1] = other.sharpenDescriptorSet_[1];
+        velocityPipelineLayout_ = other.velocityPipelineLayout_;
+        meshVelocityPipelineLayout_ = other.meshVelocityPipelineLayout_;
+        taaPipelineLayout_ = other.taaPipelineLayout_;
+        sharpenPipelineLayout_ = other.sharpenPipelineLayout_;
+        velocityPipeline_ = other.velocityPipeline_;
+        meshVelocityPipeline_ = other.meshVelocityPipeline_;
+        taaPipeline_ = other.taaPipeline_;
+        sharpenPipeline_ = other.sharpenPipeline_;
+        unjitteredViewProj_ = other.unjitteredViewProj_;
+        unjitteredPrevViewProj_ = other.unjitteredPrevViewProj_;
+        taaJitterPhase_ = other.taaJitterPhase_;
+        isTaaHistoryValid_ = other.isTaaHistoryValid_;
+        prevEntityTransforms_ = std::move(other.prevEntityTransforms_);
+
         width_ = other.width_;
         height_ = other.height_;
         shadowResolution_ = other.shadowResolution_;
@@ -473,6 +565,36 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         other.temporalFilterPipeline_ = {};
         other.isHistoryValid_ = false;
         other.giFrameIndex_ = 0;
+
+        // Milestone 11H: Motion Vectors, TAA, and Sharpening
+        other.velocityTarget_ = {};
+        other.hdrRawTarget_ = {};
+        other.velocityFragmentShader_ = {};
+        other.meshVelocityVertexShader_ = {};
+        other.meshVelocityFragmentShader_ = {};
+        other.taaFragmentShader_ = {};
+        other.sharpenFragmentShader_ = {};
+        other.velocitySetLayout_ = {};
+        other.taaSetLayout_ = {};
+        other.sharpenSetLayout_ = {};
+        other.taaDescriptorPool_ = {};
+        other.velocityDescriptorSet_ = {};
+        other.taaDescriptorSet_[0] = {};
+        other.taaDescriptorSet_[1] = {};
+        other.sharpenDescriptorSet_[0] = {};
+        other.sharpenDescriptorSet_[1] = {};
+        other.velocityPipelineLayout_ = {};
+        other.meshVelocityPipelineLayout_ = {};
+        other.taaPipelineLayout_ = {};
+        other.sharpenPipelineLayout_ = {};
+        other.velocityPipeline_ = {};
+        other.meshVelocityPipeline_ = {};
+        other.taaPipeline_ = {};
+        other.sharpenPipeline_ = {};
+        other.isTaaHistoryValid_ = false;
+        other.taaJitterPhase_ = 0;
+        other.prevEntityTransforms_.clear();
+
         other.width_ = 0;
         other.height_ = 0;
         other.shadowResolution_ = 2048;
@@ -1158,6 +1280,19 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         return giTargetsRes.error();
     }
 
+    // 10. Initialize Temporal Anti-Aliasing (Milestone 11H) Resources
+    auto taaRes = initTaaResources();
+    if (!taaRes.hasValue()) {
+        shutdown();
+        return taaRes.error();
+    }
+
+    auto taaTargetsRes = createTaaTargets(width_, height_);
+    if (!taaTargetsRes.hasValue()) {
+        shutdown();
+        return taaTargetsRes.error();
+    }
+
     settings_ = GraphicsSettings::createPreset(GraphicsQualityPreset::High);
     settings_ = settings_.validateAgainstCaps(device_->getCaps());
 
@@ -1170,6 +1305,8 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
 void SceneRenderer::shutdown() {
     if (device_ != nullptr) {
         envMap_ = {};
+        destroyTaaTargets();
+        destroyTaaResources();
         destroyPostProcessTargets();
         destroyGiResources();
 
@@ -1424,6 +1561,7 @@ Result<void> SceneRenderer::resize(uint32_t width, uint32_t height) {
 
     destroyPostProcessTargets();
     destroyGiTargets();
+    destroyTaaTargets();
 
     width_ = width;
     height_ = height;
@@ -1474,7 +1612,12 @@ Result<void> SceneRenderer::resize(uint32_t width, uint32_t height) {
     if (!giTargetsRes.hasValue()) {
         return giTargetsRes.error();
     }
+    auto taaTargetsRes = createTaaTargets(width_, height_);
+    if (!taaTargetsRes.hasValue()) {
+        return taaTargetsRes.error();
+    }
     isHistoryValid_ = false;
+    invalidateTaaHistory();
 
     buildRenderGraph();
     buildPostProcessGraph();
@@ -1589,6 +1732,11 @@ Result<void> SceneRenderer::applyGraphicsSettings(const GraphicsSettings& newSet
         shadowDirty_ = true;
     }
 
+    if (settings_.quality.antiAliasing != validated.quality.antiAliasing ||
+        !(settings_.quality.taa == validated.quality.taa)) {
+        invalidateTaaHistory();
+    }
+
     settings_ = validated;
     buildRenderGraph();
     buildPostProcessGraph();
@@ -1688,8 +1836,11 @@ Result<void> SceneRenderer::applyAtmosphere(world::World& world,
 void SceneRenderer::buildRenderGraph() {
     renderGraph_.reset();
 
+    const bool useTaa = isTaaEnabled() && hdrRawTarget_.isValid() && velocityTarget_.isValid() &&
+                        taaPipeline_.isValid() && sharpenPipeline_.isValid();
     const bool useHdr = postProcessSettings_.enabled && hdrTarget_.isValid();
-    const rhi::TextureHandle sceneColorTarget = useHdr ? hdrTarget_ : colorTarget_;
+    const rhi::TextureHandle sceneColorTarget =
+        useTaa ? hdrRawTarget_ : (useHdr ? hdrTarget_ : colorTarget_);
 
     GraphTextureId colorId{};
     if (sceneColorTarget.isValid()) {
@@ -1698,6 +1849,29 @@ void SceneRenderer::buildRenderGraph() {
     GraphTextureId depthId{};
     if (depthTarget_.isValid()) {
         depthId = renderGraph_.importTexture("DepthTarget", depthTarget_);
+    }
+
+    GraphTextureId velocityId{};
+    GraphTextureId currHistoryId{};
+    GraphTextureId prevHistoryId{};
+    GraphTextureId finalHdrId{};
+    if (useTaa) {
+        if (velocityTarget_.isValid()) {
+            velocityId = renderGraph_.importTexture("VelocityTarget", velocityTarget_);
+        }
+        const uint32_t currSlot = frameSlotIndex_ % 2;
+        const uint32_t prevSlot = (frameSlotIndex_ + 1) % 2;
+        if (hdrHistoryTarget_[currSlot].isValid()) {
+            currHistoryId =
+                renderGraph_.importTexture("TaaCurrentHistoryTarget", hdrHistoryTarget_[currSlot]);
+        }
+        if (hdrHistoryTarget_[prevSlot].isValid()) {
+            prevHistoryId =
+                renderGraph_.importTexture("TaaPreviousHistoryTarget", hdrHistoryTarget_[prevSlot]);
+        }
+        if (hdrTarget_.isValid()) {
+            finalHdrId = renderGraph_.importTexture("HdrAntiAliasedTarget", hdrTarget_);
+        }
     }
 
     const bool hasShadowPass =
@@ -1865,6 +2039,44 @@ void SceneRenderer::buildRenderGraph() {
             }
         },
         [this](rhi::RhiCommandList& cmdList) { recordMainPbrPass(cmdList); });
+
+    // 6. Velocity / Motion Vector Pass (Milestone 11H)
+    if (useTaa && velocityId.isValid() && depthId.isValid()) {
+        renderGraph_.addPass(
+            "VelocityPass",
+            [depthId, velocityId](RenderPassBuilder& builder) {
+                builder.readTexture(depthId, rhi::TextureUsageFlags::Sampled);
+                builder.writeTexture(velocityId, rhi::TextureUsageFlags::ColorAttachment);
+            },
+            [this](rhi::RhiCommandList& cmdList) { recordVelocityPass(cmdList); });
+    }
+
+    // 7. Temporal Anti-Aliasing (TAA) Accumulation Pass (Milestone 11H)
+    if (useTaa && colorId.isValid() && prevHistoryId.isValid() && velocityId.isValid() &&
+        depthId.isValid() && currHistoryId.isValid()) {
+        renderGraph_.addPass(
+            "TaaPass",
+            [colorId, prevHistoryId, velocityId, depthId,
+             currHistoryId](RenderPassBuilder& builder) {
+                builder.readTexture(colorId, rhi::TextureUsageFlags::Sampled);
+                builder.readTexture(prevHistoryId, rhi::TextureUsageFlags::Sampled);
+                builder.readTexture(velocityId, rhi::TextureUsageFlags::Sampled);
+                builder.readTexture(depthId, rhi::TextureUsageFlags::Sampled);
+                builder.writeTexture(currHistoryId, rhi::TextureUsageFlags::ColorAttachment);
+            },
+            [this](rhi::RhiCommandList& cmdList) { recordTaaPass(cmdList); });
+    }
+
+    // 8. Contrast-Adaptive Sharpening (RCAS) Pass (Milestone 11H)
+    if (useTaa && currHistoryId.isValid() && finalHdrId.isValid()) {
+        renderGraph_.addPass(
+            "SharpenPass",
+            [currHistoryId, finalHdrId](RenderPassBuilder& builder) {
+                builder.readTexture(currHistoryId, rhi::TextureUsageFlags::Sampled);
+                builder.writeTexture(finalHdrId, rhi::TextureUsageFlags::ColorAttachment);
+            },
+            [this](rhi::RhiCommandList& cmdList) { recordSharpenPass(cmdList); });
+    }
 
     auto compileRes = renderGraph_.compile();
     if (!compileRes.hasValue()) {
@@ -2288,12 +2500,14 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
     }
     const bool managePass = colorTarget_.isValid();
 
-    const bool useHdr = postProcessSettings_.enabled && hdrTarget_.isValid();
+    const bool useTaa = isTaaEnabled() && hdrRawTarget_.isValid();
+    const bool useHdr = (postProcessSettings_.enabled && hdrTarget_.isValid()) || useTaa;
     const bool useDepthPrepass =
         (settings_.performance.depthPrepass || settings_.lighting.gtaoEnabled ||
          settings_.lighting.ssgiEnabled) &&
         depthPrepassPipeline_.isValid();
-    const rhi::TextureHandle sceneColorTarget = useHdr ? hdrTarget_ : colorTarget_;
+    const rhi::TextureHandle sceneColorTarget =
+        useTaa ? hdrRawTarget_ : (useHdr ? hdrTarget_ : colorTarget_);
     rhi::PipelineHandle scenePipeline =
         (useHdr && hdrPipeline_.isValid()) ? hdrPipeline_ : pipeline_;
 
@@ -2455,6 +2669,17 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
             return {{}, false, false, false};
         };
 
+        Mat4 prevModel = model;
+        bool hasValidPrev = false;
+        const uint64_t entityIdVal = static_cast<uint64_t>(e.id());
+        for (const auto& cache : prevEntityTransforms_) {
+            if (cache.entityId == entityIdVal) {
+                prevModel = cache.model;
+                hasValidPrev = true;
+                break;
+            }
+        }
+
         const auto& submeshes = gpuMesh->getSubmeshes();
         if (meshComp.submeshIndex < submeshes.size()) {
             const auto [matSet, isMasked, isDoubleSided, isTransparent] =
@@ -2463,11 +2688,13 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                 .gpuMesh = gpuMesh,
                 .materialSet = matSet,
                 .model = model,
+                .prevModel = prevModel,
                 .submeshIndex = meshComp.submeshIndex,
                 .depthSq = depthSq,
                 .isAlphaMasked = isMasked,
                 .isDoubleSided = isDoubleSided,
                 .isTransparent = isTransparent,
+                .hasValidPrevTransform = hasValidPrev && isTaaHistoryValid_,
             });
         } else if (submeshes.empty()) {
             const auto [matSet, isMasked, isDoubleSided, isTransparent] = resolveMaterial(0);
@@ -2475,11 +2702,13 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                 .gpuMesh = gpuMesh,
                 .materialSet = matSet,
                 .model = model,
+                .prevModel = prevModel,
                 .submeshIndex = 0,
                 .depthSq = depthSq,
                 .isAlphaMasked = isMasked,
                 .isDoubleSided = isDoubleSided,
                 .isTransparent = isTransparent,
+                .hasValidPrevTransform = hasValidPrev && isTaaHistoryValid_,
             });
         } else {
             for (uint32_t sIdx = 0; sIdx < submeshes.size(); ++sIdx) {
@@ -2489,11 +2718,13 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                     .gpuMesh = gpuMesh,
                     .materialSet = matSet,
                     .model = model,
+                    .prevModel = prevModel,
                     .submeshIndex = sIdx,
                     .depthSq = depthSq,
                     .isAlphaMasked = isMasked,
                     .isDoubleSided = isDoubleSided,
                     .isTransparent = isTransparent,
+                    .hasValidPrevTransform = hasValidPrev && isTaaHistoryValid_,
                 });
             }
         }
@@ -2811,7 +3042,23 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     if (assetManager.getQualitySettings() != settings_.quality) {
         assetManager.setQualitySettings(settings_.quality);
     }
-    currentViewProj_ = viewProjection;
+    unjitteredViewProj_ = viewProjection;
+    if (isTaaEnabled()) {
+        uint32_t seqLen = 16;
+        if (settings_.quality.taa.jitterSequence == TaaJitterSequence::Halton8) {
+            seqLen = 8;
+        } else if (settings_.quality.taa.jitterSequence == TaaJitterSequence::Halton32) {
+            seqLen = 32;
+        }
+        const Vec2 jitterPixels = computeHaltonJitter(taaJitterPhase_, seqLen);
+        currentViewProj_ =
+            viewProjection.withJitter(jitterPixels.x, jitterPixels.y,
+                                      static_cast<float>(width_), static_cast<float>(height_));
+        taaJitterPhase_ = (taaJitterPhase_ + 1) % seqLen;
+    } else {
+        currentViewProj_ = viewProjection;
+        taaJitterPhase_ = 0;
+    }
     currentCameraPos_ = Vec3(lightingData.cameraPosAndAmbientIntensity.x,
                              lightingData.cameraPosAndAmbientIntensity.y,
                              lightingData.cameraPosAndAmbientIntensity.z);
@@ -3104,6 +3351,8 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         std::ignore = device.updateDescriptorSet(sceneDescriptorSet_, giWrites);
     }
 
+    updateTaaDescriptors();
+
     if (renderGraph_.isCompiled()) {
         auto execRes = renderGraph_.execute(device, cmdList);
         if (!execRes.hasValue()) {
@@ -3114,6 +3363,9 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     prevViewProj_ = viewProjection;
     isHistoryValid_ = true;
     giFrameIndex_++;
+
+    unjitteredPrevViewProj_ = unjitteredViewProj_;
+    isTaaHistoryValid_ = true;
 
     currentWorld_ = nullptr;
     currentAssetManager_ = nullptr;
@@ -4092,6 +4344,808 @@ void SceneRenderer::recordSsrTemporalFilterPass(rhi::RhiCommandList& cmdList) {
 
 void SceneRenderer::recordHistoryCopyPass(rhi::RhiCommandList& /*cmdList*/) {}
 
+Result<void> SceneRenderer::initTaaResources() {
+    if (device_ == nullptr) {
+        return Error{.code = ErrorCode::InvalidState, .message = "Device not initialized"};
+    }
+
+    // 1. Shaders
+    rhi::ShaderDesc velFsDesc{
+        .stage = rhi::ShaderStageFlags::Fragment,
+        .spirvCode = kVelocityFragmentShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "VelocityFragmentShader",
+    };
+    auto velFsRes = device_->createShader(velFsDesc);
+    if (!velFsRes.hasValue()) {
+        return velFsRes.error();
+    }
+    velocityFragmentShader_ = velFsRes.value();
+
+    rhi::ShaderDesc meshVelVsDesc{
+        .stage = rhi::ShaderStageFlags::Vertex,
+        .spirvCode = kMeshVelocityVertexShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "MeshVelocityVertexShader",
+    };
+    auto meshVelVsRes = device_->createShader(meshVelVsDesc);
+    if (!meshVelVsRes.hasValue()) {
+        return meshVelVsRes.error();
+    }
+    meshVelocityVertexShader_ = meshVelVsRes.value();
+
+    rhi::ShaderDesc meshVelFsDesc{
+        .stage = rhi::ShaderStageFlags::Fragment,
+        .spirvCode = kMeshVelocityFragmentShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "MeshVelocityFragmentShader",
+    };
+    auto meshVelFsRes = device_->createShader(meshVelFsDesc);
+    if (!meshVelFsRes.hasValue()) {
+        return meshVelFsRes.error();
+    }
+    meshVelocityFragmentShader_ = meshVelFsRes.value();
+
+    rhi::ShaderDesc taaFsDesc{
+        .stage = rhi::ShaderStageFlags::Fragment,
+        .spirvCode = kTaaFragmentShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "TaaFragmentShader",
+    };
+    auto taaFsRes = device_->createShader(taaFsDesc);
+    if (!taaFsRes.hasValue()) {
+        return taaFsRes.error();
+    }
+    taaFragmentShader_ = taaFsRes.value();
+
+    rhi::ShaderDesc rcasFsDesc{
+        .stage = rhi::ShaderStageFlags::Fragment,
+        .spirvCode = kSharpenFragmentShaderSpirv,
+        .entryPoint = "main",
+        .debugName = "SharpenFragmentShader",
+    };
+    auto rcasFsRes = device_->createShader(rcasFsDesc);
+    if (!rcasFsRes.hasValue()) {
+        return rcasFsRes.error();
+    }
+    sharpenFragmentShader_ = rcasFsRes.value();
+
+    // 2. Descriptor set layouts
+    rhi::DescriptorSetLayoutDesc velLayoutDesc{
+        .bindings =
+            {
+                {
+                    .binding = 0,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+            },
+        .debugName = "VelocityDescriptorSetLayout",
+    };
+    auto velLayoutRes = device_->createDescriptorSetLayout(velLayoutDesc);
+    if (!velLayoutRes.hasValue()) {
+        return velLayoutRes.error();
+    }
+    velocitySetLayout_ = velLayoutRes.value();
+
+    rhi::DescriptorSetLayoutDesc taaLayoutDesc{
+        .bindings =
+            {
+                {
+                    .binding = 0,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 1,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 2,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+                {
+                    .binding = 3,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+            },
+        .debugName = "TaaDescriptorSetLayout",
+    };
+    auto taaLayoutRes = device_->createDescriptorSetLayout(taaLayoutDesc);
+    if (!taaLayoutRes.hasValue()) {
+        return taaLayoutRes.error();
+    }
+    taaSetLayout_ = taaLayoutRes.value();
+
+    rhi::DescriptorSetLayoutDesc sharpenLayoutDesc{
+        .bindings =
+            {
+                {
+                    .binding = 0,
+                    .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                },
+            },
+        .debugName = "SharpenDescriptorSetLayout",
+    };
+    auto sharpenLayoutRes = device_->createDescriptorSetLayout(sharpenLayoutDesc);
+    if (!sharpenLayoutRes.hasValue()) {
+        return sharpenLayoutRes.error();
+    }
+    sharpenSetLayout_ = sharpenLayoutRes.value();
+
+    // 3. Descriptor Pool
+    rhi::DescriptorPoolDesc poolDesc{
+        .maxSets = 8,
+        .poolSizes =
+            {
+                {.type = rhi::DescriptorType::CombinedImageSampler, .count = 32},
+            },
+        .debugName = "TaaDescriptorPool",
+    };
+    auto poolRes = device_->createDescriptorPool(poolDesc);
+    if (!poolRes.hasValue()) {
+        return poolRes.error();
+    }
+    taaDescriptorPool_ = poolRes.value();
+
+    auto velSetRes = device_->allocateDescriptorSet(taaDescriptorPool_, velocitySetLayout_);
+    if (!velSetRes.hasValue()) {
+        return velSetRes.error();
+    }
+    velocityDescriptorSet_ = velSetRes.value();
+
+    for (size_t i = 0; i < 2; ++i) {
+        auto taaSetRes = device_->allocateDescriptorSet(taaDescriptorPool_, taaSetLayout_);
+        if (!taaSetRes.hasValue()) {
+            return taaSetRes.error();
+        }
+        taaDescriptorSet_[i] = taaSetRes.value();
+
+        auto shSetRes = device_->allocateDescriptorSet(taaDescriptorPool_, sharpenSetLayout_);
+        if (!shSetRes.hasValue()) {
+            return shSetRes.error();
+        }
+        sharpenDescriptorSet_[i] = shSetRes.value();
+    }
+
+    // 4. Pipeline Layouts
+    rhi::PipelineLayoutDesc velPipeLayoutDesc{
+        .pushConstants =
+            {
+                {
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                    .offset = 0,
+                    .size = sizeof(VelocityPushConstants),
+                },
+            },
+        .descriptorSetLayoutHandles = {velocitySetLayout_},
+        .descriptorSetLayouts = {},
+        .debugName = "VelocityPipelineLayout",
+    };
+    auto velPipeLayoutRes = device_->createPipelineLayout(velPipeLayoutDesc);
+    if (!velPipeLayoutRes.hasValue()) {
+        return velPipeLayoutRes.error();
+    }
+    velocityPipelineLayout_ = velPipeLayoutRes.value();
+
+    rhi::PipelineLayoutDesc meshVelPipeLayoutDesc{
+        .pushConstants =
+            {
+                {
+                    .stageFlags = rhi::ShaderStageFlags::Vertex | rhi::ShaderStageFlags::Fragment,
+                    .offset = 0,
+                    .size = sizeof(MeshVelocityPushConstants),
+                },
+            },
+        .descriptorSetLayoutHandles = {},
+        .descriptorSetLayouts = {},
+        .debugName = "MeshVelocityPipelineLayout",
+    };
+    auto meshVelPipeLayoutRes = device_->createPipelineLayout(meshVelPipeLayoutDesc);
+    if (!meshVelPipeLayoutRes.hasValue()) {
+        return meshVelPipeLayoutRes.error();
+    }
+    meshVelocityPipelineLayout_ = meshVelPipeLayoutRes.value();
+
+    rhi::PipelineLayoutDesc taaPipeLayoutDesc{
+        .pushConstants =
+            {
+                {
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                    .offset = 0,
+                    .size = sizeof(TaaPushConstants),
+                },
+            },
+        .descriptorSetLayoutHandles = {taaSetLayout_},
+        .descriptorSetLayouts = {},
+        .debugName = "TaaPipelineLayout",
+    };
+    auto taaPipeLayoutRes = device_->createPipelineLayout(taaPipeLayoutDesc);
+    if (!taaPipeLayoutRes.hasValue()) {
+        return taaPipeLayoutRes.error();
+    }
+    taaPipelineLayout_ = taaPipeLayoutRes.value();
+
+    rhi::PipelineLayoutDesc sharpenPipeLayoutDesc{
+        .pushConstants =
+            {
+                {
+                    .stageFlags = rhi::ShaderStageFlags::Fragment,
+                    .offset = 0,
+                    .size = sizeof(SharpenPushConstants),
+                },
+            },
+        .descriptorSetLayoutHandles = {sharpenSetLayout_},
+        .descriptorSetLayouts = {},
+        .debugName = "SharpenPipelineLayout",
+    };
+    auto sharpenPipeLayoutRes = device_->createPipelineLayout(sharpenPipeLayoutDesc);
+    if (!sharpenPipeLayoutRes.hasValue()) {
+        return sharpenPipeLayoutRes.error();
+    }
+    sharpenPipelineLayout_ = sharpenPipeLayoutRes.value();
+
+    // 5. Graphics Pipelines
+    rhi::GraphicsPipelineDesc velPipeDesc{
+        .vertexShader = fullscreenVertexShader_,
+        .fragmentShader = velocityFragmentShader_,
+        .vertexInput = {},
+        .topology = rhi::PrimitiveTopology::TriangleList,
+        .rasterization =
+            {
+                .polygonMode = rhi::PolygonMode::Fill,
+                .cullMode = rhi::CullMode::None,
+                .frontFace = rhi::FrontFace::CounterClockwise,
+            },
+        .depthStencil =
+            {
+                .depthTestEnable = false,
+                .depthWriteEnable = false,
+            },
+        .colorBlendAttachments = {{
+            .blendEnable = false,
+            .colorWriteMask = rhi::ColorComponentFlags::All,
+        }},
+        .layout = velocityPipelineLayout_,
+        .colorAttachmentFormats = {rhi::TextureFormat::RGBA16_FLOAT},
+        .debugName = "VelocityGraphicsPipeline",
+    };
+    auto velPipeRes = device_->createGraphicsPipeline(velPipeDesc);
+    if (!velPipeRes.hasValue()) {
+        return velPipeRes.error();
+    }
+    velocityPipeline_ = velPipeRes.value();
+
+    rhi::GraphicsPipelineDesc meshVelPipeDesc{
+        .vertexShader = meshVelocityVertexShader_,
+        .fragmentShader = meshVelocityFragmentShader_,
+        .vertexInput =
+            {
+                .bindings =
+                    {
+                        {
+                            .binding = 0,
+                            .stride = sizeof(Vertex),
+                            .inputRate = rhi::VertexInputRate::Vertex,
+                        },
+                    },
+                .attributes =
+                    {
+                        {
+                            .location = 0,
+                            .binding = 0,
+                            .format = rhi::VertexFormat::Float3,
+                            .offset = static_cast<uint32_t>(offsetof(Vertex, position)),
+                        },
+                    },
+            },
+        .topology = rhi::PrimitiveTopology::TriangleList,
+        .rasterization =
+            {
+                .polygonMode = rhi::PolygonMode::Fill,
+                .cullMode = rhi::CullMode::Back,
+                .frontFace = rhi::FrontFace::CounterClockwise,
+            },
+        .depthStencil =
+            {
+                .depthTestEnable = true,
+                .depthWriteEnable = false,
+                .depthCompareOp = rhi::CompareOp::LessOrEqual,
+            },
+        .colorBlendAttachments = {{
+            .blendEnable = false,
+            .colorWriteMask = rhi::ColorComponentFlags::All,
+        }},
+        .layout = meshVelocityPipelineLayout_,
+        .colorAttachmentFormats = {rhi::TextureFormat::RGBA16_FLOAT},
+        .depthAttachmentFormat = depthFormat_,
+        .debugName = "MeshVelocityGraphicsPipeline",
+    };
+    auto meshVelPipeRes = device_->createGraphicsPipeline(meshVelPipeDesc);
+    if (!meshVelPipeRes.hasValue()) {
+        return meshVelPipeRes.error();
+    }
+    meshVelocityPipeline_ = meshVelPipeRes.value();
+
+    rhi::GraphicsPipelineDesc taaPipeDesc{
+        .vertexShader = fullscreenVertexShader_,
+        .fragmentShader = taaFragmentShader_,
+        .vertexInput = {},
+        .topology = rhi::PrimitiveTopology::TriangleList,
+        .rasterization =
+            {
+                .polygonMode = rhi::PolygonMode::Fill,
+                .cullMode = rhi::CullMode::None,
+                .frontFace = rhi::FrontFace::CounterClockwise,
+            },
+        .depthStencil =
+            {
+                .depthTestEnable = false,
+                .depthWriteEnable = false,
+            },
+        .colorBlendAttachments = {{
+            .blendEnable = false,
+            .colorWriteMask = rhi::ColorComponentFlags::All,
+        }},
+        .layout = taaPipelineLayout_,
+        .colorAttachmentFormats = {hdrFormat_},
+        .debugName = "TaaGraphicsPipeline",
+    };
+    auto taaPipeRes = device_->createGraphicsPipeline(taaPipeDesc);
+    if (!taaPipeRes.hasValue()) {
+        return taaPipeRes.error();
+    }
+    taaPipeline_ = taaPipeRes.value();
+
+    rhi::GraphicsPipelineDesc sharpenPipeDesc{
+        .vertexShader = fullscreenVertexShader_,
+        .fragmentShader = sharpenFragmentShader_,
+        .vertexInput = {},
+        .topology = rhi::PrimitiveTopology::TriangleList,
+        .rasterization =
+            {
+                .polygonMode = rhi::PolygonMode::Fill,
+                .cullMode = rhi::CullMode::None,
+                .frontFace = rhi::FrontFace::CounterClockwise,
+            },
+        .depthStencil =
+            {
+                .depthTestEnable = false,
+                .depthWriteEnable = false,
+            },
+        .colorBlendAttachments = {{
+            .blendEnable = false,
+            .colorWriteMask = rhi::ColorComponentFlags::All,
+        }},
+        .layout = sharpenPipelineLayout_,
+        .colorAttachmentFormats = {hdrFormat_},
+        .debugName = "SharpenGraphicsPipeline",
+    };
+    auto sharpenPipeRes = device_->createGraphicsPipeline(sharpenPipeDesc);
+    if (!sharpenPipeRes.hasValue()) {
+        return sharpenPipeRes.error();
+    }
+    sharpenPipeline_ = sharpenPipeRes.value();
+
+    return Result<void>::success();
+}
+
+void SceneRenderer::destroyTaaResources() {
+    if (device_ != nullptr) {
+        destroyTaaTargets();
+
+        if (sharpenPipeline_.isValid()) {
+            device_->destroyGraphicsPipeline(sharpenPipeline_);
+            sharpenPipeline_ = {};
+        }
+        if (taaPipeline_.isValid()) {
+            device_->destroyGraphicsPipeline(taaPipeline_);
+            taaPipeline_ = {};
+        }
+        if (meshVelocityPipeline_.isValid()) {
+            device_->destroyGraphicsPipeline(meshVelocityPipeline_);
+            meshVelocityPipeline_ = {};
+        }
+        if (velocityPipeline_.isValid()) {
+            device_->destroyGraphicsPipeline(velocityPipeline_);
+            velocityPipeline_ = {};
+        }
+
+        if (sharpenPipelineLayout_.isValid()) {
+            device_->destroyPipelineLayout(sharpenPipelineLayout_);
+            sharpenPipelineLayout_ = {};
+        }
+        if (taaPipelineLayout_.isValid()) {
+            device_->destroyPipelineLayout(taaPipelineLayout_);
+            taaPipelineLayout_ = {};
+        }
+        if (meshVelocityPipelineLayout_.isValid()) {
+            device_->destroyPipelineLayout(meshVelocityPipelineLayout_);
+            meshVelocityPipelineLayout_ = {};
+        }
+        if (velocityPipelineLayout_.isValid()) {
+            device_->destroyPipelineLayout(velocityPipelineLayout_);
+            velocityPipelineLayout_ = {};
+        }
+
+        if (taaDescriptorPool_.isValid()) {
+            device_->destroyDescriptorPool(taaDescriptorPool_);
+            taaDescriptorPool_ = {};
+            velocityDescriptorSet_ = {};
+            taaDescriptorSet_[0] = {};
+            taaDescriptorSet_[1] = {};
+            sharpenDescriptorSet_[0] = {};
+            sharpenDescriptorSet_[1] = {};
+        }
+
+        if (sharpenSetLayout_.isValid()) {
+            device_->destroyDescriptorSetLayout(sharpenSetLayout_);
+            sharpenSetLayout_ = {};
+        }
+        if (taaSetLayout_.isValid()) {
+            device_->destroyDescriptorSetLayout(taaSetLayout_);
+            taaSetLayout_ = {};
+        }
+        if (velocitySetLayout_.isValid()) {
+            device_->destroyDescriptorSetLayout(velocitySetLayout_);
+            velocitySetLayout_ = {};
+        }
+
+        if (sharpenFragmentShader_.isValid()) {
+            device_->destroyShader(sharpenFragmentShader_);
+            sharpenFragmentShader_ = {};
+        }
+        if (taaFragmentShader_.isValid()) {
+            device_->destroyShader(taaFragmentShader_);
+            taaFragmentShader_ = {};
+        }
+        if (meshVelocityFragmentShader_.isValid()) {
+            device_->destroyShader(meshVelocityFragmentShader_);
+            meshVelocityFragmentShader_ = {};
+        }
+        if (meshVelocityVertexShader_.isValid()) {
+            device_->destroyShader(meshVelocityVertexShader_);
+            meshVelocityVertexShader_ = {};
+        }
+        if (velocityFragmentShader_.isValid()) {
+            device_->destroyShader(velocityFragmentShader_);
+            velocityFragmentShader_ = {};
+        }
+    }
+}
+
+Result<void> SceneRenderer::createTaaTargets(uint32_t width, uint32_t height) {
+    if (device_ == nullptr || width == 0 || height == 0) {
+        return Result<void>::success();
+    }
+
+    rhi::TextureDesc velDesc{
+        .type = rhi::TextureType::Texture2D,
+        .format = rhi::TextureFormat::RGBA16_FLOAT,
+        .width = width,
+        .height = height,
+        .depth = 1,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .usage = rhi::TextureUsageFlags::ColorAttachment | rhi::TextureUsageFlags::Sampled |
+                 rhi::TextureUsageFlags::TransferSrc,
+        .debugName = "SceneRendererVelocityTarget",
+    };
+    auto velRes = device_->createTexture(velDesc);
+    if (!velRes.hasValue()) {
+        return velRes.error();
+    }
+    velocityTarget_ = velRes.value();
+
+    rhi::TextureDesc rawHdrDesc{
+        .type = rhi::TextureType::Texture2D,
+        .format = hdrFormat_,
+        .width = width,
+        .height = height,
+        .depth = 1,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .usage = rhi::TextureUsageFlags::ColorAttachment | rhi::TextureUsageFlags::Sampled |
+                 rhi::TextureUsageFlags::TransferSrc,
+        .debugName = "SceneRendererHdrRawTarget",
+    };
+    auto rawRes = device_->createTexture(rawHdrDesc);
+    if (!rawRes.hasValue()) {
+        return rawRes.error();
+    }
+    hdrRawTarget_ = rawRes.value();
+
+    for (size_t i = 0; i < 2; ++i) {
+        auto histDesc = rawHdrDesc;
+        histDesc.debugName = (i == 0) ? "SceneRendererHdrHistory0" : "SceneRendererHdrHistory1";
+        auto histRes = device_->createTexture(histDesc);
+        if (!histRes.hasValue()) {
+            return histRes.error();
+        }
+        hdrHistoryTarget_[i] = histRes.value();
+    }
+
+    updateTaaDescriptors();
+    return Result<void>::success();
+}
+
+void SceneRenderer::destroyTaaTargets() {
+    if (device_ != nullptr) {
+        if (velocityTarget_.isValid()) {
+            device_->destroyTexture(velocityTarget_);
+            velocityTarget_ = {};
+        }
+        if (hdrRawTarget_.isValid()) {
+            device_->destroyTexture(hdrRawTarget_);
+            hdrRawTarget_ = {};
+        }
+        for (size_t i = 0; i < 2; ++i) {
+            if (hdrHistoryTarget_[i].isValid()) {
+                device_->destroyTexture(hdrHistoryTarget_[i]);
+                hdrHistoryTarget_[i] = {};
+            }
+        }
+    }
+}
+
+void SceneRenderer::updateTaaDescriptors() {
+    if (device_ == nullptr) {
+        return;
+    }
+
+    const rhi::SamplerHandle pointSamp =
+        pointClampSampler_.isValid() ? pointClampSampler_ : shadowSampler_;
+    const rhi::SamplerHandle linSamp =
+        linearClampSampler_.isValid() ? linearClampSampler_ : shadowSampler_;
+
+    if (velocityDescriptorSet_.isValid() && depthTarget_.isValid() && pointSamp.isValid()) {
+        std::array<rhi::DescriptorWrite, 1> writes{
+            rhi::DescriptorWrite::makeCombinedImageSampler(0, depthTarget_, pointSamp),
+        };
+        std::ignore = device_->updateDescriptorSet(velocityDescriptorSet_, writes);
+    }
+
+    if (hdrRawTarget_.isValid() && velocityTarget_.isValid() && depthTarget_.isValid() &&
+        linSamp.isValid() && pointSamp.isValid()) {
+        for (size_t i = 0; i < 2; ++i) {
+            if (taaDescriptorSet_[i].isValid()) {
+                const uint32_t prevIdx = (i == 0) ? 1 : 0;
+                rhi::TextureHandle historyTex = hdrHistoryTarget_[prevIdx].isValid()
+                                                   ? hdrHistoryTarget_[prevIdx]
+                                                   : hdrRawTarget_;
+                std::array<rhi::DescriptorWrite, 4> writes{
+                    rhi::DescriptorWrite::makeCombinedImageSampler(0, hdrRawTarget_, linSamp),
+                    rhi::DescriptorWrite::makeCombinedImageSampler(1, historyTex, linSamp),
+                    rhi::DescriptorWrite::makeCombinedImageSampler(2, velocityTarget_, pointSamp),
+                    rhi::DescriptorWrite::makeCombinedImageSampler(3, depthTarget_, pointSamp),
+                };
+                std::ignore = device_->updateDescriptorSet(taaDescriptorSet_[i], writes);
+            }
+        }
+    }
+
+    if (linSamp.isValid()) {
+        for (size_t i = 0; i < 2; ++i) {
+            if (sharpenDescriptorSet_[i].isValid() && hdrHistoryTarget_[i].isValid()) {
+                std::array<rhi::DescriptorWrite, 1> writes{
+                    rhi::DescriptorWrite::makeCombinedImageSampler(0, hdrHistoryTarget_[i], linSamp),
+                };
+                std::ignore = device_->updateDescriptorSet(sharpenDescriptorSet_[i], writes);
+            }
+        }
+    }
+}
+
+void SceneRenderer::recordVelocityPass(rhi::RhiCommandList& cmdList) {
+    if (!velocityPipeline_.isValid() || !velocityDescriptorSet_.isValid() ||
+        !velocityTarget_.isValid()) {
+        return;
+    }
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 24, rhi::GpuTimestampStage::TopOfPipe);
+    }
+
+    rhi::RenderPassBeginInfo passInfo{
+        .colorTarget = velocityTarget_,
+        .depthTarget = {},
+        .clearColor = {0.0F, 0.0F, 1.0F, 0.0F},
+        .clearDepth = 1.0F,
+        .clearTarget = true,
+        .clearDepthTarget = false,
+    };
+    cmdList.beginRenderPass(passInfo);
+    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
+    cmdList.setScissor(0, 0, width_, height_);
+
+    cmdList.bindPipeline(velocityPipeline_);
+    const std::array<rhi::DescriptorSetHandle, 1> sets{velocityDescriptorSet_};
+    cmdList.bindDescriptorSets(velocityPipelineLayout_, 0, sets);
+
+    VelocityPushConstants pc{
+        .unjitteredInvViewProj = unjitteredViewProj_.inverse().value_or(Mat4::identity()),
+        .unjitteredPrevViewProj = unjitteredPrevViewProj_,
+        .resolution = Vec2(static_cast<float>(width_), static_cast<float>(height_)),
+        .invResolution =
+            Vec2(1.0F / static_cast<float>(width_), 1.0F / static_cast<float>(height_)),
+        .hasHistory = (isTaaHistoryValid_ && isHistoryValid_) ? 1U : 0U,
+        .pad0 = 0.0F,
+        .pad1 = 0.0F,
+        .pad2 = 0.0F,
+    };
+    cmdList.pushConstants(velocityPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
+                          sizeof(VelocityPushConstants), &pc);
+    cmdList.draw(3, 1, 0, 0);
+    cmdList.endRenderPass();
+
+    bool hasMovingMeshes = false;
+    for (const auto& item : visibleItems_) {
+        if (item.hasValidPrevTransform && !item.model.isNearlyEqual(item.prevModel)) {
+            hasMovingMeshes = true;
+            break;
+        }
+    }
+
+    if (hasMovingMeshes && meshVelocityPipeline_.isValid() && depthTarget_.isValid()) {
+        rhi::RenderPassBeginInfo meshPassInfo{
+            .colorTarget = velocityTarget_,
+            .depthTarget = depthTarget_,
+            .clearColor = {0.0F, 0.0F, 0.0F, 0.0F},
+            .clearDepth = 1.0F,
+            .clearTarget = false,
+            .clearDepthTarget = false,
+        };
+        cmdList.beginRenderPass(meshPassInfo);
+        cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
+        cmdList.setScissor(0, 0, width_, height_);
+        cmdList.bindPipeline(meshVelocityPipeline_);
+
+        for (const auto& item : visibleItems_) {
+            if (!item.hasValidPrevTransform || item.model.isNearlyEqual(item.prevModel)) {
+                continue;
+            }
+            if (item.gpuMesh == nullptr || !item.gpuMesh->isValid()) {
+                continue;
+            }
+
+            MeshVelocityPushConstants mpc{
+                .curMvp = unjitteredViewProj_ * item.model,
+                .prevMvp = unjitteredPrevViewProj_ * item.prevModel,
+                .isValid = 1U,
+                .pad0 = 0.0F,
+                .pad1 = 0.0F,
+                .pad2 = 0.0F,
+            };
+            cmdList.pushConstants(
+                meshVelocityPipelineLayout_,
+                rhi::ShaderStageFlags::Vertex | rhi::ShaderStageFlags::Fragment, 0,
+                sizeof(MeshVelocityPushConstants), &mpc);
+
+            cmdList.bindVertexBuffer(0, item.gpuMesh->getVertexBuffer(), 0);
+            if (item.gpuMesh->getIndexBuffer().isValid() && item.gpuMesh->getIndexCount() > 0) {
+                cmdList.bindIndexBuffer(item.gpuMesh->getIndexBuffer(), 0, true);
+                const auto& submeshes = item.gpuMesh->getSubmeshes();
+                if (item.submeshIndex < submeshes.size()) {
+                    const auto& sub = submeshes[item.submeshIndex];
+                    cmdList.drawIndexed(sub.indexCount, 1, sub.firstIndex, sub.vertexOffset, 0);
+                } else {
+                    cmdList.drawIndexed(item.gpuMesh->getIndexCount(), 1, 0, 0, 0);
+                }
+            } else if (item.gpuMesh->getVertexCount() > 0) {
+                cmdList.draw(item.gpuMesh->getVertexCount(), 1, 0, 0);
+            }
+        }
+        cmdList.endRenderPass();
+    }
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 25, rhi::GpuTimestampStage::BottomOfPipe);
+    }
+}
+
+void SceneRenderer::recordTaaPass(rhi::RhiCommandList& cmdList) {
+    const uint32_t currSlot = frameSlotIndex_ % 2;
+    if (!taaPipeline_.isValid() || !taaDescriptorSet_[currSlot].isValid() ||
+        !hdrHistoryTarget_[currSlot].isValid()) {
+        return;
+    }
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 26, rhi::GpuTimestampStage::TopOfPipe);
+    }
+
+    rhi::RenderPassBeginInfo passInfo{
+        .colorTarget = hdrHistoryTarget_[currSlot],
+        .depthTarget = {},
+        .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
+        .clearDepth = 1.0F,
+        .clearTarget = false,
+        .clearDepthTarget = false,
+    };
+    cmdList.beginRenderPass(passInfo);
+    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
+    cmdList.setScissor(0, 0, width_, height_);
+
+    cmdList.bindPipeline(taaPipeline_);
+    const std::array<rhi::DescriptorSetHandle, 1> sets{taaDescriptorSet_[currSlot]};
+    cmdList.bindDescriptorSets(taaPipelineLayout_, 0, sets);
+
+    const auto& taa = settings_.quality.taa;
+    TaaPushConstants pc{
+        .taaParams = Vec4(taa.historyWeight, taa.varianceGamma, 0.0F, 0.0F),
+        .resolution = Vec2(static_cast<float>(width_), static_cast<float>(height_)),
+        .invResolution =
+            Vec2(1.0F / static_cast<float>(width_), 1.0F / static_cast<float>(height_)),
+        .isHistoryValid = isTaaHistoryValid_ ? 1U : 0U,
+        .useMotionVectors = taa.useMotionVectors ? 1U : 0U,
+        .pad0 = 0.0F,
+        .pad1 = 0.0F,
+    };
+    cmdList.pushConstants(taaPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
+                          sizeof(TaaPushConstants), &pc);
+    cmdList.draw(3, 1, 0, 0);
+    cmdList.endRenderPass();
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 27, rhi::GpuTimestampStage::BottomOfPipe);
+    }
+}
+
+void SceneRenderer::recordSharpenPass(rhi::RhiCommandList& cmdList) {
+    const uint32_t currSlot = frameSlotIndex_ % 2;
+    if (!sharpenPipeline_.isValid() || !sharpenDescriptorSet_[currSlot].isValid() ||
+        !hdrTarget_.isValid()) {
+        return;
+    }
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 28, rhi::GpuTimestampStage::TopOfPipe);
+    }
+
+    rhi::RenderPassBeginInfo passInfo{
+        .colorTarget = hdrTarget_,
+        .depthTarget = {},
+        .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
+        .clearDepth = 1.0F,
+        .clearTarget = false,
+        .clearDepthTarget = false,
+    };
+    cmdList.beginRenderPass(passInfo);
+    cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
+    cmdList.setScissor(0, 0, width_, height_);
+
+    cmdList.bindPipeline(sharpenPipeline_);
+    const std::array<rhi::DescriptorSetHandle, 1> sets{sharpenDescriptorSet_[currSlot]};
+    cmdList.bindDescriptorSets(sharpenPipelineLayout_, 0, sets);
+
+    const auto& taa = settings_.quality.taa;
+    const float intensity = taa.sharpeningEnabled ? taa.sharpeningIntensity : 0.0F;
+    SharpenPushConstants pc{
+        .invResolution =
+            Vec2(1.0F / static_cast<float>(width_), 1.0F / static_cast<float>(height_)),
+        .intensity = intensity,
+        .pad0 = 0.0F,
+    };
+    cmdList.pushConstants(sharpenPipelineLayout_, rhi::ShaderStageFlags::Fragment, 0,
+                          sizeof(SharpenPushConstants), &pc);
+    cmdList.draw(3, 1, 0, 0);
+    cmdList.endRenderPass();
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 29, rhi::GpuTimestampStage::BottomOfPipe);
+    }
+}
+
 Result<void> SceneRenderer::initPostProcessResources() {
     // 1. Post-process bilinear sampler with clamp-to-edge
     rhi::SamplerDesc sampDesc{
@@ -4784,6 +5838,12 @@ void SceneRenderer::updateGpuTimings(rhi::RhiDevice& device) {
             device.getQueryTimeMs(readbackBase + 20, readbackBase + 21).value_or(0.0F);
         gpuPassTimings_.temporalDenoiseMs =
             device.getQueryTimeMs(readbackBase + 18, readbackBase + 19).value_or(0.0F);
+        gpuPassTimings_.velocityPassMs =
+            device.getQueryTimeMs(readbackBase + 24, readbackBase + 25).value_or(0.0F);
+        gpuPassTimings_.taaPassMs =
+            device.getQueryTimeMs(readbackBase + 26, readbackBase + 27).value_or(0.0F);
+        gpuPassTimings_.sharpenPassMs =
+            device.getQueryTimeMs(readbackBase + 28, readbackBase + 29).value_or(0.0F);
         gpuPassTimings_.totalGiMs = gpuPassTimings_.gtaoPassMs + gpuPassTimings_.ssgiPassMs +
                                     gpuPassTimings_.ssrPassMs + gpuPassTimings_.temporalDenoiseMs;
         gpuPassTimings_.valid = true;

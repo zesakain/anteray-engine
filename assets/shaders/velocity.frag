@@ -12,6 +12,8 @@ layout(push_constant) uniform VelocityPushConstants {
     vec2 invResolution;
     uint hasHistory;
     float pad0;
+    float pad1;
+    float pad2;
 } pc;
 
 void main() {
