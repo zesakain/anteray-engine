@@ -201,6 +201,12 @@ target_link_libraries(advanced_pbr_pipeline_test PRIVATE hikari::engine_render h
 add_test(NAME advanced_pbr_pipeline_test COMMAND advanced_pbr_pipeline_test)
 set_tests_properties(advanced_pbr_pipeline_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Texture Residency & Memory Management Unit Tests (Milestone 11F Phase 5)
+add_executable(texture_residency_test unit/render/texture_residency_test.cpp)
+target_link_libraries(texture_residency_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
+add_test(NAME texture_residency_test COMMAND texture_residency_test)
+set_tests_properties(texture_residency_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Full glTF Metallic-Roughness PBR Verification Tests (Milestone 10D)
 add_executable(pbr_render_test unit/render/pbr_render_test.cpp)
 target_link_libraries(pbr_render_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
