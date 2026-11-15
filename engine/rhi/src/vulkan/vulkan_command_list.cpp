@@ -238,13 +238,20 @@ void VulkanCommandList::beginRenderPass(const RenderPassBeginInfo& info) {
             hasDepth = true;
 
             VkImageLayout oldDepthLayout = device_->getTextureLayout(info.depthTarget);
+            VkAccessFlags2 srcAccess = 0;
+            if (oldDepthLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
+                srcAccess = VK_ACCESS_2_SHADER_READ_BIT;
+            } else if (oldDepthLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+                srcAccess = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            } else if (oldDepthLayout != VK_IMAGE_LAYOUT_UNDEFINED) {
+                srcAccess = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
+            }
             depthBarrier = VkImageMemoryBarrier2{
                 .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
                 .pNext = nullptr,
                 .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                .srcAccessMask = (oldDepthLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL)
-                                     ? VK_ACCESS_2_SHADER_READ_BIT
-                                     : 0,
+                .srcAccessMask = srcAccess,
                 .dstStageMask = VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
                                 VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
                 .dstAccessMask = VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
@@ -861,6 +868,188 @@ void VulkanCommandList::copyBuffer(BufferHandle src, BufferHandle dst, size_t sr
         };
         vkCmdCopyBuffer(cmdBuffer_, srcBuf, dstBuf, 1, &copyRegion);
     }
+}
+
+void VulkanCommandList::copyTexture(TextureHandle srcTexture, TextureHandle dstTexture) {
+    if (!isRecording_ || device_ == nullptr || cmdBuffer_ == VK_NULL_HANDLE) {
+        return;
+    }
+    if (!device_->isTextureValid(srcTexture) || !device_->isTextureValid(dstTexture)) {
+        ENG_LOG_ERROR("Vulkan", "copyTexture failed: invalid source or destination texture handle");
+        return;
+    }
+
+    const auto* srcDesc = device_->getTextureDesc(srcTexture);
+    const auto* dstDesc = device_->getTextureDesc(dstTexture);
+    if (srcDesc == nullptr || dstDesc == nullptr) {
+        return;
+    }
+
+    VkImage srcImage = device_->resolveTextureImage(srcTexture);
+    VkImage dstImage = device_->resolveTextureImage(dstTexture);
+    if (srcImage == VK_NULL_HANDLE || dstImage == VK_NULL_HANDLE) {
+        return;
+    }
+
+    const VkImageAspectFlags aspect =
+        isDepthFormat(srcDesc->format) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+
+    VkImageLayout oldSrcLayout = device_->getTextureLayout(srcTexture);
+    VkImageLayout oldDstLayout = device_->getTextureLayout(dstTexture);
+
+    std::array<VkImageMemoryBarrier2, 2> barriers{{
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .pNext = nullptr,
+            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+            .oldLayout = oldSrcLayout,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = srcImage,
+            .subresourceRange =
+                {
+                    .aspectMask = aspect,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .pNext = nullptr,
+            .srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            .srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .dstAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .oldLayout = oldDstLayout,
+            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = dstImage,
+            .subresourceRange =
+                {
+                    .aspectMask = aspect,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+        },
+    }};
+
+    VkDependencyInfo depInfo{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .pNext = nullptr,
+        .dependencyFlags = 0,
+        .memoryBarrierCount = 0,
+        .pMemoryBarriers = nullptr,
+        .bufferMemoryBarrierCount = 0,
+        .pBufferMemoryBarriers = nullptr,
+        .imageMemoryBarrierCount = static_cast<uint32_t>(barriers.size()),
+        .pImageMemoryBarriers = barriers.data(),
+    };
+    vkCmdPipelineBarrier2(cmdBuffer_, &depInfo);
+
+    VkImageCopy copyRegion{
+        .srcSubresource =
+            {
+                .aspectMask = aspect,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        .srcOffset = {0, 0, 0},
+        .dstSubresource =
+            {
+                .aspectMask = aspect,
+                .mipLevel = 0,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        .dstOffset = {0, 0, 0},
+        .extent =
+            {
+                .width = std::min(srcDesc->width, dstDesc->width),
+                .height = std::min(srcDesc->height, dstDesc->height),
+                .depth = 1,
+            },
+    };
+    vkCmdCopyImage(cmdBuffer_, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+    const VkImageLayout readLayout = isDepthFormat(srcDesc->format)
+                                         ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+                                         : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    std::array<VkImageMemoryBarrier2, 2> postBarriers{{
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .pNext = nullptr,
+            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .srcAccessMask = VK_ACCESS_2_TRANSFER_READ_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+            .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            .newLayout = readLayout,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = srcImage,
+            .subresourceRange =
+                {
+                    .aspectMask = aspect,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+        },
+        {
+            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2,
+            .pNext = nullptr,
+            .srcStageMask = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            .dstStageMask = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+                            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+            .dstAccessMask = VK_ACCESS_2_SHADER_READ_BIT |
+                             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                             VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            .newLayout = readLayout,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image = dstImage,
+            .subresourceRange =
+                {
+                    .aspectMask = aspect,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+        },
+    }};
+
+    VkDependencyInfo postDepInfo{
+        .sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .pNext = nullptr,
+        .dependencyFlags = 0,
+        .memoryBarrierCount = 0,
+        .pMemoryBarriers = nullptr,
+        .bufferMemoryBarrierCount = 0,
+        .pBufferMemoryBarriers = nullptr,
+        .imageMemoryBarrierCount = static_cast<uint32_t>(postBarriers.size()),
+        .pImageMemoryBarriers = postBarriers.data(),
+    };
+    vkCmdPipelineBarrier2(cmdBuffer_, &postDepInfo);
+
+    device_->setTextureLayout(srcTexture, readLayout);
+    device_->setTextureLayout(dstTexture, readLayout);
 }
 
 void VulkanCommandList::copyTextureToBuffer(TextureHandle srcTexture, BufferHandle dstBuffer) {

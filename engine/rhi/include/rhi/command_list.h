@@ -132,6 +132,15 @@ public:
     virtual void copyBuffer(BufferHandle src, BufferHandle dst, size_t srcOffset, size_t dstOffset,
                             size_t size) = 0;
 
+    /// Records a GPU copy between two 2D textures of matching format and dimensions.
+    ///
+    /// @param src Valid handle of the source texture.
+    /// @param dst Valid handle of the destination texture.
+    virtual void copyTexture(TextureHandle src, TextureHandle dst) {
+        (void)src;
+        (void)dst;
+    }
+
     /// Records a GPU transfer copying an entire 2D texture level to a destination buffer.
     ///
     /// @param srcTexture Valid handle of the source texture.

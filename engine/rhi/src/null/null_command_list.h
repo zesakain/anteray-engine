@@ -159,6 +159,7 @@ public:
 
     void copyBuffer(BufferHandle src, BufferHandle dst, size_t srcOffset, size_t dstOffset,
                     size_t size) override;
+    void copyTexture(TextureHandle, TextureHandle) override {}
     void copyTextureToBuffer(TextureHandle srcTexture, BufferHandle dstBuffer) override;
     void copyBufferToTexture(BufferHandle srcBuffer, TextureHandle dstTexture,
                              size_t bufferOffset = 0, uint32_t mipLevel = 0,
