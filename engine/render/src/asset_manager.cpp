@@ -650,13 +650,22 @@ Result<void> AssetManager::updateSamplerQuality(const QualitySettings& settings,
             if (gpuMat != nullptr && gpuMat->isValid() &&
                 matIdx < meshEntry.cpuMesh.materials.size()) {
                 const auto& cpuMat = meshEntry.cpuMesh.materials[matIdx];
-                std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 5> slots{
+                std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 12> slots{
                     resolveTexSlot(cpuMat.baseColorTexture, DefaultTextureType::WhiteSRGB),
                     resolveTexSlot(cpuMat.metallicRoughnessTexture,
                                    DefaultTextureType::WhiteLinear),
                     resolveTexSlot(cpuMat.normalTexture, DefaultTextureType::FlatNormalLinear),
                     resolveTexSlot(cpuMat.occlusionTexture, DefaultTextureType::WhiteLinear),
                     resolveTexSlot(cpuMat.emissiveTexture, DefaultTextureType::BlackSRGB),
+                    resolveTexSlot(cpuMat.clearcoat.texture, DefaultTextureType::WhiteLinear),
+                    resolveTexSlot(cpuMat.clearcoat.roughnessTexture,
+                                   DefaultTextureType::WhiteLinear),
+                    resolveTexSlot(cpuMat.clearcoat.normalTexture,
+                                   DefaultTextureType::FlatNormalLinear),
+                    resolveTexSlot(cpuMat.transmission.texture, DefaultTextureType::WhiteLinear),
+                    resolveTexSlot(cpuMat.volume.thicknessTexture, DefaultTextureType::WhiteLinear),
+                    resolveTexSlot(cpuMat.specular.texture, DefaultTextureType::WhiteLinear),
+                    resolveTexSlot(cpuMat.specular.colorTexture, DefaultTextureType::WhiteSRGB),
                 };
                 gpuMat->updateTextureDescriptors(device, slots);
             }

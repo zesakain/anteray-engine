@@ -62,6 +62,47 @@ struct TextureInfo {
     bool isPresent{false};
 };
 
+/// @struct ClearcoatExtension
+/// @brief KHR_materials_clearcoat extension properties.
+struct ClearcoatExtension {
+    float factor{0.0F};
+    float roughnessFactor{0.0F};
+    TextureInfo texture{};
+    TextureInfo roughnessTexture{};
+    TextureInfo normalTexture{};
+};
+
+/// @struct TransmissionExtension
+/// @brief KHR_materials_transmission extension properties.
+struct TransmissionExtension {
+    float factor{0.0F};
+    TextureInfo texture{};
+};
+
+/// @struct VolumeExtension
+/// @brief KHR_materials_volume extension properties.
+struct VolumeExtension {
+    float thicknessFactor{0.0F};
+    TextureInfo thicknessTexture{};
+    float attenuationDistance{1e9F}; ///< Default 1e9F signifies infinity (no attenuation)
+    Vec3 attenuationColor{1.0F, 1.0F, 1.0F};
+};
+
+/// @struct IorExtension
+/// @brief KHR_materials_ior extension properties.
+struct IorExtension {
+    float ior{1.5F}; ///< Default index of refraction is 1.5
+};
+
+/// @struct SpecularExtension
+/// @brief KHR_materials_specular extension properties.
+struct SpecularExtension {
+    float factor{1.0F};
+    TextureInfo texture{};
+    Vec3 colorFactor{1.0F, 1.0F, 1.0F};
+    TextureInfo colorTexture{};
+};
+
 /// @struct Material
 /// @brief Surface shading properties supporting standard glTF 2.0 PBR metallic-roughness workflow.
 struct Material {
@@ -83,6 +124,13 @@ struct Material {
     TextureInfo occlusionTexture{};         // Linear
     TextureInfo emissiveTexture{};          // sRGB
 
+    // Advanced glTF 2.0 Material Extensions
+    ClearcoatExtension clearcoat{};
+    TransmissionExtension transmission{};
+    VolumeExtension volume{};
+    IorExtension iorExt{};
+    SpecularExtension specular{};
+
     // Backward-compatibility alias
     AssetId textureAsset{}; // references primary baseColorTexture
 
@@ -103,6 +151,11 @@ struct Material {
             .normalTexture = {},
             .occlusionTexture = {},
             .emissiveTexture = {},
+            .clearcoat = {},
+            .transmission = {},
+            .volume = {},
+            .iorExt = {},
+            .specular = {},
             .textureAsset = {},
         };
     }

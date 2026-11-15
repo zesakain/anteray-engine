@@ -29,7 +29,7 @@ static int testMaterialDescriptorSetLayoutCreation() {
     auto& device = *devRes.value();
 
     const auto layoutDesc = createMaterialDescriptorSetLayoutDesc();
-    TEST_CHECK(layoutDesc.bindings.size() == 6);
+    TEST_CHECK(layoutDesc.bindings.size() == 13);
 
     auto layoutRes = device.createDescriptorSetLayout(layoutDesc);
     TEST_CHECK(layoutRes.hasValue());
@@ -73,6 +73,13 @@ static int testGpuMaterialCreationAndUniformPacking() {
     mat.doubleSided = true;
     mat.transmissionFactor = 0.75F;
     mat.ior = 1.52F;
+    mat.clearcoat.factor = 0.9F;
+    mat.clearcoat.roughnessFactor = 0.25F;
+    mat.volume.thicknessFactor = 2.0F;
+    mat.volume.attenuationDistance = 5.0F;
+    mat.volume.attenuationColor = Vec3{0.8F, 0.9F, 1.0F};
+    mat.specular.factor = 0.5F;
+    mat.specular.colorFactor = Vec3{1.0F, 0.8F, 0.6F};
 
     auto gpuMatRes = GpuMaterial::create(device, layout, mat, assetManager);
     TEST_CHECK(gpuMatRes.hasValue());
@@ -96,6 +103,13 @@ static int testGpuMaterialCreationAndUniformPacking() {
     TEST_CHECK(ubo.doubleSided == 1u);
     TEST_CHECK(std::abs(ubo.transmissionFactor - 0.75F) < 1e-4F);
     TEST_CHECK(std::abs(ubo.ior - 1.52F) < 1e-4F);
+    TEST_CHECK(std::abs(ubo.clearcoatFactor - 0.9F) < 1e-4F);
+    TEST_CHECK(std::abs(ubo.clearcoatRoughness - 0.25F) < 1e-4F);
+    TEST_CHECK(std::abs(ubo.thicknessFactor - 2.0F) < 1e-4F);
+    TEST_CHECK(std::abs(ubo.attenuationDistance - 5.0F) < 1e-4F);
+    TEST_CHECK(std::abs(ubo.attenuationColorAndHasSpecTex.x - 0.8F) < 1e-4F);
+    TEST_CHECK(std::abs(ubo.specularFactor - 0.5F) < 1e-4F);
+    TEST_CHECK(std::abs(ubo.specularColorFactorAndHasColorTex.y - 0.8F) < 1e-4F);
 
     // Fallbacks: No textures provided, so all texture flags must be 0
     TEST_CHECK(ubo.hasBaseColorTex == 0u);

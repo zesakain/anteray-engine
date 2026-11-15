@@ -48,13 +48,25 @@ struct alignas(16) MaterialUniformBufferData {
     uint32_t doubleSided{0};                                   // offset 72..75
     float transmissionFactor{0.0F};                            // offset 76..79
     float ior{1.5F};                                           // offset 80..83
-    float pad0{0.0F};                                          // offset 84..87
-    float pad1{0.0F};                                          // offset 88..91
-    float pad2{0.0F};                                          // offset 92..95
+    float clearcoatFactor{0.0F};                               // offset 84..87
+    float clearcoatRoughness{0.0F};                            // offset 88..91
+    float clearcoatNormalScale{1.0F};                          // offset 92..95
+    uint32_t hasClearcoatTex{0};                               // offset 96..99
+    uint32_t hasClearcoatRoughnessTex{0};                      // offset 100..103
+    uint32_t hasClearcoatNormalTex{0};                         // offset 104..107
+    uint32_t hasTransmissionTex{0};                            // offset 108..111
+    float thicknessFactor{0.0F};                               // offset 112..115
+    float attenuationDistance{1e9F};                           // offset 116..119
+    uint32_t hasThicknessTex{0};                               // offset 120..123
+    float specularFactor{1.0F};                                // offset 124..127
+    Vec4 attenuationColorAndHasSpecTex{1.0F, 1.0F, 1.0F,
+                                       0.0F}; // offset 128..143 (xyz: color, w: hasSpecTex)
+    Vec4 specularColorFactorAndHasColorTex{1.0F, 1.0F, 1.0F,
+                                           0.0F}; // offset 144..159 (xyz: color, w: hasColorTex)
 };
 
-static_assert(sizeof(MaterialUniformBufferData) == 96,
-              "MaterialUniformBufferData must be 96 bytes (std140 alignment)");
+static_assert(sizeof(MaterialUniformBufferData) == 160,
+              "MaterialUniformBufferData must be 160 bytes (std140 alignment)");
 
 /// @brief Generates standard DescriptorSetLayoutDesc for glTF materials (set 0).
 [[nodiscard]] inline rhi::DescriptorSetLayoutDesc createMaterialDescriptorSetLayoutDesc() noexcept {
@@ -96,6 +108,48 @@ static_assert(sizeof(MaterialUniformBufferData) == 96,
             .descriptorType = rhi::DescriptorType::UniformBuffer,
             .descriptorCount = 1,
             .stageFlags = rhi::ShaderStageFlags::Fragment | rhi::ShaderStageFlags::Vertex,
+        },
+        rhi::DescriptorBindingDesc{
+            .binding = 6,
+            .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+        },
+        rhi::DescriptorBindingDesc{
+            .binding = 7,
+            .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+        },
+        rhi::DescriptorBindingDesc{
+            .binding = 8,
+            .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+        },
+        rhi::DescriptorBindingDesc{
+            .binding = 9,
+            .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+        },
+        rhi::DescriptorBindingDesc{
+            .binding = 10,
+            .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+        },
+        rhi::DescriptorBindingDesc{
+            .binding = 11,
+            .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
+        },
+        rhi::DescriptorBindingDesc{
+            .binding = 12,
+            .descriptorType = rhi::DescriptorType::CombinedImageSampler,
+            .descriptorCount = 1,
+            .stageFlags = rhi::ShaderStageFlags::Fragment,
         },
     };
     return desc;
@@ -173,10 +227,10 @@ public:
         return descriptorSet_.isValid() && uniformBuffer_.isValid();
     }
 
-    /// @brief Rebinds material descriptor set texture bindings (0..4) with updated handles.
+    /// @brief Rebinds material descriptor set texture bindings (0..4, 6..12) with updated handles.
     void updateTextureDescriptors(
         rhi::RhiDevice& device,
-        const std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 5>& textureSlots);
+        const std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 12>& textureSlots);
 
 private:
     GpuMaterial(rhi::RhiDevice& device, rhi::DescriptorPoolHandle pool,

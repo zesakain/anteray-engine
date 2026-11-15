@@ -79,7 +79,7 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
     rhi::DescriptorPoolDesc poolDesc{};
     poolDesc.maxSets = 1;
     poolDesc.poolSizes = {
-        rhi::DescriptorPoolSize{.type = rhi::DescriptorType::CombinedImageSampler, .count = 5},
+        rhi::DescriptorPoolSize{.type = rhi::DescriptorType::CombinedImageSampler, .count = 12},
         rhi::DescriptorPoolSize{.type = rhi::DescriptorType::UniformBuffer, .count = 1},
     };
     poolDesc.debugName = "GpuMaterial_DescriptorPool";
@@ -176,6 +176,12 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
     uboData.doubleSided = material.doubleSided ? 1u : 0u;
     uboData.transmissionFactor = material.transmissionFactor;
     uboData.ior = material.ior;
+    uboData.clearcoatFactor = material.clearcoat.factor;
+    uboData.clearcoatRoughness = material.clearcoat.roughnessFactor;
+    uboData.clearcoatNormalScale = material.clearcoat.normalTexture.scale;
+    uboData.thicknessFactor = material.volume.thicknessFactor;
+    uboData.attenuationDistance = material.volume.attenuationDistance;
+    uboData.specularFactor = material.specular.factor;
 
     const auto baseColorSlot = resolveSlot(material.baseColorTexture, DefaultTextureType::WhiteSRGB,
                                            uboData.hasBaseColorTex);
@@ -188,6 +194,40 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
                                      uboData.hasOcclusionTex);
     const auto emissiveSlot = resolveSlot(material.emissiveTexture, DefaultTextureType::BlackSRGB,
                                           uboData.hasEmissiveTex);
+
+    const auto clearcoatSlot = resolveSlot(
+        material.clearcoat.texture, DefaultTextureType::WhiteLinear, uboData.hasClearcoatTex);
+    const auto clearcoatRoughnessSlot =
+        resolveSlot(material.clearcoat.roughnessTexture, DefaultTextureType::WhiteLinear,
+                    uboData.hasClearcoatRoughnessTex);
+    const auto clearcoatNormalSlot =
+        resolveSlot(material.clearcoat.normalTexture, DefaultTextureType::FlatNormalLinear,
+                    uboData.hasClearcoatNormalTex);
+    const auto transmissionSlot = resolveSlot(
+        material.transmission.texture, DefaultTextureType::WhiteLinear, uboData.hasTransmissionTex);
+    const auto thicknessSlot = resolveSlot(
+        material.volume.thicknessTexture, DefaultTextureType::WhiteLinear, uboData.hasThicknessTex);
+
+    uint32_t hasSpecTex = 0u;
+    const auto specularSlot =
+        resolveSlot(material.specular.texture, DefaultTextureType::WhiteLinear, hasSpecTex);
+
+    uint32_t hasSpecColorTex = 0u;
+    const auto specularColorSlot =
+        resolveSlot(material.specular.colorTexture, DefaultTextureType::WhiteSRGB, hasSpecColorTex);
+
+    uboData.attenuationColorAndHasSpecTex = Vec4{
+        material.volume.attenuationColor.x,
+        material.volume.attenuationColor.y,
+        material.volume.attenuationColor.z,
+        hasSpecTex != 0u ? 1.0F : 0.0F,
+    };
+    uboData.specularColorFactorAndHasColorTex = Vec4{
+        material.specular.colorFactor.x,
+        material.specular.colorFactor.y,
+        material.specular.colorFactor.z,
+        hasSpecColorTex != 0u ? 1.0F : 0.0F,
+    };
 
     // 4. Create and upload uniform buffer
     rhi::BufferDesc uboDesc{};
@@ -210,9 +250,9 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
         return writeRes.error();
     }
 
-    // 5. Update descriptor set with textures and uniform buffer
+    // 5. Update descriptor set with textures and uniform buffer (13 writes total)
     std::vector<rhi::DescriptorWrite> writes;
-    writes.reserve(6);
+    writes.reserve(13);
     writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(0, baseColorSlot.first,
                                                                     baseColorSlot.second));
     writes.push_back(
@@ -225,6 +265,20 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
         rhi::DescriptorWrite::makeCombinedImageSampler(4, emissiveSlot.first, emissiveSlot.second));
     writes.push_back(rhi::DescriptorWrite::makeBuffer(
         5, rhi::DescriptorType::UniformBuffer, uboHandle, 0, sizeof(MaterialUniformBufferData)));
+    writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(6, clearcoatSlot.first,
+                                                                    clearcoatSlot.second));
+    writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(7, clearcoatRoughnessSlot.first,
+                                                                    clearcoatRoughnessSlot.second));
+    writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(8, clearcoatNormalSlot.first,
+                                                                    clearcoatNormalSlot.second));
+    writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(9, transmissionSlot.first,
+                                                                    transmissionSlot.second));
+    writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(10, thicknessSlot.first,
+                                                                    thicknessSlot.second));
+    writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(11, specularSlot.first,
+                                                                    specularSlot.second));
+    writes.push_back(rhi::DescriptorWrite::makeCombinedImageSampler(12, specularColorSlot.first,
+                                                                    specularColorSlot.second));
 
     device.updateDescriptorSet(setHandle, writes);
 
@@ -234,13 +288,17 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
 
 void GpuMaterial::updateTextureDescriptors(
     rhi::RhiDevice& device,
-    const std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 5>& textureSlots) {
+    const std::array<std::pair<rhi::TextureHandle, rhi::SamplerHandle>, 12>& textureSlots) {
     if (!descriptorSet_.isValid()) {
         return;
     }
-    std::array<rhi::DescriptorWrite, 5> writes{};
+    std::array<rhi::DescriptorWrite, 12> writes{};
     for (uint32_t b = 0; b < 5; ++b) {
         writes[b] = rhi::DescriptorWrite::makeCombinedImageSampler(b, textureSlots[b].first,
+                                                                   textureSlots[b].second);
+    }
+    for (uint32_t b = 5; b < 12; ++b) {
+        writes[b] = rhi::DescriptorWrite::makeCombinedImageSampler(b + 1, textureSlots[b].first,
                                                                    textureSlots[b].second);
     }
     std::ignore = device.updateDescriptorSet(descriptorSet_, writes);
