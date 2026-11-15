@@ -238,12 +238,38 @@ core::JsonValue postProcessToJson(const render::PostProcessSettings& pp) {
     obj.set("enabled", pp.enabled);
     obj.set("exposure", pp.exposure);
     obj.set("toneMapOp", toneMapOpToString(pp.toneMapOp));
+    obj.set("reinhardWhitePoint", pp.reinhardWhitePoint);
+    obj.set("autoExposureEnabled", pp.autoExposureEnabled);
+    obj.set("autoExposureMinEv", pp.autoExposureMinEv);
+    obj.set("autoExposureMaxEv", pp.autoExposureMaxEv);
+    obj.set("autoExposureSpeedUp", pp.autoExposureSpeedUp);
+    obj.set("autoExposureSpeedDown", pp.autoExposureSpeedDown);
+    obj.set("exposureCompensation", pp.exposureCompensation);
     obj.set("bloomEnabled", pp.bloomEnabled);
     obj.set("bloomThreshold", pp.bloomThreshold);
     obj.set("bloomKnee", pp.bloomKnee);
-    obj.set("reinhardWhitePoint", pp.reinhardWhitePoint);
     obj.set("bloomIntensity", pp.bloomIntensity);
     obj.set("bloomFilterRadius", pp.bloomFilterRadius);
+    obj.set("dofEnabled", pp.dofEnabled);
+    obj.set("dofFocusDistance", pp.dofFocusDistance);
+    obj.set("dofFocalLength", pp.dofFocalLength);
+    obj.set("dofAperture", pp.dofAperture);
+    obj.set("dofMaxBlurRadius", pp.dofMaxBlurRadius);
+    obj.set("motionBlurEnabled", pp.motionBlurEnabled);
+    obj.set("motionBlurIntensity", pp.motionBlurIntensity);
+    obj.set("motionBlurSamples", static_cast<int>(pp.motionBlurSamples));
+    obj.set("whiteBalance", pp.whiteBalance);
+    obj.set("contrast", pp.contrast);
+    obj.set("saturation", pp.saturation);
+    obj.set("lutEnabled", pp.lutEnabled);
+    obj.set("lutIntensity", pp.lutIntensity);
+    obj.set("lutFilePath", pp.lutFilePath);
+    obj.set("vignetteEnabled", pp.vignetteEnabled);
+    obj.set("vignetteIntensity", pp.vignetteIntensity);
+    obj.set("vignetteSmoothness", pp.vignetteSmoothness);
+    obj.set("vignetteRoundness", pp.vignetteRoundness);
+    obj.set("filmGrainEnabled", pp.filmGrainEnabled);
+    obj.set("filmGrainIntensity", pp.filmGrainIntensity);
     return obj;
 }
 
@@ -255,12 +281,41 @@ render::PostProcessSettings jsonToPostProcess(const core::JsonValue& obj) {
     if (auto opOpt = stringToToneMapOp(opStr)) {
         pp.toneMapOp = *opOpt;
     }
+    pp.reinhardWhitePoint = obj.getFloat("reinhardWhitePoint", pp.reinhardWhitePoint);
+    pp.autoExposureEnabled = obj.getBool("autoExposureEnabled", pp.autoExposureEnabled);
+    pp.autoExposureMinEv = obj.getFloat("autoExposureMinEv", pp.autoExposureMinEv);
+    pp.autoExposureMaxEv = obj.getFloat("autoExposureMaxEv", pp.autoExposureMaxEv);
+    pp.autoExposureSpeedUp = obj.getFloat("autoExposureSpeedUp", pp.autoExposureSpeedUp);
+    pp.autoExposureSpeedDown = obj.getFloat("autoExposureSpeedDown", pp.autoExposureSpeedDown);
+    pp.exposureCompensation = obj.getFloat("exposureCompensation", pp.exposureCompensation);
     pp.bloomEnabled = obj.getBool("bloomEnabled", pp.bloomEnabled);
     pp.bloomThreshold = obj.getFloat("bloomThreshold", pp.bloomThreshold);
     pp.bloomKnee = obj.getFloat("bloomKnee", pp.bloomKnee);
-    pp.reinhardWhitePoint = obj.getFloat("reinhardWhitePoint", pp.reinhardWhitePoint);
     pp.bloomIntensity = obj.getFloat("bloomIntensity", pp.bloomIntensity);
     pp.bloomFilterRadius = obj.getFloat("bloomFilterRadius", pp.bloomFilterRadius);
+    pp.dofEnabled = obj.getBool("dofEnabled", pp.dofEnabled);
+    pp.dofFocusDistance = obj.getFloat("dofFocusDistance", pp.dofFocusDistance);
+    pp.dofFocalLength = obj.getFloat("dofFocalLength", pp.dofFocalLength);
+    pp.dofAperture = obj.getFloat("dofAperture", pp.dofAperture);
+    pp.dofMaxBlurRadius = obj.getFloat("dofMaxBlurRadius", pp.dofMaxBlurRadius);
+    pp.motionBlurEnabled = obj.getBool("motionBlurEnabled", pp.motionBlurEnabled);
+    pp.motionBlurIntensity = obj.getFloat("motionBlurIntensity", pp.motionBlurIntensity);
+    pp.motionBlurSamples = static_cast<uint32_t>(
+        std::max(1, obj.getInt("motionBlurSamples", static_cast<int>(pp.motionBlurSamples))));
+    pp.whiteBalance = obj.getFloat("whiteBalance", pp.whiteBalance);
+    pp.contrast = obj.getFloat("contrast", pp.contrast);
+    pp.saturation = obj.getFloat("saturation", pp.saturation);
+    pp.lutEnabled = obj.getBool("lutEnabled", pp.lutEnabled);
+    pp.lutIntensity = obj.getFloat("lutIntensity", pp.lutIntensity);
+    if (obj.contains("lutFilePath")) {
+        pp.lutFilePath = std::string(obj.getString("lutFilePath", pp.lutFilePath));
+    }
+    pp.vignetteEnabled = obj.getBool("vignetteEnabled", pp.vignetteEnabled);
+    pp.vignetteIntensity = obj.getFloat("vignetteIntensity", pp.vignetteIntensity);
+    pp.vignetteSmoothness = obj.getFloat("vignetteSmoothness", pp.vignetteSmoothness);
+    pp.vignetteRoundness = obj.getFloat("vignetteRoundness", pp.vignetteRoundness);
+    pp.filmGrainEnabled = obj.getBool("filmGrainEnabled", pp.filmGrainEnabled);
+    pp.filmGrainIntensity = obj.getFloat("filmGrainIntensity", pp.filmGrainIntensity);
     return pp;
 }
 
