@@ -24,6 +24,7 @@
 #include "rhi/rhi_device.h"
 #include "world/world.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -439,6 +440,285 @@ void testVulkanResidencyLifecycleLive() {
     std::cout << "  Passed." << std::endl;
 }
 
+// -----------------------------------------------------------------------------
+// Test 8: Deferred GPU Resource Destruction (Submission Serials & No waitIdle)
+// -----------------------------------------------------------------------------
+void testDeferredGpuResourceDestruction() {
+    std::cout << "[Test 8] Deferred GPU Resource Destruction..." << std::endl;
+
+    auto devRes = createNullDevice();
+    TEST_CHECK(devRes.hasValue());
+    auto device = std::move(devRes.value());
+
+    AssetManager assetMgr;
+
+    // Register 3 textures
+    auto imgA = createTestImage(32, 32, 10, 20, 30);
+    auto imgB = createTestImage(32, 32, 40, 50, 60);
+    auto imgC = createTestImage(32, 32, 70, 80, 90);
+
+    auto regA = assetMgr.registerTexture("virtual://def_tex_A", std::move(imgA));
+    auto regB = assetMgr.registerTexture("virtual://def_tex_B", std::move(imgB));
+    auto regC = assetMgr.registerTexture("virtual://def_tex_C", std::move(imgC));
+    TEST_CHECK(regA.hasValue() && regB.hasValue() && regC.hasValue());
+
+    AssetId idA = regA.value();
+    AssetId idB = regB.value();
+    AssetId idC = regC.value();
+
+    TEST_CHECK(assetMgr.uploadTexture(idA, *device, false).hasValue());
+    TEST_CHECK(assetMgr.uploadTexture(idB, *device, false).hasValue());
+    TEST_CHECK(assetMgr.uploadTexture(idC, *device, false).hasValue());
+
+    const auto& m0 = assetMgr.getTextureMemoryMetrics();
+    TEST_CHECK(m0.residentTextureCount == 3);
+    TEST_CHECK(m0.pendingRetirementsCount == 0);
+    TEST_CHECK(m0.retiredGpuMemoryBytes == 0);
+
+    // Evict texture A: enters EvictionPending, placed into retiredTextures_
+    auto evictA = assetMgr.evictTexture(idA, *device);
+    TEST_CHECK(evictA.hasValue() && evictA.value() == true);
+
+    const auto& mA = assetMgr.getTextureMemoryMetrics();
+    TEST_CHECK(mA.residentTextureCount == 2);
+    // Because null device completes submissions immediately upon poll, retired item was reclaimed
+    TEST_CHECK(mA.evictionCountLifetime == 1);
+
+    // Test eviction and shutdown with pending retired resources
+    auto evictB = assetMgr.evictTexture(idB, *device);
+    TEST_CHECK(evictB.hasValue() && evictB.value() == true);
+    auto evictC = assetMgr.evictTexture(idC, *device);
+    TEST_CHECK(evictC.hasValue() && evictC.value() == true);
+
+    assetMgr.unloadAll();
+    const auto& mEnd = assetMgr.getTextureMemoryMetrics();
+    TEST_CHECK(mEnd.residentTextureCount == 0);
+    TEST_CHECK(mEnd.pendingRetirementsCount == 0);
+    TEST_CHECK(mEnd.retiredGpuMemoryBytes == 0);
+    TEST_CHECK(mEnd.estimatedGpuMemoryBytes == 0);
+
+    std::cout << "  Passed." << std::endl;
+}
+
+// -----------------------------------------------------------------------------
+// Test 9: Residency State Machine Transitions & Failure Diagnostics
+// -----------------------------------------------------------------------------
+void testResidencyStateMachineTransitions() {
+    std::cout << "[Test 9] Residency State Machine Transitions & Failure Diagnostics..."
+              << std::endl;
+
+    // 1. Valid transitions
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::Unloaded,
+                                          TextureResidencyState::Loading));
+    TEST_CHECK(
+        isValidResidencyTransition(TextureResidencyState::Unloaded, TextureResidencyState::Failed));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::Loading,
+                                          TextureResidencyState::CpuResident));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::Loading,
+                                          TextureResidencyState::Unloaded));
+    TEST_CHECK(
+        isValidResidencyTransition(TextureResidencyState::Loading, TextureResidencyState::Failed));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::CpuResident,
+                                          TextureResidencyState::GpuUploadPending));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::CpuResident,
+                                          TextureResidencyState::Unloaded));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::CpuResident,
+                                          TextureResidencyState::Failed));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::GpuUploadPending,
+                                          TextureResidencyState::GpuResident));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::GpuUploadPending,
+                                          TextureResidencyState::CpuResident));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::GpuUploadPending,
+                                          TextureResidencyState::Failed));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::GpuResident,
+                                          TextureResidencyState::EvictionPending));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::EvictionPending,
+                                          TextureResidencyState::Unloaded));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::EvictionPending,
+                                          TextureResidencyState::CpuResident));
+    TEST_CHECK(isValidResidencyTransition(TextureResidencyState::EvictionPending,
+                                          TextureResidencyState::Failed));
+    TEST_CHECK(
+        isValidResidencyTransition(TextureResidencyState::Failed, TextureResidencyState::Unloaded));
+    TEST_CHECK(
+        isValidResidencyTransition(TextureResidencyState::Failed, TextureResidencyState::Loading));
+
+    // 2. Representative invalid transitions
+    TEST_CHECK(!isValidResidencyTransition(TextureResidencyState::Unloaded,
+                                           TextureResidencyState::GpuResident));
+    TEST_CHECK(!isValidResidencyTransition(TextureResidencyState::GpuResident,
+                                           TextureResidencyState::Unloaded)); // must go via pending
+    TEST_CHECK(!isValidResidencyTransition(TextureResidencyState::Failed,
+                                           TextureResidencyState::GpuResident));
+    TEST_CHECK(!isValidResidencyTransition(TextureResidencyState::EvictionPending,
+                                           TextureResidencyState::GpuUploadPending));
+
+    // 3. Failure info and bounded retry checks
+    TextureFailureInfo failInfo{
+        .stage = TextureFailureStage::Decode,
+        .reason = TextureFailureReason::CorruptData,
+        .retryCount = 0,
+    };
+    TEST_CHECK(failInfo.canRetry());
+    failInfo.retryCount = 3;
+    TEST_CHECK(!failInfo.canRetry()); // Exceeded max retries
+
+    TextureFailureInfo unsuppInfo{
+        .stage = TextureFailureStage::Decode,
+        .reason = TextureFailureReason::UnsupportedFormat,
+        .retryCount = 0,
+    };
+    TEST_CHECK(!unsuppInfo.canRetry()); // Non-retryable failure
+
+    std::cout << "  Passed." << std::endl;
+}
+
+// -----------------------------------------------------------------------------
+// Test 10: Real Mip Residency & Memory Reduction Verification
+// -----------------------------------------------------------------------------
+void testRealMipResidencyAndMemoryReduction() {
+    std::cout << "[Test 10] Real Mip Residency & Memory Reduction..." << std::endl;
+
+    auto devRes = createNullDevice();
+    TEST_CHECK(devRes.hasValue());
+    auto device = std::move(devRes.value());
+
+    AssetManager assetMgr;
+
+    // 64x64 texture (4096 px * 4 = 16 KB base, ~21.8 KB with complete mips)
+    auto img = createTestImage(64, 64, 200, 150, 100);
+    auto reg = assetMgr.registerTexture("virtual://real_mip_tex", std::move(img));
+    TEST_CHECK(reg.hasValue());
+    AssetId texId = reg.value();
+
+    auto up = assetMgr.uploadTexture(texId, *device, true);
+    TEST_CHECK(up.hasValue());
+    const size_t fullBytes = assetMgr.getTextureMemoryMetrics().residentGpuMemoryBytes;
+    TEST_CHECK(fullBytes >= 16384);
+
+    // Real Demotion: resizes to coarse 32x32 image (approx 25% of memory)
+    auto demoteRes = assetMgr.demoteTextureMips(texId, *device);
+    TEST_CHECK(demoteRes.hasValue());
+
+    const size_t demotedBytes = assetMgr.getTextureMemoryMetrics().residentGpuMemoryBytes;
+    TEST_CHECK(demotedBytes < fullBytes);
+    // Verifies genuine memory reduction (coarse 32x32 is ~5.4 KB vs 21.8 KB full)
+    TEST_CHECK(demotedBytes <= (fullBytes / 2));
+
+    // Real Promotion: re-allocates back to full 64x64 resolution
+    auto promoteRes = assetMgr.promoteTextureMips(texId, *device);
+    TEST_CHECK(promoteRes.hasValue());
+
+    const size_t promotedBytes = assetMgr.getTextureMemoryMetrics().residentGpuMemoryBytes;
+    TEST_CHECK(promotedBytes == fullBytes);
+
+    std::cout << "  Passed." << std::endl;
+}
+
+// -----------------------------------------------------------------------------
+// Test 11: Eviction Performance Benchmark (waitIdle vs Deferred)
+// -----------------------------------------------------------------------------
+void testDeferredDestructionBenchmark() {
+    std::cout << "[Test 11] Eviction Performance Benchmark (waitIdle vs Deferred)..." << std::endl;
+
+    VulkanDeviceDesc devDesc{.windowHandle = nullptr, .enableValidation = false};
+    auto devRes = createVulkanDevice(devDesc);
+    if (!devRes.hasValue()) {
+        std::cout << "  [SKIP] Vulkan device unavailable; skipping live GPU benchmark."
+                  << std::endl;
+        return;
+    }
+    auto device = std::move(devRes.value());
+
+    // 1. Measure waitIdle() eviction
+    {
+        AssetManager assetMgr;
+        std::vector<AssetId> ids;
+        for (int i = 0; i < 20; ++i) {
+            auto img = createTestImage(64, 64, 100, 150, 200);
+            auto reg = assetMgr.registerTexture("virtual://bench_wait_" + std::to_string(i),
+                                                std::move(img));
+            (void)assetMgr.uploadTexture(reg.value(), *device, false);
+            ids.push_back(reg.value());
+        }
+
+        std::vector<double> waitIdleTimesMs;
+        for (AssetId id : ids) {
+            auto t0 = std::chrono::high_resolution_clock::now();
+            device->waitIdle(); // simulate legacy waitIdle before destruction
+            (void)assetMgr.evictTexture(id, *device);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            waitIdleTimesMs.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
+        }
+
+        std::sort(waitIdleTimesMs.begin(), waitIdleTimesMs.end());
+        double avgWait = 0.0;
+        for (double t : waitIdleTimesMs) {
+            avgWait += t;
+        }
+        avgWait /= static_cast<double>(waitIdleTimesMs.size());
+        double p95Wait = waitIdleTimesMs[static_cast<size_t>(
+            static_cast<double>(waitIdleTimesMs.size()) * 0.95)];
+        double p99Wait = waitIdleTimesMs[static_cast<size_t>(
+            static_cast<double>(waitIdleTimesMs.size()) * 0.99)];
+        double maxWait = waitIdleTimesMs.back();
+
+        std::cout << "  [Legacy waitIdle Eviction] Avg: " << avgWait << " ms, P95: " << p95Wait
+                  << " ms, P99: " << p99Wait << " ms, Max: " << maxWait << " ms" << std::endl;
+    }
+
+    // 2. Measure Deferred Destruction eviction
+    {
+        AssetManager assetMgr;
+        std::vector<AssetId> ids;
+        for (int i = 0; i < 20; ++i) {
+            auto img = createTestImage(64, 64, 100, 150, 200);
+            auto reg = assetMgr.registerTexture("virtual://bench_deferred_" + std::to_string(i),
+                                                std::move(img));
+            (void)assetMgr.uploadTexture(reg.value(), *device, false);
+            ids.push_back(reg.value());
+        }
+
+        std::vector<double> deferredTimesMs;
+        for (AssetId id : ids) {
+            auto t0 = std::chrono::high_resolution_clock::now();
+            (void)assetMgr.evictTexture(id, *device);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            deferredTimesMs.push_back(std::chrono::duration<double, std::milli>(t1 - t0).count());
+        }
+
+        std::sort(deferredTimesMs.begin(), deferredTimesMs.end());
+        double avgDef = 0.0;
+        for (double t : deferredTimesMs) {
+            avgDef += t;
+        }
+        avgDef /= static_cast<double>(deferredTimesMs.size());
+        double p95Def = deferredTimesMs[static_cast<size_t>(
+            static_cast<double>(deferredTimesMs.size()) * 0.95)];
+        double p99Def = deferredTimesMs[static_cast<size_t>(
+            static_cast<double>(deferredTimesMs.size()) * 0.99)];
+        double maxDef = deferredTimesMs.back();
+
+        std::cout << "  [Deferred Destruction Eviction] Avg: " << avgDef << " ms, P95: " << p95Def
+                  << " ms, P99: " << p99Def << " ms, Max: " << maxDef << " ms" << std::endl;
+
+        // Verify deferred destruction avoids blocking and has sub-millisecond latency
+        TEST_CHECK(avgDef < 1.0);
+
+        // Measure CPU time spent processing retired resources
+        auto tRetire0 = std::chrono::high_resolution_clock::now();
+        uint32_t reclaimed = assetMgr.processRetiredResources(*device);
+        auto tRetire1 = std::chrono::high_resolution_clock::now();
+        double retireDurationMs =
+            std::chrono::duration<double, std::milli>(tRetire1 - tRetire0).count();
+        std::cout << "  [Retired Resources Processing] Reclaimed " << reclaimed << " textures in "
+                  << retireDurationMs << " ms" << std::endl;
+
+        assetMgr.unloadAll();
+    }
+    std::cout << "  Passed." << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -453,9 +733,13 @@ int main() {
     testMipPromotionAndDemotion();
     testStressCyclesAndMemoryStability();
     testVulkanResidencyLifecycleLive();
+    testDeferredGpuResourceDestruction();
+    testResidencyStateMachineTransitions();
+    testRealMipResidencyAndMemoryReduction();
+    testDeferredDestructionBenchmark();
 
     std::cout << "========================================================\n"
-              << "All 7 tests in Texture Residency Suite PASSED.\n"
+              << "All 11 tests in Texture Residency Suite PASSED.\n"
               << "========================================================" << std::endl;
     return 0;
 }
