@@ -164,9 +164,10 @@ static int testContinuousSimulationPreservedAcrossTransitions() {
     auto modeB = std::make_unique<SharedWorldMockMode>("State B");
 
     uint32_t continuousExecutionCount = 0;
-    flecs::system continuousSys =
-        world.getRawWorld().system<>("ContinuousCounter").kind(flecs::OnUpdate).run(
-            [&](flecs::iter&) { ++continuousExecutionCount; });
+    flecs::system continuousSys = world.getRawWorld()
+                                      .system<>("ContinuousCounter")
+                                      .kind(flecs::OnUpdate)
+                                      .run([&](flecs::iter&) { ++continuousExecutionCount; });
     world.registerSystem(SystemGroup::Continuous, continuousSys);
 
     Conductor conductor(world, std::move(modeA), std::move(modeB));
@@ -208,9 +209,10 @@ static int testTransitionSystemGroupGating() {
     auto modeB = std::make_unique<SharedWorldMockMode>("State B");
 
     uint32_t transitionExecutionCount = 0;
-    flecs::system transSys =
-        world.getRawWorld().system<>("TransitionCounter").kind(flecs::OnUpdate).run(
-            [&](flecs::iter&) { ++transitionExecutionCount; });
+    flecs::system transSys = world.getRawWorld()
+                                 .system<>("TransitionCounter")
+                                 .kind(flecs::OnUpdate)
+                                 .run([&](flecs::iter&) { ++transitionExecutionCount; });
     world.registerSystem(SystemGroup::Transition, transSys);
 
     ConductorConfig config{};
@@ -380,12 +382,18 @@ static int testNonIsolatedRuntimeSessionPreservesSingleWorld() {
 int main() {
     std::cout << "Running Shared-World Conductor Invariant Tests...\n";
 
-    if (testSingleSharedWorldIdentityAcrossTransitions() != 0) return 1;
-    if (testContinuousSimulationPreservedAcrossTransitions() != 0) return 1;
-    if (testTransitionSystemGroupGating() != 0) return 1;
-    if (testStateContextSeparation() != 0) return 1;
-    if (testFailedCommitPreservesActiveStateAndWorld() != 0) return 1;
-    if (testNonIsolatedRuntimeSessionPreservesSingleWorld() != 0) return 1;
+    if (testSingleSharedWorldIdentityAcrossTransitions() != 0)
+        return 1;
+    if (testContinuousSimulationPreservedAcrossTransitions() != 0)
+        return 1;
+    if (testTransitionSystemGroupGating() != 0)
+        return 1;
+    if (testStateContextSeparation() != 0)
+        return 1;
+    if (testFailedCommitPreservesActiveStateAndWorld() != 0)
+        return 1;
+    if (testNonIsolatedRuntimeSessionPreservesSingleWorld() != 0)
+        return 1;
 
     std::cout << "All Shared-World Conductor Invariant Tests PASSED!\n";
     return 0;

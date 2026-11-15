@@ -15,14 +15,15 @@
 ///
 /// Guarantees:
 /// - Absolute editor isolation (when isolateWorld is true): modifications during simulation
-///   (physics stepping, entity additions, script executions, component edits) NEVER mutate the authoring Edit World.
+///   (physics stepping, entity additions, script executions, component edits) NEVER mutate the
+///   authoring Edit World.
 /// - Atomic teardown: upon Stop, the isolated Runtime World is cleanly destroyed, and the editor
 ///   returns to the exact Edit World state as before Play.
 ///
 /// Ownership and Lifetime:
 /// Owned by EditorEngine or application runner. Holds a non-owning pointer to the Edit World.
-/// When isolateWorld is true, owns the isolated Runtime World, runtime PhysicsWorld, runtime ScriptEngine,
-/// and runtime Conductor.
+/// When isolateWorld is true, owns the isolated Runtime World, runtime PhysicsWorld, runtime
+/// ScriptEngine, and runtime Conductor.
 ///
 /// Thread-safety:
 /// Main thread only.
