@@ -107,9 +107,14 @@ struct WorkspaceManager::Impl {
         meta.name = currentSceneName;
         meta.generator = "Hikari Editor 0.1.0";
 
+        std::optional<render::GraphicsSettings> graphics;
         std::optional<render::PostProcessSettings> pp;
         if (renderer != nullptr) {
+            graphics = renderer->getGraphicsSettings();
             pp = renderer->getPostProcessSettings();
+            if (graphics.has_value() && pp.has_value()) {
+                graphics->postProcess = *pp;
+            }
         }
 
         std::optional<Vec3> camPos;
@@ -120,7 +125,7 @@ struct WorkspaceManager::Impl {
         }
 
         auto res = framework::SceneSerializer::serializeToFile(world, targetPath, meta, {}, pp,
-                                                               camPos, camTgt);
+                                                               camPos, camTgt, graphics);
         if (!res.hasValue()) {
             lastSceneError = "Failed to save scene: ";
             lastSceneError += res.error().message;
@@ -180,9 +185,14 @@ struct WorkspaceManager::Impl {
             camera->lookAt(*res.value().cameraPosition, tgt);
         }
 
-        // Restore post-processing settings if provided in scene file
-        if (renderer != nullptr && res.value().postProcessSettings.has_value()) {
-            renderer->setPostProcessSettings(*res.value().postProcessSettings);
+        // Restore scene graphics & post-processing settings if provided in scene file
+        if (renderer != nullptr) {
+            if (res.value().graphicsSettings.has_value()) {
+                (void)renderer->applyGraphicsSettings(*res.value().graphicsSettings);
+            }
+            if (res.value().postProcessSettings.has_value()) {
+                renderer->setPostProcessSettings(*res.value().postProcessSettings);
+            }
         }
 
         ENG_LOG_INFO("Editor",
@@ -371,6 +381,10 @@ struct WorkspaceManager::Impl {
                     }
 
                     if (asyncTargetRenderer != nullptr) {
+                        if (actRes.value().graphicsSettings.has_value()) {
+                            (void)asyncTargetRenderer->applyGraphicsSettings(
+                                *actRes.value().graphicsSettings);
+                        }
                         if (actRes.value().postProcessSettings.has_value()) {
                             asyncTargetRenderer->setPostProcessSettings(
                                 *actRes.value().postProcessSettings);
@@ -472,8 +486,8 @@ struct WorkspaceManager::Impl {
                 // Subtle ambient cyan pulsing aura around the logo frame
                 const float elapsed = static_cast<float>(telemetry.totalDuration.toSeconds());
                 const float pulseAlpha = 0.28F + 0.22F * std::sin(elapsed * 3.0F);
-                const ImU32 glowCol = ImGui::ColorConvertFloat4ToU32(
-                    ImVec4(0.00F, 0.83F, 1.00F, pulseAlpha));
+                const ImU32 glowCol =
+                    ImGui::ColorConvertFloat4ToU32(ImVec4(0.00F, 0.83F, 1.00F, pulseAlpha));
                 ImGui::GetWindowDrawList()->AddRect(
                     ImVec2(logoTopLeft.x - 3.0F, logoTopLeft.y - 3.0F),
                     ImVec2(logoBottomRight.x + 3.0F, logoBottomRight.y + 3.0F), glowCol, 6.0F, 0,

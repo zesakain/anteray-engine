@@ -33,6 +33,7 @@
 #include "core/time/duration.h"
 #include "core/time/timestamp.h"
 #include "framework/scene.h"
+#include "render/graphics_settings.h"
 #include "render/post_process_types.h"
 
 #include <atomic>
@@ -221,6 +222,7 @@ struct SceneActivationResult {
     std::optional<Vec3> cameraPosition{std::nullopt};
     std::optional<Vec3> cameraTarget{std::nullopt};
     std::optional<render::PostProcessSettings> postProcessSettings{std::nullopt};
+    std::optional<render::GraphicsSettings> graphicsSettings{std::nullopt};
 };
 
 /// @class AsyncSceneLoader

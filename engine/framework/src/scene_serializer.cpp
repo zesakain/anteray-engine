@@ -8,6 +8,7 @@
 #include "core/log.h"
 #include "physics/physics_components.h"
 #include "render/camera_component.h"
+#include "render/graphics_settings_serializer.h"
 #include "render/irradiance_probe.h"
 #include "render/light_components.h"
 #include "render/mesh_component.h"
@@ -324,7 +325,8 @@ render::PostProcessSettings jsonToPostProcess(const core::JsonValue& obj) {
 Result<std::string> SceneSerializer::serializeToString(
     world::World& world, const SceneMetadata& metadata, const SerializationOptions& options,
     const std::optional<render::PostProcessSettings>& postProcess,
-    const std::optional<Vec3>& cameraPosition, const std::optional<Vec3>& cameraTarget) {
+    const std::optional<Vec3>& cameraPosition, const std::optional<Vec3>& cameraTarget,
+    const std::optional<render::GraphicsSettings>& graphicsSettings) {
     using namespace eng::core;
 
     JsonValue root = JsonValue::makeObject();
@@ -548,10 +550,14 @@ Result<std::string> SceneSerializer::serializeToString(
         }
     }
 
-    if (finalPp.has_value() || finalCamPos.has_value()) {
+    if (finalPp.has_value() || finalCamPos.has_value() || graphicsSettings.has_value()) {
         JsonValue settingsObj = JsonValue::makeObject();
         if (finalPp.has_value()) {
             settingsObj.set("postProcess", postProcessToJson(*finalPp));
+        }
+        if (graphicsSettings.has_value()) {
+            settingsObj.set("graphics",
+                            render::GraphicsSettingsSerializer::toJson(*graphicsSettings));
         }
         if (finalCamPos.has_value()) {
             JsonValue camObj = JsonValue::makeObject();
@@ -573,14 +579,15 @@ SceneSerializer::serializeToFile(world::World& world, const std::filesystem::pat
                                  const SceneMetadata& metadata, const SerializationOptions& options,
                                  const std::optional<render::PostProcessSettings>& postProcess,
                                  const std::optional<Vec3>& cameraPosition,
-                                 const std::optional<Vec3>& cameraTarget) {
+                                 const std::optional<Vec3>& cameraTarget,
+                                 const std::optional<render::GraphicsSettings>& graphicsSettings) {
     if (path.empty()) {
         return Result<void>::failure(Error(ErrorCode::InvalidArgument, "Empty scene file path"));
     }
 
     // 1. Serialize into memory buffer first
-    auto strRes =
-        serializeToString(world, metadata, options, postProcess, cameraPosition, cameraTarget);
+    auto strRes = serializeToString(world, metadata, options, postProcess, cameraPosition,
+                                    cameraTarget, graphicsSettings);
     if (!strRes.hasValue()) {
         return Result<void>::failure(strRes.error());
     }
@@ -680,11 +687,21 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
     }
 
     std::optional<render::PostProcessSettings> scenePostProcess;
+    std::optional<render::GraphicsSettings> sceneGraphics;
     std::optional<Vec3> sceneCamPos;
     std::optional<Vec3> sceneCamTarget;
     if (const auto* settingsVal = root.getObject("settings")) {
-        if (const auto* ppVal = settingsVal->getObject("postProcess")) {
-            scenePostProcess = jsonToPostProcess(*ppVal);
+        if (const auto* gfxVal = settingsVal->getObject("graphics")) {
+            auto gfxRes = render::GraphicsSettingsSerializer::fromJson(*gfxVal);
+            if (gfxRes.hasValue()) {
+                sceneGraphics = gfxRes.value();
+                scenePostProcess = sceneGraphics->postProcess;
+            }
+        }
+        if (!scenePostProcess.has_value()) {
+            if (const auto* ppVal = settingsVal->getObject("postProcess")) {
+                scenePostProcess = jsonToPostProcess(*ppVal);
+            }
         }
         if (const auto* camVal = settingsVal->getObject("camera")) {
             if (auto pos = jsonToVec3(*camVal->find("position"))) {
@@ -995,6 +1012,7 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
         .warnings = std::move(warnings),
         .metadata = std::move(metadata),
         .postProcessSettings = scenePostProcess,
+        .graphicsSettings = sceneGraphics,
         .cameraPosition = sceneCamPos,
         .cameraTarget = sceneCamTarget,
     });

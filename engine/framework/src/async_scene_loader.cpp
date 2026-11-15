@@ -152,6 +152,7 @@ struct AsyncSceneLoader::Impl {
     std::optional<Vec3> cameraPosition{std::nullopt};
     std::optional<Vec3> cameraTarget{std::nullopt};
     std::optional<render::PostProcessSettings> postProcessSettings{std::nullopt};
+    std::optional<render::GraphicsSettings> graphicsSettings{std::nullopt};
 
     std::vector<StagedEntityData> stagedEntities{};
     std::deque<StagedTextureItem> pendingTextureDecodes{};
@@ -266,6 +267,7 @@ struct AsyncSceneLoader::Impl {
             cameraPosition = deserRes.value().cameraPosition;
             cameraTarget = deserRes.value().cameraTarget;
             postProcessSettings = deserRes.value().postProcessSettings;
+            graphicsSettings = deserRes.value().graphicsSettings;
 
             // Collect referenced glTF base files from mesh components
             for (world::EntityHandle h : stagingWorld.getAllEntities()) {
@@ -931,6 +933,7 @@ struct AsyncSceneLoader::Impl {
             .cameraPosition = cameraPosition,
             .cameraTarget = cameraTarget,
             .postProcessSettings = postProcessSettings,
+            .graphicsSettings = graphicsSettings,
         });
     }
 };

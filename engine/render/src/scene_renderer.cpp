@@ -6354,6 +6354,7 @@ void SceneRenderer::setPostProcessSettings(const PostProcessSettings& settings) 
     const bool lutPathChanged = (loadedLutPath_ != settings.lutFilePath);
 
     postProcessSettings_ = settings;
+    settings_.postProcess = settings;
 
     if (device_ != nullptr && lutPathChanged) {
         if (settings.lutFilePath.empty()) {

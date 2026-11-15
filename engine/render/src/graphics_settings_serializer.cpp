@@ -239,9 +239,7 @@ DebugViewMode stringToDebugView(std::string_view s) noexcept {
 
 } // namespace
 
-Result<std::string> GraphicsSettingsSerializer::serializeToString(const GraphicsSettings& settings,
-                                                                  bool prettyPrint,
-                                                                  int indentSpaces) {
+JsonValue GraphicsSettingsSerializer::toJson(const GraphicsSettings& settings) {
     JsonValue root = JsonValue::makeObject();
     root.set("formatVersion", JsonValue(static_cast<int>(kCurrentVersion)));
 
@@ -394,7 +392,13 @@ Result<std::string> GraphicsSettingsSerializer::serializeToString(const Graphics
     debugObj.set("showPassTimings", JsonValue(settings.debug.showPassTimings));
     root.set("debug", std::move(debugObj));
 
-    return Result<std::string>::success(root.serialize(prettyPrint ? indentSpaces : 0));
+    return root;
+}
+
+Result<std::string> GraphicsSettingsSerializer::serializeToString(const GraphicsSettings& settings,
+                                                                  bool prettyPrint,
+                                                                  int indentSpaces) {
+    return Result<std::string>::success(toJson(settings).serialize(prettyPrint ? indentSpaces : 0));
 }
 
 Result<void> GraphicsSettingsSerializer::serializeToFile(const GraphicsSettings& settings,
@@ -441,16 +445,7 @@ Result<void> GraphicsSettingsSerializer::serializeToFile(const GraphicsSettings&
     return Result<void>::success();
 }
 
-Result<GraphicsSettings>
-GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
-    auto parseRes = JsonValue::parse(jsonText);
-    if (!parseRes.hasValue()) {
-        return Error{.code = ErrorCode::InvalidArgument,
-                     .message = std::string("JSON syntax error parsing graphics settings: ") +
-                                std::string(parseRes.error().message)};
-    }
-
-    const auto& root = parseRes.value();
+Result<GraphicsSettings> GraphicsSettingsSerializer::fromJson(const core::JsonValue& root) {
     if (!root.isObject()) {
         return Error{.code = ErrorCode::InvalidArgument,
                      .message = "Root of graphics settings JSON must be an object"};
@@ -685,6 +680,17 @@ GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
     // Update preset detector to reflect parsed parameters
     settings.quality.preset = settings.detectPreset();
     return Result<GraphicsSettings>::success(settings);
+}
+
+Result<GraphicsSettings>
+GraphicsSettingsSerializer::deserializeFromString(std::string_view jsonText) {
+    auto parseRes = JsonValue::parse(jsonText);
+    if (!parseRes.hasValue()) {
+        return Error{.code = ErrorCode::InvalidArgument,
+                     .message = std::string("JSON syntax error parsing graphics settings: ") +
+                                std::string(parseRes.error().message)};
+    }
+    return fromJson(parseRes.value());
 }
 
 Result<GraphicsSettings>

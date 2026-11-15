@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include "core/json.h"
 #include "core/result.h"
 #include "render/graphics_settings.h"
 
@@ -32,6 +33,12 @@ namespace eng::render {
 class GraphicsSettingsSerializer {
 public:
     static constexpr uint32_t kCurrentVersion = 1;
+
+    /// Serializes GraphicsSettings into a structured core::JsonValue DOM object.
+    [[nodiscard]] static core::JsonValue toJson(const GraphicsSettings& settings);
+
+    /// Constructs a GraphicsSettings struct from a core::JsonValue DOM object.
+    [[nodiscard]] static Result<GraphicsSettings> fromJson(const core::JsonValue& obj);
 
     /// Serializes GraphicsSettings into a formatted JSON string.
     [[nodiscard]] static Result<std::string> serializeToString(const GraphicsSettings& settings,
