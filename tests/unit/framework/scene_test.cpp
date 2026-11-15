@@ -499,6 +499,78 @@ int testLightAndCameraSerializationRoundTrip() {
     return 0;
 }
 
+static int testSceneGraphicsSettingsPersistenceRoundTrip() {
+    std::cout << "Running testSceneGraphicsSettingsPersistenceRoundTrip...\n";
+    World world;
+    auto ent = world.createEntity("TestEntity");
+    world.setComponent(ent, world::TransformComponent(Transform(Vec3(1.0F, 2.0F, 3.0F))));
+
+    render::GraphicsSettings origSettings =
+        render::GraphicsSettings::createPreset(render::GraphicsQualityPreset::High);
+    origSettings.quality.antiAliasing = render::AntiAliasingMode::TAA;
+    origSettings.quality.taa.enabled = true;
+    origSettings.quality.taa.historyWeight = 0.95F;
+    origSettings.quality.taa.varianceGamma = 1.75F;
+    origSettings.lighting.gtaoEnabled = true;
+    origSettings.lighting.ssgiEnabled = true;
+    origSettings.lighting.ssrEnabled = true;
+    origSettings.shadows.cascadeCount = 3;
+    origSettings.shadows.contactShadows = true;
+    origSettings.postProcess.toneMapOp = render::ToneMapOperator::AgX;
+    origSettings.postProcess.bloomIntensity = 0.08F;
+
+    SceneMetadata meta;
+    meta.name = "GraphicsSettingsScene";
+
+    // 1. Serialize to string
+    auto serRes = SceneSerializer::serializeToString(world, meta, {}, origSettings.postProcess,
+                                                     std::nullopt, std::nullopt, origSettings);
+    TEST_CHECK(serRes.hasValue());
+    TEST_CHECK(serRes.value().find("\"graphics\"") != std::string::npos);
+
+    // 2. Deserialize from string
+    World loadedWorld;
+    auto desRes = SceneSerializer::deserializeFromString(loadedWorld, serRes.value(), true);
+    TEST_CHECK(desRes.hasValue());
+    TEST_CHECK(desRes.value().graphicsSettings.has_value());
+    const auto& restored = *desRes.value().graphicsSettings;
+
+    TEST_CHECK(restored.quality.antiAliasing == render::AntiAliasingMode::TAA);
+    TEST_CHECK(restored.quality.taa.enabled == true);
+    TEST_CHECK(std::abs(restored.quality.taa.historyWeight - 0.95F) < 1e-4F);
+    TEST_CHECK(std::abs(restored.quality.taa.varianceGamma - 1.75F) < 1e-4F);
+    TEST_CHECK(restored.lighting.gtaoEnabled == true);
+    TEST_CHECK(restored.lighting.ssgiEnabled == true);
+    TEST_CHECK(restored.lighting.ssrEnabled == true);
+    TEST_CHECK(restored.shadows.cascadeCount == 3);
+    TEST_CHECK(restored.shadows.contactShadows == true);
+    TEST_CHECK(restored.postProcess.toneMapOp == render::ToneMapOperator::AgX);
+    TEST_CHECK(std::abs(restored.postProcess.bloomIntensity - 0.08F) < 1e-4F);
+
+    // 3. Backward compatibility: deserialize scene JSON without "graphics" block
+    const std::string legacySceneJson = R"({
+        "formatVersion": 1,
+        "metadata": {"name": "LegacyScene"},
+        "entities": [],
+        "settings": {
+            "postProcess": {
+                "enabled": true,
+                "exposure": 1.5,
+                "toneMapOp": "AgX"
+            }
+        }
+    })";
+    World legacyWorld;
+    auto legacyDesRes = SceneSerializer::deserializeFromString(legacyWorld, legacySceneJson, true);
+    TEST_CHECK(legacyDesRes.hasValue());
+    TEST_CHECK(legacyDesRes.value().postProcessSettings.has_value());
+    TEST_CHECK(std::abs(legacyDesRes.value().postProcessSettings->exposure - 1.5F) < 1e-4F);
+    TEST_CHECK(legacyDesRes.value().postProcessSettings->toneMapOp == render::ToneMapOperator::AgX);
+    TEST_CHECK(!legacyDesRes.value().graphicsSettings.has_value());
+
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -517,6 +589,8 @@ int main() {
     if (testSampleSceneFileLoads() != 0)
         return 1;
     if (testLightAndCameraSerializationRoundTrip() != 0)
+        return 1;
+    if (testSceneGraphicsSettingsPersistenceRoundTrip() != 0)
         return 1;
 
     std::cout << "All SceneSerializer unit tests passed successfully.\n";
