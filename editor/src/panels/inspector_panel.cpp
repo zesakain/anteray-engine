@@ -37,7 +37,7 @@ inline Transform getEntityLocalTransform(flecs::entity e) {
     return Transform::identity();
 }
 
-inline void setEntityLocalTransform(flecs::entity e, const Transform& tr) {
+inline void setEntityLocalTransform(world::World* world, flecs::entity e, const Transform& tr) {
     if (e.has<world::TransformComponent>()) {
         auto* tc = e.get_mut<world::TransformComponent>();
         tc->transform = tr;
@@ -51,13 +51,16 @@ inline void setEntityLocalTransform(flecs::entity e, const Transform& tr) {
         ptc->transform = tr;
         e.modified<physics::PhysicsTransformComponent>();
     }
+    if (world != nullptr) {
+        world->setTransformDirty(true);
+    }
 }
 
-inline void resetEntityTransform(flecs::entity e) {
-    setEntityLocalTransform(e, Transform::identity());
+inline void resetEntityTransform(world::World* world, flecs::entity e) {
+    setEntityLocalTransform(world, e, Transform::identity());
 }
 
-inline void removeEntityTransform(flecs::entity e) {
+inline void removeEntityTransform(world::World* world, flecs::entity e) {
     if (e.has<world::TransformComponent>()) {
         e.remove<world::TransformComponent>();
     }
@@ -66,6 +69,9 @@ inline void removeEntityTransform(flecs::entity e) {
     }
     if (e.has<physics::PhysicsTransformComponent>()) {
         e.remove<physics::PhysicsTransformComponent>();
+    }
+    if (world != nullptr) {
+        world->setTransformDirty(true);
     }
 }
 
@@ -202,7 +208,7 @@ void InspectorPanel::draw(EditorContext& ctx) {
                 if (ImGui::BeginPopupContextItem("TransformMultiCtx")) {
                     if (ImGui::MenuItem("Reset Transform for All")) {
                         for (auto h : selected) {
-                            resetEntityTransform(ecs.entity(h.id));
+                            resetEntityTransform(ctx.world, ecs.entity(h.id));
                         }
                     }
                     ImGui::Separator();
@@ -278,7 +284,7 @@ void InspectorPanel::draw(EditorContext& ctx) {
                             if (modPosZ) {
                                 tr.position.z = posVals[2];
                             }
-                            setEntityLocalTransform(e, tr);
+                            setEntityLocalTransform(ctx.world, e, tr);
                         }
                         ctx.markDirty();
                     }
@@ -304,7 +310,7 @@ void InspectorPanel::draw(EditorContext& ctx) {
                                 curEuler[2] = rotVals[2];
                             }
                             tr.rotation = eulerDegreesToQuat(curEuler);
-                            setEntityLocalTransform(e, tr);
+                            setEntityLocalTransform(ctx.world, e, tr);
                         }
                         ctx.markDirty();
                     }
@@ -327,7 +333,7 @@ void InspectorPanel::draw(EditorContext& ctx) {
                             if (modSclZ) {
                                 tr.scale.z = std::max(0.001F, sclVals[2]);
                             }
-                            setEntityLocalTransform(e, tr);
+                            setEntityLocalTransform(ctx.world, e, tr);
                         }
                         ctx.markDirty();
                     }
@@ -339,7 +345,7 @@ void InspectorPanel::draw(EditorContext& ctx) {
                 }
                 if (removeMultiTransform) {
                     for (auto h : selected) {
-                        removeEntityTransform(ecs.entity(h.id));
+                        removeEntityTransform(ctx.world, ecs.entity(h.id));
                     }
                     ctx.markDirty();
                 }
@@ -790,7 +796,7 @@ void InspectorPanel::draw(EditorContext& ctx) {
                         ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen);
                     if (ImGui::BeginPopupContextItem("TransformHeaderCtx")) {
                         if (ImGui::MenuItem("Reset Transform")) {
-                            resetEntityTransform(e);
+                            resetEntityTransform(ctx.world, e);
                             if (ctx.world != nullptr) {
                                 world::updateHierarchyTransforms(*ctx.world);
                             }
@@ -839,7 +845,7 @@ void InspectorPanel::draw(EditorContext& ctx) {
                         }
 
                         if (changed) {
-                            setEntityLocalTransform(e, curTr);
+                            setEntityLocalTransform(ctx.world, e, curTr);
                             if (ctx.world != nullptr) {
                                 world::updateHierarchyTransforms(*ctx.world);
                             }
@@ -853,7 +859,7 @@ void InspectorPanel::draw(EditorContext& ctx) {
                     }
                 }
                 if (removeTransform) {
-                    removeEntityTransform(e);
+                    removeEntityTransform(ctx.world, e);
                     if (ctx.world != nullptr) {
                         world::updateHierarchyTransforms(*ctx.world);
                     }

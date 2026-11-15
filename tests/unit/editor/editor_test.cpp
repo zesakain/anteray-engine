@@ -3355,6 +3355,7 @@ static void testEditModeTransformManipulationRegression() {
     tcA->transform.scale = Vec3{2.0F, 2.0F, 2.0F};
     tcA->isDirty = true;
     eA.modified<world::TransformComponent>();
+    editWorld.setTransformDirty(true);
 
     // Advance frame in Edit Mode: WorldTransformComponent MUST be updated without running Play
     // Mode!
@@ -3556,6 +3557,7 @@ static void testEditorVulkanTransformManipulationScenarios() {
     const Quat rot90Y = Quat::fromAxisAngle(Vec3::unitY(), std::numbers::pi_v<float> * 0.5F);
     tc->transform.rotation = rot90Y;
     tc->isDirty = true;
+    editWorld.setTransformDirty(true);
 
     tickVulkanFrame();
     const auto* wt2 = editWorld.getComponent<world::WorldTransformComponent>(entity);
@@ -3566,6 +3568,7 @@ static void testEditorVulkanTransformManipulationScenarios() {
     // Scenario 3: Scale object in Edit Mode
     tc->transform.scale = Vec3{2.5F, 3.0F, 1.5F};
     tc->isDirty = true;
+    editWorld.setTransformDirty(true);
 
     tickVulkanFrame();
     const auto* wt3 = editWorld.getComponent<world::WorldTransformComponent>(entity);
@@ -3581,6 +3584,7 @@ static void testEditorVulkanTransformManipulationScenarios() {
     mutTc->transform = inspectorTr;
     mutTc->isDirty = true;
     ecsEnt.modified<world::TransformComponent>();
+    editWorld.setTransformDirty(true);
 
     tickVulkanFrame();
     const auto* wt4 = editWorld.getComponent<world::WorldTransformComponent>(entity);
