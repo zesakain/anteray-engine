@@ -267,6 +267,19 @@ const MeshData* AssetManager::getMeshData(std::string_view path) const noexcept 
     return nullptr;
 }
 
+void AssetManager::markTextureFailed(std::string_view path, bool srgb, std::string_view reason) {
+    const std::string normPath = normalizePath(path);
+    const std::string colorSuffix = (srgb ? "#srgb" : "#linear");
+    const std::string cacheKey = (normPath.ends_with("#srgb") || normPath.ends_with("#linear"))
+                                     ? normPath
+                                     : (normPath + colorSuffix);
+    const AssetId id = makeAssetIdFromPath(cacheKey);
+    const std::string errMsg(reason);
+    failedIds_.insert(id);
+    failedPaths_[cacheKey] = errMsg;
+    failedPaths_[normPath] = errMsg;
+}
+
 Result<AssetId> AssetManager::loadTexture(std::string_view path, bool srgb) {
     const std::string normPath = normalizePath(path);
     const std::string colorSuffix = (srgb ? "#srgb" : "#linear");

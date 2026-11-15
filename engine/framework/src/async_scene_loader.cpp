@@ -627,11 +627,17 @@ struct AsyncSceneLoader::Impl {
             } else {
                 item.decodeFailed = true;
                 item.errorMessage = decodeRes.error().message;
-                std::lock_guard<std::mutex> lock(progressMutex);
-                assetErrors.push_back(AssetErrorInfo{.path = item.filePath,
-                                                     .assetType = "Texture",
-                                                     .reason = item.errorMessage,
-                                                     .isOptional = item.isOptional});
+                {
+                    std::lock_guard<std::mutex> lock(progressMutex);
+                    assetErrors.push_back(AssetErrorInfo{.path = item.filePath,
+                                                         .assetType = "Texture",
+                                                         .reason = item.errorMessage,
+                                                         .isOptional = item.isOptional});
+                }
+                {
+                    std::lock_guard<std::mutex> lock(queueMutex);
+                    pendingTextureUploads.push_back(std::move(item));
+                }
             }
 
             updateProgress([&](AsyncLoadProgress& p) {
@@ -688,7 +694,12 @@ struct AsyncSceneLoader::Impl {
                 }
             }
 
-            if (hasTex && texItem.decodedImage.has_value()) {
+            if (hasTex && texItem.decodeFailed) {
+                if (assetManager != nullptr) {
+                    assetManager->markTextureFailed(texItem.filePath, texItem.srgb,
+                                                    texItem.errorMessage);
+                }
+            } else if (hasTex && texItem.decodedImage.has_value()) {
                 const size_t imgSize = texItem.decodedImage->pixels.size();
                 if (assetManager != nullptr) {
                     auto regRes = assetManager->registerTexture(texItem.cacheKey,

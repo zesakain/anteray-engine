@@ -93,6 +93,10 @@ public:
     /// @return The persistent 64-bit AssetId for this texture.
     Result<AssetId> loadTexture(std::string_view path, bool srgb = true);
 
+    /// @brief Registers a texture path as known-failed so subsequent render-thread queries
+    /// immediately return the cached failure without probing disk again.
+    void markTextureFailed(std::string_view path, bool srgb, std::string_view reason);
+
     /// @brief Registers an in-memory ImageData with a designated virtual path or name.
     ///
     /// @param path Identifier or virtual path for the texture.
