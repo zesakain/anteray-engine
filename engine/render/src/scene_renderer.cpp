@@ -5,6 +5,7 @@
 
 #include "core/assert.h"
 #include "core/log.h"
+#include "core/time.h"
 #include "physics/physics_components.h"
 #include "render/gpu_material.h"
 #include "render/image.h"
@@ -2200,8 +2201,10 @@ void SceneRenderer::buildRenderGraph() {
 }
 
 void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
+    const Timestamp tShadowCpuStart = Timestamp::now();
     if (currentWorld_ == nullptr || currentAssetManager_ == nullptr ||
         !shadowDepthTarget_.isValid() || !shadowPipeline_.isValid()) {
+        cpuPassTimings_.shadowRecordMs = 0.0F;
         return;
     }
 
@@ -2210,6 +2213,8 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
             cmdList.writeTimestamp(currentBaseQuery_ + 2, rhi::GpuTimestampStage::TopOfPipe);
             cmdList.writeTimestamp(currentBaseQuery_ + 3, rhi::GpuTimestampStage::TopOfPipe);
         }
+        cpuPassTimings_.shadowRecordMs =
+            static_cast<float>((Timestamp::now() - tShadowCpuStart).asMicroseconds()) * 0.001F;
         return;
     }
 
@@ -2217,98 +2222,92 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
         cmdList.writeTimestamp(currentBaseQuery_ + 2, rhi::GpuTimestampStage::TopOfPipe);
     }
 
-    if (staticCastersListDirty_) {
-        staticShadowCasters_.clear();
-    }
-    dynamicShadowCasters_.clear();
-    auto& ecs = currentWorld_->getRawWorld();
-    auto shadowMeshQuery = ecs.query<const MeshComponent>();
-    shadowMeshQuery.each([&](flecs::entity e, const MeshComponent& meshComp) {
-        if (!meshComp.visible || !meshComp.castShadows) {
-            lastRenderStats_.culledPrimitives++;
-            return;
+    if (staticCastersListDirty_ || lastDynamicCasterCount_ > 0) {
+        if (staticCastersListDirty_) {
+            staticShadowCasters_.clear();
         }
-        const bool isDynamic = (!meshComp.isStatic) ||
-                               e.has<physics::PhysicsTransformComponent>() ||
-                               e.has<physics::RigidBodyComponent>();
-        if (!isDynamic && !staticCastersListDirty_) {
-            return;
-        }
-        AssetId meshId = meshComp.meshAsset;
-        if ((!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) &&
-            !meshComp.assetPath.empty()) {
-            meshId = currentAssetManager_->findAssetByPath(meshComp.assetPath);
-        }
-        if (!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) {
-            lastRenderStats_.culledPrimitives++;
-            return;
-        }
-        GpuMesh* gpuMesh = currentAssetManager_->getGpuMesh(meshId);
-        if (gpuMesh == nullptr && currentDevice_ != nullptr) {
-            auto uploadRes = currentAssetManager_->uploadMesh(meshId, *currentDevice_);
-            if (uploadRes.hasValue()) {
-                gpuMesh = uploadRes.value();
-            }
-        }
-        if (gpuMesh == nullptr || !gpuMesh->isValid()) {
-            lastRenderStats_.culledPrimitives++;
-            return;
-        }
-
-        const auto& shadowSubmeshes = gpuMesh->getSubmeshes();
-        const uint32_t shadowMatIdx = (meshComp.submeshIndex < shadowSubmeshes.size())
-                                          ? shadowSubmeshes[meshComp.submeshIndex].materialIndex
-                                          : 0;
-        GpuMaterial* shadowMat = currentAssetManager_->getGpuMaterial(meshId, shadowMatIdx);
-        if (shadowMat != nullptr) {
-            const auto& u = shadowMat->getUniformData();
-            if (u.alphaMode == 2 || u.transmissionFactor > 0.5F) {
+        dynamicShadowCasters_.clear();
+        auto& ecs = currentWorld_->getRawWorld();
+        ecs.each<const MeshComponent>([&](flecs::entity e, const MeshComponent& meshComp) {
+            if (!meshComp.visible || !meshComp.castShadows) {
                 lastRenderStats_.culledPrimitives++;
-                return; // Transparent / transmissive glass does not cast opaque shadows
+                return;
             }
-        }
+            const bool isDynamic = (!meshComp.isStatic) ||
+                                   e.has<physics::PhysicsTransformComponent>() ||
+                                   e.has<physics::RigidBodyComponent>();
+            if (!isDynamic && !staticCastersListDirty_) {
+                return;
+            }
+            AssetId meshId = meshComp.meshAsset;
+            if ((!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) &&
+                !meshComp.assetPath.empty()) {
+                meshId = currentAssetManager_->findAssetByPath(meshComp.assetPath);
+            }
+            if (!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) {
+                lastRenderStats_.culledPrimitives++;
+                return;
+            }
+            GpuMesh* gpuMesh = currentAssetManager_->getGpuMesh(meshId);
+            if (gpuMesh == nullptr && currentDevice_ != nullptr) {
+                auto uploadRes = currentAssetManager_->uploadMesh(meshId, *currentDevice_);
+                if (uploadRes.hasValue()) {
+                    gpuMesh = uploadRes.value();
+                }
+            }
+            if (gpuMesh == nullptr || !gpuMesh->isValid()) {
+                lastRenderStats_.culledPrimitives++;
+                return;
+            }
 
-        Mat4 model = Mat4::identity();
-        if (e.has<world::WorldTransformComponent>()) {
-            const auto* wt = e.get<world::WorldTransformComponent>();
-            if (wt != nullptr) {
+            const auto& shadowSubmeshes = gpuMesh->getSubmeshes();
+            const uint32_t shadowMatIdx = (meshComp.submeshIndex < shadowSubmeshes.size())
+                                              ? shadowSubmeshes[meshComp.submeshIndex].materialIndex
+                                              : 0;
+            GpuMaterial* shadowMat = currentAssetManager_->getGpuMaterial(meshId, shadowMatIdx);
+            if (shadowMat != nullptr) {
+                const auto& u = shadowMat->getUniformData();
+                if (u.alphaMode == 2 || u.transmissionFactor > 0.5F) {
+                    lastRenderStats_.culledPrimitives++;
+                    return; // Transparent / transmissive glass does not cast opaque shadows
+                }
+            }
+
+            Mat4 model = Mat4::identity();
+            if (const auto* wt = e.get<world::WorldTransformComponent>()) {
                 model = wt->worldMatrix;
-            }
-        } else if (e.has<world::TransformComponent>()) {
-            const auto* tc = e.get<world::TransformComponent>();
-            if (tc != nullptr) {
+            } else if (const auto* tc = e.get<world::TransformComponent>()) {
                 model = tc->transform.toMatrix();
+            } else if (const auto* ptc = e.get<physics::PhysicsTransformComponent>()) {
+                model = ptc->transform.toMatrix();
             }
-        } else if (e.has<physics::PhysicsTransformComponent>()) {
-            const auto* tc = e.get<physics::PhysicsTransformComponent>();
-            if (tc != nullptr) {
-                model = tc->transform.toMatrix();
+
+            const AABB localBounds = (meshComp.submeshIndex < gpuMesh->getSubmeshes().size())
+                                         ? gpuMesh->getSubmeshes()[meshComp.submeshIndex].bounds
+                                         : gpuMesh->getBounds();
+            const AABB worldBounds = localBounds.transform(model);
+
+            const Vec3 center = (worldBounds.minBound + worldBounds.maxBound) * 0.5F;
+            const float distToLight = Vec3::dot(center, currentLightDir_);
+
+            ShadowCasterItem item{
+                .gpuMesh = gpuMesh,
+                .model = model,
+                .submeshIndex = meshComp.submeshIndex,
+                .worldBounds = worldBounds,
+                .distanceToLight = distToLight,
+                .isDynamic = isDynamic,
+            };
+
+            if (isDynamic) {
+                dynamicShadowCasters_.push_back(item);
+            } else {
+                staticShadowCasters_.push_back(item);
             }
-        }
-
-        const AABB localBounds = (meshComp.submeshIndex < gpuMesh->getSubmeshes().size())
-                                     ? gpuMesh->getSubmeshes()[meshComp.submeshIndex].bounds
-                                     : gpuMesh->getBounds();
-        const AABB worldBounds = localBounds.transform(model);
-
-        const Vec3 center = (worldBounds.minBound + worldBounds.maxBound) * 0.5F;
-        const float distToLight = Vec3::dot(center, currentLightDir_);
-
-        ShadowCasterItem item{
-            .gpuMesh = gpuMesh,
-            .model = model,
-            .submeshIndex = meshComp.submeshIndex,
-            .worldBounds = worldBounds,
-            .distanceToLight = distToLight,
-            .isDynamic = isDynamic,
-        };
-
-        if (isDynamic) {
-            dynamicShadowCasters_.push_back(item);
-        } else {
-            staticShadowCasters_.push_back(item);
-        }
-    });
+        });
+    } else {
+        dynamicShadowCasters_.clear();
+    }
 
     auto sortFrontToBack = [](const ShadowCasterItem& a, const ShadowCasterItem& b) {
         return a.distanceToLight > b.distanceToLight;
@@ -2382,6 +2381,8 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
         cmdList.writeTimestamp(currentBaseQuery_ + 3, rhi::GpuTimestampStage::BottomOfPipe);
     }
     shadowDirty_ = false;
+    cpuPassTimings_.shadowRecordMs =
+        static_cast<float>((Timestamp::now() - tShadowCpuStart).asMicroseconds()) * 0.001F;
 }
 
 void SceneRenderer::renderCasters(rhi::RhiCommandList& cmdList,
@@ -2475,8 +2476,10 @@ void SceneRenderer::renderCasters(rhi::RhiCommandList& cmdList,
 }
 
 void SceneRenderer::recordDepthPrepass(rhi::RhiCommandList& cmdList) {
+    const Timestamp tPrepassCpuStart = Timestamp::now();
     if (currentWorld_ == nullptr || currentAssetManager_ == nullptr ||
         !depthPrepassPipeline_.isValid() || !depthTarget_.isValid()) {
+        cpuPassTimings_.depthPrepassRecordMs = 0.0F;
         return;
     }
 
@@ -2501,30 +2504,91 @@ void SceneRenderer::recordDepthPrepass(rhi::RhiCommandList& cmdList) {
         settings_.performance.frustumCulling && !currentViewProj_.isNearlyEqual(Mat4::identity());
     const Frustum cameraFrustum = Frustum::fromViewProjection(currentViewProj_);
 
+    collectVisibleMeshes();
+
     rhi::BufferHandle lastBoundVb{};
     rhi::BufferHandle lastBoundIb{};
     bool hasPushedModel = false;
     Mat4 lastModel{};
 
-    auto& ecs = currentWorld_->getRawWorld();
-    auto query = ecs.query<const MeshComponent>();
-    query.each([&](flecs::entity e, const MeshComponent& meshComp) {
+    for (const auto& item : visibleItems_) {
+        if (item.gpuMesh == nullptr || !item.gpuMesh->isValid()) {
+            continue;
+        }
+        if (item.isAlphaMasked || item.isTransparent) {
+            continue; // Skip alpha masked and transparent geometry in depth prepass
+        }
+
+        if (shadowPipelineLayout_.isValid()) {
+            if (!hasPushedModel ||
+                std::memcmp(lastModel.m, item.model.m, sizeof(lastModel.m)) != 0) {
+                alignas(16) float pushData[16];
+                const Mat4 mvp = currentViewProj_ * item.model;
+                std::memcpy(pushData, mvp.m, sizeof(pushData));
+                cmdList.pushConstants(shadowPipelineLayout_, rhi::ShaderStageFlags::Vertex, 0,
+                                      sizeof(pushData), pushData);
+                lastModel = item.model;
+                hasPushedModel = true;
+            }
+        }
+
+        if (lastBoundVb != item.gpuMesh->getVertexBuffer()) {
+            cmdList.bindVertexBuffer(0, item.gpuMesh->getVertexBuffer(), 0);
+            lastBoundVb = item.gpuMesh->getVertexBuffer();
+        }
+        if (item.gpuMesh->getIndexBuffer().isValid() && item.gpuMesh->getIndexCount() > 0) {
+            if (lastBoundIb != item.gpuMesh->getIndexBuffer()) {
+                cmdList.bindIndexBuffer(item.gpuMesh->getIndexBuffer(), 0, true);
+                lastBoundIb = item.gpuMesh->getIndexBuffer();
+            }
+            const auto& submeshes = item.gpuMesh->getSubmeshes();
+            if (item.submeshIndex < submeshes.size()) {
+                const auto& sub = submeshes[item.submeshIndex];
+                cmdList.drawIndexed(sub.indexCount, 1, sub.firstIndex, sub.vertexOffset, 0);
+                lastRenderStats_.depthPrepassDrawCalls++;
+            } else {
+                cmdList.drawIndexed(item.gpuMesh->getIndexCount(), 1, 0, 0, 0);
+                lastRenderStats_.depthPrepassDrawCalls++;
+            }
+        } else if (item.gpuMesh->getVertexCount() > 0) {
+            cmdList.draw(item.gpuMesh->getVertexCount(), 1, 0, 0);
+            lastRenderStats_.depthPrepassDrawCalls++;
+        }
+    }
+    (void)applyCameraCulling;
+    (void)cameraFrustum;
+
+    cmdList.endRenderPass();
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 13, rhi::GpuTimestampStage::BottomOfPipe);
+    }
+    cpuPassTimings_.depthPrepassRecordMs =
+        static_cast<float>((Timestamp::now() - tPrepassCpuStart).asMicroseconds()) * 0.001F;
+}
+
+void SceneRenderer::prewarmSceneAssets(world::World& world, AssetManager& assetManager,
+                                       rhi::RhiDevice& device) {
+    auto& ecs = world.getRawWorld();
+    ecs.each<const MeshComponent>([&](flecs::entity /*e*/, const MeshComponent& meshComp) {
         if (!meshComp.visible) {
             return;
         }
-
         AssetId meshId = meshComp.meshAsset;
-        if ((!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) &&
-            !meshComp.assetPath.empty()) {
-            meshId = currentAssetManager_->findAssetByPath(meshComp.assetPath);
+        if ((!meshId.isValid() || !assetManager.isLoaded(meshId)) && !meshComp.assetPath.empty()) {
+            meshId = assetManager.findAssetByPath(meshComp.assetPath);
+            if (!meshId.isValid() || !assetManager.isLoaded(meshId)) {
+                auto loadRes = assetManager.loadMesh(meshComp.assetPath);
+                if (loadRes.hasValue()) {
+                    meshId = loadRes.value();
+                }
+            }
         }
-        if (!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) {
+        if (!meshId.isValid() || !assetManager.isLoaded(meshId)) {
             return;
         }
-
-        GpuMesh* gpuMesh = currentAssetManager_->getGpuMesh(meshId);
-        if (gpuMesh == nullptr && currentDevice_ != nullptr) {
-            auto uploadRes = currentAssetManager_->uploadMesh(meshId, *currentDevice_);
+        GpuMesh* gpuMesh = assetManager.getGpuMesh(meshId);
+        if (gpuMesh == nullptr) {
+            auto uploadRes = assetManager.uploadMesh(meshId, device);
             if (uploadRes.hasValue()) {
                 gpuMesh = uploadRes.value();
             }
@@ -2532,152 +2596,37 @@ void SceneRenderer::recordDepthPrepass(rhi::RhiCommandList& cmdList) {
         if (gpuMesh == nullptr || !gpuMesh->isValid()) {
             return;
         }
-
-        const auto& submeshes = gpuMesh->getSubmeshes();
-        uint32_t matIdx = (meshComp.submeshIndex < submeshes.size())
-                              ? submeshes[meshComp.submeshIndex].materialIndex
-                              : 0;
-        GpuMaterial* mat = currentAssetManager_->getGpuMaterial(meshId, matIdx);
-        if (mat != nullptr && (mat->getUniformData().alphaMode != 0 ||
-                               mat->getUniformData().transmissionFactor > 0.0F)) {
-            return; // Skip alpha masked and transparent geometry in depth prepass
-        }
-
-        Mat4 model = Mat4::identity();
-        if (e.has<world::WorldTransformComponent>()) {
-            const auto* wt = e.get<world::WorldTransformComponent>();
-            if (wt != nullptr) {
-                model = wt->worldMatrix;
-            }
-        } else if (e.has<world::TransformComponent>()) {
-            const auto* tc = e.get<world::TransformComponent>();
-            if (tc != nullptr) {
-                model = tc->transform.toMatrix();
-            }
-        } else if (e.has<physics::PhysicsTransformComponent>()) {
-            const auto* tc = e.get<physics::PhysicsTransformComponent>();
-            if (tc != nullptr) {
-                model = tc->transform.toMatrix();
-            }
-        }
-
-        if (applyCameraCulling) {
-            const AABB localBounds = (meshComp.submeshIndex < gpuMesh->getSubmeshes().size())
-                                         ? gpuMesh->getSubmeshes()[meshComp.submeshIndex].bounds
-                                         : gpuMesh->getBounds();
-            const AABB worldBounds = localBounds.transform(model);
-            if (!cameraFrustum.intersectsAABB(worldBounds)) {
-                return;
-            }
-        }
-
-        if (shadowPipelineLayout_.isValid()) {
-            if (!hasPushedModel || std::memcmp(lastModel.m, model.m, sizeof(lastModel.m)) != 0) {
-                alignas(16) float pushData[16];
-                const Mat4 mvp = currentViewProj_ * model;
-                std::memcpy(pushData, mvp.m, sizeof(pushData));
-                cmdList.pushConstants(shadowPipelineLayout_, rhi::ShaderStageFlags::Vertex, 0,
-                                      sizeof(pushData), pushData);
-                lastModel = model;
-                hasPushedModel = true;
-            }
-        }
-
-        if (lastBoundVb != gpuMesh->getVertexBuffer()) {
-            cmdList.bindVertexBuffer(0, gpuMesh->getVertexBuffer(), 0);
-            lastBoundVb = gpuMesh->getVertexBuffer();
-        }
-        if (gpuMesh->getIndexBuffer().isValid() && gpuMesh->getIndexCount() > 0) {
-            if (lastBoundIb != gpuMesh->getIndexBuffer()) {
-                cmdList.bindIndexBuffer(gpuMesh->getIndexBuffer(), 0, true);
-                lastBoundIb = gpuMesh->getIndexBuffer();
-            }
+        if (pipelineLayout_.isValid() && materialDescriptorSetLayout_.isValid()) {
+            const auto& submeshes = gpuMesh->getSubmeshes();
             if (meshComp.submeshIndex < submeshes.size()) {
-                const auto& sub = submeshes[meshComp.submeshIndex];
-                cmdList.drawIndexed(sub.indexCount, 1, sub.firstIndex, sub.vertexOffset, 0);
-                lastRenderStats_.depthPrepassDrawCalls++;
+                const uint32_t matIdx = submeshes[meshComp.submeshIndex].materialIndex;
+                if (assetManager.getGpuMaterial(meshId, matIdx) == nullptr) {
+                    (void)assetManager.uploadMaterial(meshId, matIdx, device,
+                                                      materialDescriptorSetLayout_);
+                }
             } else if (submeshes.empty()) {
-                cmdList.drawIndexed(gpuMesh->getIndexCount(), 1, 0, 0, 0);
-                lastRenderStats_.depthPrepassDrawCalls++;
+                if (assetManager.getGpuMaterial(meshId, 0) == nullptr) {
+                    (void)assetManager.uploadMaterial(meshId, 0, device,
+                                                      materialDescriptorSetLayout_);
+                }
             } else {
                 for (const auto& sub : submeshes) {
-                    cmdList.drawIndexed(sub.indexCount, 1, sub.firstIndex, sub.vertexOffset, 0);
-                    lastRenderStats_.depthPrepassDrawCalls++;
+                    if (assetManager.getGpuMaterial(meshId, sub.materialIndex) == nullptr) {
+                        (void)assetManager.uploadMaterial(meshId, sub.materialIndex, device,
+                                                          materialDescriptorSetLayout_);
+                    }
                 }
             }
-        } else if (gpuMesh->getVertexCount() > 0) {
-            cmdList.draw(gpuMesh->getVertexCount(), 1, 0, 0);
-            lastRenderStats_.depthPrepassDrawCalls++;
         }
     });
-
-    cmdList.endRenderPass();
-    if (currentHasTimestamps_) {
-        cmdList.writeTimestamp(currentBaseQuery_ + 13, rhi::GpuTimestampStage::BottomOfPipe);
-    }
 }
 
-void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
-    if (currentWorld_ == nullptr || currentAssetManager_ == nullptr) {
+void SceneRenderer::collectVisibleMeshes() {
+    if (visibleItemsCollected_ || currentWorld_ == nullptr || currentAssetManager_ == nullptr ||
+        currentDevice_ == nullptr) {
         return;
     }
-    const bool managePass = colorTarget_.isValid();
-
-    const bool useTaa = isTaaEnabled() && hdrRawTarget_.isValid();
-    const bool useHdr = (postProcessSettings_.enabled && hdrTarget_.isValid()) || useTaa;
-    const bool useDepthPrepass =
-        (settings_.performance.depthPrepass || settings_.lighting.gtaoEnabled ||
-         settings_.lighting.ssgiEnabled) &&
-        depthPrepassPipeline_.isValid();
-    const rhi::TextureHandle sceneColorTarget =
-        useTaa ? hdrRawTarget_ : (useHdr ? hdrTarget_ : colorTarget_);
-    rhi::PipelineHandle scenePipeline =
-        (useHdr && hdrPipeline_.isValid()) ? hdrPipeline_ : pipeline_;
-
-    if (useDepthPrepass) {
-        if (useHdr && hdrPipelineDepthPrepass_.isValid()) {
-            scenePipeline = hdrPipelineDepthPrepass_;
-        } else if (!useHdr && pipelineDepthPrepass_.isValid()) {
-            scenePipeline = pipelineDepthPrepass_;
-        }
-    }
-
-    if (settings_.debug.viewMode == DebugViewMode::Wireframe) {
-        if (useHdr && wireframePipeline_.isValid()) {
-            scenePipeline = wireframePipeline_;
-        } else if (!useHdr && wireframeLdrPipeline_.isValid()) {
-            scenePipeline = wireframeLdrPipeline_;
-        } else if (wireframePipeline_.isValid()) {
-            scenePipeline = wireframePipeline_;
-        }
-    }
-
-    if (managePass) {
-        if (currentHasTimestamps_) {
-            cmdList.writeTimestamp(currentBaseQuery_ + 4, rhi::GpuTimestampStage::TopOfPipe);
-        }
-        rhi::RenderPassBeginInfo passInfo{
-            .colorTarget = sceneColorTarget,
-            .depthTarget = depthTarget_,
-            .clearColor = {0.08F, 0.12F, 0.20F, 1.0F},
-            .clearDepth = 1.0F,
-            .clearTarget = true,
-            .clearDepthTarget = !useDepthPrepass,
-        };
-        cmdList.beginRenderPass(passInfo);
-        cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
-        cmdList.setScissor(0, 0, width_, height_);
-    }
-
-    if (scenePipeline.isValid()) {
-        cmdList.bindPipeline(scenePipeline);
-    }
-
-    // Bind Set 1: Scene Lighting & Shadow Map once for the main pass
-    if (pipelineLayout_.isValid() && sceneDescriptorSet_.isValid()) {
-        const std::array<rhi::DescriptorSetHandle, 1> sceneSets = {sceneDescriptorSet_};
-        cmdList.bindDescriptorSets(pipelineLayout_, 1, sceneSets);
-    }
+    visibleItemsCollected_ = true;
 
     const bool applyCameraCulling =
         settings_.performance.frustumCulling && !currentViewProj_.isNearlyEqual(Mat4::identity());
@@ -2685,8 +2634,7 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
 
     visibleItems_.clear();
     auto& ecs = currentWorld_->getRawWorld();
-    auto query = ecs.query<const MeshComponent>();
-    query.each([&](flecs::entity e, const MeshComponent& meshComp) {
+    ecs.each<const MeshComponent>([&](flecs::entity e, const MeshComponent& meshComp) {
         if (!meshComp.visible) {
             lastRenderStats_.culledPrimitives++;
             return;
@@ -2723,21 +2671,12 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
         }
 
         Mat4 model = Mat4::identity();
-        if (e.has<world::WorldTransformComponent>()) {
-            const auto* wt = e.get<world::WorldTransformComponent>();
-            if (wt != nullptr) {
-                model = wt->worldMatrix;
-            }
-        } else if (e.has<world::TransformComponent>()) {
-            const auto* tc = e.get<world::TransformComponent>();
-            if (tc != nullptr) {
-                model = tc->transform.toMatrix();
-            }
-        } else if (e.has<physics::PhysicsTransformComponent>()) {
-            const auto* tc = e.get<physics::PhysicsTransformComponent>();
-            if (tc != nullptr) {
-                model = tc->transform.toMatrix();
-            }
+        if (const auto* wt = e.get<world::WorldTransformComponent>()) {
+            model = wt->worldMatrix;
+        } else if (const auto* tc = e.get<world::TransformComponent>()) {
+            model = tc->transform.toMatrix();
+        } else if (const auto* ptc = e.get<physics::PhysicsTransformComponent>()) {
+            model = ptc->transform.toMatrix();
         }
 
         const AABB localBounds = (meshComp.submeshIndex < gpuMesh->getSubmeshes().size())
@@ -2871,6 +2810,73 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
                   }
                   return a.depthSq < b.depthSq; // Front-to-back for Early-Z
               });
+}
+
+void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
+    const Timestamp tMainCpuStart = Timestamp::now();
+    if (currentWorld_ == nullptr || currentAssetManager_ == nullptr) {
+        cpuPassTimings_.mainPbrRecordMs = 0.0F;
+        return;
+    }
+    const bool managePass = colorTarget_.isValid();
+
+    const bool useTaa = isTaaEnabled() && hdrRawTarget_.isValid();
+    const bool useHdr = (postProcessSettings_.enabled && hdrTarget_.isValid()) || useTaa;
+    const bool useDepthPrepass =
+        (settings_.performance.depthPrepass || settings_.lighting.gtaoEnabled ||
+         settings_.lighting.ssgiEnabled) &&
+        depthPrepassPipeline_.isValid();
+    const rhi::TextureHandle sceneColorTarget =
+        useTaa ? hdrRawTarget_ : (useHdr ? hdrTarget_ : colorTarget_);
+    rhi::PipelineHandle scenePipeline =
+        (useHdr && hdrPipeline_.isValid()) ? hdrPipeline_ : pipeline_;
+
+    if (useDepthPrepass) {
+        if (useHdr && hdrPipelineDepthPrepass_.isValid()) {
+            scenePipeline = hdrPipelineDepthPrepass_;
+        } else if (!useHdr && pipelineDepthPrepass_.isValid()) {
+            scenePipeline = pipelineDepthPrepass_;
+        }
+    }
+
+    if (settings_.debug.viewMode == DebugViewMode::Wireframe) {
+        if (useHdr && wireframePipeline_.isValid()) {
+            scenePipeline = wireframePipeline_;
+        } else if (!useHdr && wireframeLdrPipeline_.isValid()) {
+            scenePipeline = wireframeLdrPipeline_;
+        } else if (wireframePipeline_.isValid()) {
+            scenePipeline = wireframePipeline_;
+        }
+    }
+
+    if (managePass) {
+        if (currentHasTimestamps_) {
+            cmdList.writeTimestamp(currentBaseQuery_ + 4, rhi::GpuTimestampStage::TopOfPipe);
+        }
+        rhi::RenderPassBeginInfo passInfo{
+            .colorTarget = sceneColorTarget,
+            .depthTarget = depthTarget_,
+            .clearColor = {0.08F, 0.12F, 0.20F, 1.0F},
+            .clearDepth = 1.0F,
+            .clearTarget = true,
+            .clearDepthTarget = !useDepthPrepass,
+        };
+        cmdList.beginRenderPass(passInfo);
+        cmdList.setViewport(0.0F, 0.0F, static_cast<float>(width_), static_cast<float>(height_));
+        cmdList.setScissor(0, 0, width_, height_);
+    }
+
+    if (scenePipeline.isValid()) {
+        cmdList.bindPipeline(scenePipeline);
+    }
+
+    // Bind Set 1: Scene Lighting & Shadow Map once for the main pass
+    if (pipelineLayout_.isValid() && sceneDescriptorSet_.isValid()) {
+        const std::array<rhi::DescriptorSetHandle, 1> sceneSets = {sceneDescriptorSet_};
+        cmdList.bindDescriptorSets(pipelineLayout_, 1, sceneSets);
+    }
+
+    collectVisibleMeshes();
 
     rhi::PipelineHandle lastBoundPipeline = scenePipeline;
     rhi::BufferHandle lastBoundVb{};
@@ -2975,12 +2981,26 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
             }
         }
     }
+    cpuPassTimings_.mainPbrRecordMs =
+        static_cast<float>((Timestamp::now() - tMainCpuStart).asMicroseconds()) * 0.001F;
 }
 
 RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetManager,
                                        rhi::RhiDevice& device, rhi::RhiCommandList& cmdList,
                                        const Mat4& viewProjection) {
+    const Timestamp tRenderSceneStart = Timestamp::now();
+    cpuPassTimings_ = CpuPassTimings{};
+    visibleItemsCollected_ = false;
     auto& ecs = world.getRawWorld();
+
+    const uint64_t currentSceneGen = world.getSceneGeneration();
+    const int32_t currentPrewarmMeshCount = static_cast<int32_t>(ecs.count<MeshComponent>());
+    if (&world != lastWorld_ || currentSceneGen != lastPrewarmSceneGen_ ||
+        currentPrewarmMeshCount != lastPrewarmMeshCount_) {
+        prewarmSceneAssets(world, assetManager, device);
+        lastPrewarmSceneGen_ = currentSceneGen;
+        lastPrewarmMeshCount_ = currentPrewarmMeshCount;
+    }
 
     currentHasTimestamps_ = device.getCaps().features.timestampQueries;
     currentBaseQuery_ = (frameSlotIndex_ % 2) * 32;
@@ -3140,8 +3160,11 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
             .stabilizeCascades = settings_.shadows.stabilizeCascades,
             .atlasResolution = shadowResolution_,
         };
+        const Timestamp tCascadeStart = Timestamp::now();
         computeShadowCascades(Mat4::identity(), viewProjection, 0.1F, settings_.shadows.distance,
                               dir, cascadeConfig, shadowCascades_);
+        cpuPassTimings_.shadowCascadeCalcMs =
+            static_cast<float>((Timestamp::now() - tCascadeStart).asMicroseconds()) * 0.001F;
         for (size_t i = 0; i < shadowCascades_.size() && i < 4; ++i) {
             lightingData.cascadeLightSpaceMatrices[i] = shadowCascades_[i].atlasMatrix;
         }
@@ -3369,36 +3392,39 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         std::ignore =
             device.writeBuffer(lightingUniformBuffer_, 0, &lightingData, sizeof(GpuLightingData));
     }
-    uint64_t currentStaticChecksum = 0;
-    uint64_t currentDynamicChecksum = 0;
-    uint32_t staticCasterCount = 0;
-    uint32_t dynamicCasterCount = 0;
-    if (settings_.shadows.enabled) {
-        auto shadowCasterQuery = ecs.query<const MeshComponent>();
-        shadowCasterQuery.each([&](flecs::entity e, const MeshComponent& mc) {
+    uint64_t currentStaticChecksum = lastStaticCasterChecksum_;
+    uint64_t currentDynamicChecksum = lastDynamicCasterChecksum_;
+    uint32_t staticCasterCount = lastStaticCasterCount_;
+    uint32_t dynamicCasterCount = lastDynamicCasterCount_;
+    const int32_t currentMeshCount = ecs.count<MeshComponent>();
+    const uint64_t currentTransformVersion = world.getTransformVersion();
+    const bool needChecksumQuery =
+        settings_.shadows.enabled &&
+        (&world != lastWorld_ || currentTransformVersion != lastTransformVersion_ ||
+         currentMeshCount != lastMeshComponentCount_ || !dir.isNearlyEqual(lastLightDir_) ||
+         lastDynamicCasterCount_ > 0 || ecs.count<physics::PhysicsTransformComponent>() > 0);
+    if (needChecksumQuery) {
+        currentStaticChecksum = 0;
+        currentDynamicChecksum = 0;
+        staticCasterCount = 0;
+        dynamicCasterCount = 0;
+        const Timestamp tChecksumStart = Timestamp::now();
+        ecs.each<const MeshComponent>([&](flecs::entity e, const MeshComponent& mc) {
             if (!mc.visible || !mc.castShadows) {
                 return;
             }
-            const bool isDynamic = (!mc.isStatic) || e.has<physics::PhysicsTransformComponent>() ||
-                                   e.has<physics::RigidBodyComponent>();
+            const auto* ptc = e.get<physics::PhysicsTransformComponent>();
+            const bool isDynamic =
+                (!mc.isStatic) || (ptc != nullptr) || e.has<physics::RigidBodyComponent>();
 
             uint64_t entChecksum = static_cast<uint64_t>(e.id()) * 1099511628211ULL;
             Vec3 trans = Vec3::zero();
-            if (e.has<world::WorldTransformComponent>()) {
-                const auto* wt = e.get<world::WorldTransformComponent>();
-                if (wt != nullptr) {
-                    trans = wt->worldMatrix.getTranslation();
-                }
-            } else if (e.has<world::TransformComponent>()) {
-                const auto* tc = e.get<world::TransformComponent>();
-                if (tc != nullptr) {
-                    trans = tc->transform.position;
-                }
-            } else if (e.has<physics::PhysicsTransformComponent>()) {
-                const auto* tc = e.get<physics::PhysicsTransformComponent>();
-                if (tc != nullptr) {
-                    trans = tc->transform.position;
-                }
+            if (const auto* wt = e.get<world::WorldTransformComponent>()) {
+                trans = wt->worldMatrix.getTranslation();
+            } else if (const auto* tc = e.get<world::TransformComponent>()) {
+                trans = tc->transform.position;
+            } else if (ptc != nullptr) {
+                trans = ptc->transform.position;
             }
 
             float tx = trans.x;
@@ -3421,6 +3447,8 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
                 currentStaticChecksum ^= entChecksum;
             }
         });
+        cpuPassTimings_.shadowChecksumQueryMs =
+            static_cast<float>((Timestamp::now() - tChecksumStart).asMicroseconds()) * 0.001F;
     }
 
     bool cascadesChanged = false;
@@ -3451,6 +3479,8 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     }
 
     lastWorld_ = &world;
+    lastTransformVersion_ = currentTransformVersion;
+    lastMeshComponentCount_ = currentMeshCount;
     lastStaticCasterCount_ = staticCasterCount;
     lastStaticCasterChecksum_ = currentStaticChecksum;
     lastDynamicCasterCount_ = dynamicCasterCount;
@@ -3503,7 +3533,10 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     updatePostProcessDescriptors();
 
     if (renderGraph_.isCompiled()) {
+        const Timestamp tRgStart = Timestamp::now();
         auto execRes = renderGraph_.execute(device, cmdList);
+        cpuPassTimings_.renderGraphExecMs =
+            static_cast<float>((Timestamp::now() - tRgStart).asMicroseconds()) * 0.001F;
         if (!execRes.hasValue()) {
             ENG_LOG_ERROR("SceneRenderer", "RenderGraph execute failed");
         }
@@ -3519,6 +3552,8 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     currentWorld_ = nullptr;
     currentAssetManager_ = nullptr;
     currentDevice_ = nullptr;
+    cpuPassTimings_.totalRenderSceneMs =
+        static_cast<float>((Timestamp::now() - tRenderSceneStart).asMicroseconds()) * 0.001F;
     return lastRenderStats_;
 }
 

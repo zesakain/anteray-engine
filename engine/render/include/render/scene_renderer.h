@@ -108,6 +108,22 @@ struct GpuPassTimings {
     bool valid{false};
 };
 
+/// @struct CpuPassTimings
+/// @brief CPU command recording and preparation duration for scene rendering stages (milliseconds).
+struct CpuPassTimings {
+    float shadowChecksumQueryMs{0.0F};
+    float shadowCascadeCalcMs{0.0F};
+    float shadowRecordMs{0.0F};
+    float depthPrepassRecordMs{0.0F};
+    float mainPbrRecordMs{0.0F};
+    float giRecordMs{0.0F};
+    float velocityRecordMs{0.0F};
+    float taaRecordMs{0.0F};
+    float renderGraphExecMs{0.0F};
+    float postProcessRecordMs{0.0F};
+    float totalRenderSceneMs{0.0F};
+};
+
 /// @class SceneRenderer
 /// @brief Traverses the ECS World and records mesh draw calls to the RHI command list.
 class SceneRenderer {
@@ -182,6 +198,10 @@ public:
     /// @param device The active RHI device owning query pool resources.
     void updateGpuTimings(rhi::RhiDevice& device);
 
+    /// Pre-uploads all meshes and materials in the world to the GPU to avoid mid-frame hitches.
+    void prewarmSceneAssets(world::World& world, AssetManager& assetManager,
+                            rhi::RhiDevice& device);
+
     /// Returns the telemetry metrics collected during the most recent scene rendering pass.
     [[nodiscard]] const RenderStats& getLastRenderStats() const noexcept {
         return lastRenderStats_;
@@ -190,6 +210,11 @@ public:
     /// Returns the latest measured GPU execution durations for all rendering passes.
     [[nodiscard]] const GpuPassTimings& getGpuPassTimings() const noexcept {
         return gpuPassTimings_;
+    }
+
+    /// Returns the latest measured CPU recording durations for scene rendering stages.
+    [[nodiscard]] const CpuPassTimings& getCpuPassTimings() const noexcept {
+        return cpuPassTimings_;
     }
 
     [[nodiscard]] rhi::TextureHandle getColorTarget() const noexcept { return colorTarget_; }
@@ -673,6 +698,7 @@ private:
     rhi::PipelineHandle wireframeLdrPipeline_{};
     RenderStats lastRenderStats_{};
     GpuPassTimings gpuPassTimings_{};
+    CpuPassTimings cpuPassTimings_{};
     uint32_t frameSlotIndex_{0};
 
     // Live RenderGraph DAGs and per-frame recording state
@@ -702,6 +728,8 @@ private:
     };
 
     std::vector<VisibleMeshItem> visibleItems_{};
+    bool visibleItemsCollected_{false};
+    void collectVisibleMeshes();
     std::vector<ShadowCasterItem> shadowCasters_{};
     std::vector<ShadowCasterItem> staticShadowCasters_{};
     std::vector<ShadowCasterItem> dynamicShadowCasters_{};
@@ -714,6 +742,10 @@ private:
     AtmosphereParameters atmosphereParams_{AtmosphereParameters::createDaylight()};
     Mat4 lastLightSpaceMatrix_{Mat4::identity()};
     world::World* lastWorld_{nullptr};
+    uint64_t lastPrewarmSceneGen_{0};
+    int32_t lastPrewarmMeshCount_{-1};
+    uint64_t lastTransformVersion_{0};
+    int32_t lastMeshComponentCount_{-1};
     uint32_t lastCasterCount_{0};
     uint32_t lastStaticCasterCount_{0};
     uint32_t lastDynamicCasterCount_{0};
