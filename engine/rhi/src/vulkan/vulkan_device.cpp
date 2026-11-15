@@ -1306,6 +1306,9 @@ Result<void> VulkanDevice::submit(RhiCommandList* commandList) {
         .pSignalSemaphores = nullptr,
     };
 
+    ++currentSubmissionSerial_;
+    const uint64_t submissionSerial = currentSubmissionSerial_;
+
     const Timestamp tSubmitStart = Timestamp::now();
     res = vkQueueSubmit(graphicsQueue_, 1, &submitInfo, fence);
     const Timestamp tSubmitEnd = Timestamp::now();
@@ -1333,12 +1336,14 @@ Result<void> VulkanDevice::submit(RhiCommandList* commandList) {
                      .message = "vkWaitForFences failed"};
     }
 
+    completedSubmissionSerial_ = submissionSerial;
     return Result<void>::success();
 }
 
 void VulkanDevice::waitIdle() {
     if (device_ != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device_);
+        completedSubmissionSerial_ = currentSubmissionSerial_;
     }
 }
 

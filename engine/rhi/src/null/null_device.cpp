@@ -448,6 +448,8 @@ Result<void> NullDevice::submit(RhiCommandList* commandList) {
 
     nullCmd->setState(NullCommandList::State::Submitted);
     ++submittedCount_;
+    ++currentSubmissionSerial_;
+    completedSubmissionSerial_ = currentSubmissionSerial_;
     return Result<void>::success();
 }
 

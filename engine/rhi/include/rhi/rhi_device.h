@@ -348,6 +348,25 @@ public:
         (void)outTimestamps;
         return false;
     }
+
+    /// Retrieves the monotonically increasing submission serial for the latest submitted command
+    /// list.
+    [[nodiscard]] virtual uint64_t getCurrentSubmissionSerial() const noexcept {
+        return currentSubmissionSerial_;
+    }
+
+    /// Retrieves the latest submission serial known to have completed execution on the GPU.
+    [[nodiscard]] virtual uint64_t getCompletedSubmissionSerial() const noexcept {
+        return completedSubmissionSerial_;
+    }
+
+    /// Checks completion of in-flight GPU submissions without blocking CPU execution.
+    /// Advances completedSubmissionSerial to reflect the latest completed work.
+    virtual uint64_t pollCompletedSubmissionSerial() noexcept { return completedSubmissionSerial_; }
+
+protected:
+    uint64_t currentSubmissionSerial_{0};
+    uint64_t completedSubmissionSerial_{0};
 };
 
 /// Instantiates the in-memory headless Null RHI device.
