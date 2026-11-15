@@ -14,8 +14,10 @@ void main() {
         outVelocity = vec4(0.0, 0.0, gl_FragCoord.z, 0.0);
         return;
     }
-    vec2 curUV = (inCurClip.xy / inCurClip.w) * 0.5 + 0.5;
-    vec2 prevUV = (inPrevClip.xy / inPrevClip.w) * 0.5 + 0.5;
+    vec2 curNDC = inCurClip.xy / inCurClip.w;
+    vec2 prevNDC = inPrevClip.xy / inPrevClip.w;
+    vec2 curUV = vec2(curNDC.x * 0.5 + 0.5, 0.5 - curNDC.y * 0.5);
+    vec2 prevUV = vec2(prevNDC.x * 0.5 + 0.5, 0.5 - prevNDC.y * 0.5);
     vec2 vel = curUV - prevUV;
     outVelocity = vec4(vel, gl_FragCoord.z, 1.0);
 }

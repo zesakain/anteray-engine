@@ -12,6 +12,8 @@ shader_mappings = [
     ("kFullscreenVertexShaderSpirv", "assets/shaders/fullscreen.vert"),
     ("kBloomDownsampleFragmentShaderSpirv", "assets/shaders/bloom_downsample.frag"),
     ("kBloomUpsampleFragmentShaderSpirv", "assets/shaders/bloom_upsample.frag"),
+    ("kDofFragmentShaderSpirv", "assets/shaders/dof.frag"),
+    ("kMotionBlurFragmentShaderSpirv", "assets/shaders/motion_blur.frag"),
     ("kToneMappingFragmentShaderSpirv", "assets/shaders/tone_mapping.frag"),
     ("kGtaoFragmentShaderSpirv", "assets/shaders/gtao.frag"),
     ("kBilateralBlurFragmentShaderSpirv", "assets/shaders/bilateral_blur.frag"),

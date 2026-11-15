@@ -22,14 +22,18 @@ void main() {
         return;
     }
 
-    vec4 ndc = vec4(inUV.x * 2.0 - 1.0, inUV.y * 2.0 - 1.0, depth, 1.0);
+    // In Vulkan Y-up NDC:
+    // NDC.x in [-1, 1], NDC.y in [-1, 1] (+1 is top, -1 is bottom)
+    // UV.x in [0, 1], UV.y in [0, 1] (0 is top, 1 is bottom)
+    vec4 ndc = vec4(inUV.x * 2.0 - 1.0, 1.0 - inUV.y * 2.0, depth, 1.0);
     vec4 prevClip = pc.reprojectMatrix * ndc;
     if (prevClip.w <= 1e-5) {
         outVelocity = vec4(0.0, 0.0, depth, 0.0);
         return;
     }
 
-    vec2 prevUV = (prevClip.xy / prevClip.w) * 0.5 + 0.5;
+    vec2 prevNDC = prevClip.xy / prevClip.w;
+    vec2 prevUV = vec2(prevNDC.x * 0.5 + 0.5, 0.5 - prevNDC.y * 0.5);
     vec2 velocity = inUV - prevUV;
     outVelocity = vec4(velocity, depth, 1.0);
 }
