@@ -268,7 +268,10 @@ public:
     [[nodiscard]] rhi::PipelineHandle getShadowPipeline() const noexcept { return shadowPipeline_; }
     /// Forces re-recording of the directional shadow depth pass on the next renderScene call.
     /// Thread-safety : Main thread only.
-    void invalidateShadowMap() noexcept { shadowDirty_ = true; }
+    void invalidateShadowMap() noexcept {
+        shadowDirty_ = true;
+        staticShadowDirty_ = true;
+    }
     [[nodiscard]] rhi::BufferHandle getLightingUniformBuffer() const noexcept {
         return lightingUniformBuffer_;
     }
@@ -276,9 +279,17 @@ public:
     void setShadowResolution(uint32_t resolution) noexcept {
         shadowResolution_ = resolution;
         shadowDirty_ = true;
+        staticShadowDirty_ = true;
     }
-    void markShadowDirty() noexcept { shadowDirty_ = true; }
+    void markShadowDirty() noexcept {
+        shadowDirty_ = true;
+        staticShadowDirty_ = true;
+    }
     [[nodiscard]] bool isShadowDirty() const noexcept { return shadowDirty_; }
+    [[nodiscard]] bool isStaticShadowDirty() const noexcept { return staticShadowDirty_; }
+    [[nodiscard]] rhi::TextureHandle getStaticShadowDepthTarget() const noexcept {
+        return staticShadowTarget_;
+    }
     [[nodiscard]] uint32_t getWidth() const noexcept { return width_; }
     [[nodiscard]] uint32_t getHeight() const noexcept { return height_; }
     [[nodiscard]] bool isInitialized() const noexcept {
@@ -336,6 +347,15 @@ public:
     };
 
 private:
+    struct ShadowCasterItem {
+        GpuMesh* gpuMesh{nullptr};
+        Mat4 model{Mat4::identity()};
+        uint32_t submeshIndex{0};
+        AABB worldBounds{};
+        float distanceToLight{0.0F};
+        bool isDynamic{false};
+    };
+
     [[nodiscard]] Result<void> initPostProcessResources();
     [[nodiscard]] Result<void> createPostProcessTargets(uint32_t width, uint32_t height);
     void destroyPostProcessTargets();
@@ -350,6 +370,7 @@ private:
     void buildRenderGraph();
     void buildPostProcessGraph();
     void recordShadowPass(rhi::RhiCommandList& cmdList);
+    void renderCasters(rhi::RhiCommandList& cmdList, const std::vector<ShadowCasterItem>& casters);
     void recordDepthPrepass(rhi::RhiCommandList& cmdList);
     void recordGtaoPass(rhi::RhiCommandList& cmdList);
     void recordGtaoBlurPass(rhi::RhiCommandList& cmdList);
@@ -373,6 +394,7 @@ private:
     rhi::DescriptorSetHandle sceneDescriptorSet_{};
     rhi::BufferHandle lightingUniformBuffer_{};
     rhi::TextureHandle shadowDepthTarget_{};
+    rhi::TextureHandle staticShadowTarget_{};
     rhi::SamplerHandle shadowSampler_{};
     rhi::ShaderHandle shadowVertexShader_{};
     rhi::PipelineLayoutHandle shadowPipelineLayout_{};
@@ -495,25 +517,24 @@ private:
         bool isTransparent{false};
     };
 
-    struct ShadowCasterItem {
-        GpuMesh* gpuMesh{nullptr};
-        Mat4 model{Mat4::identity()};
-        uint32_t submeshIndex{0};
-        AABB worldBounds{};
-        float distanceToLight{0.0F};
-    };
-
     std::vector<VisibleMeshItem> visibleItems_{};
     std::vector<ShadowCasterItem> shadowCasters_{};
+    std::vector<ShadowCasterItem> staticShadowCasters_{};
+    std::vector<ShadowCasterItem> dynamicShadowCasters_{};
     std::vector<ShadowCascade> shadowCascades_{};
     std::array<Mat4, 4> lastCascadeViewProj_{};
     bool shadowDirty_{true};
+    bool staticShadowDirty_{true};
     Vec3 lastLightDir_{Vec3::zero()};
     AtmosphereParameters atmosphereParams_{AtmosphereParameters::createDaylight()};
     Mat4 lastLightSpaceMatrix_{Mat4::identity()};
     world::World* lastWorld_{nullptr};
     uint32_t lastCasterCount_{0};
+    uint32_t lastStaticCasterCount_{0};
+    uint32_t lastDynamicCasterCount_{0};
     uint64_t lastCasterChecksum_{0};
+    uint64_t lastStaticCasterChecksum_{0};
+    uint64_t lastDynamicCasterChecksum_{0};
 };
 
 } // namespace eng::render

@@ -73,8 +73,8 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
       sceneDescriptorPool_(other.sceneDescriptorPool_),
       sceneDescriptorSet_(other.sceneDescriptorSet_),
       lightingUniformBuffer_(other.lightingUniformBuffer_),
-      shadowDepthTarget_(other.shadowDepthTarget_), shadowSampler_(other.shadowSampler_),
-      shadowVertexShader_(other.shadowVertexShader_),
+      shadowDepthTarget_(other.shadowDepthTarget_), staticShadowTarget_(other.staticShadowTarget_),
+      shadowSampler_(other.shadowSampler_), shadowVertexShader_(other.shadowVertexShader_),
       shadowPipelineLayout_(other.shadowPipelineLayout_), shadowPipeline_(other.shadowPipeline_),
       depthPrepassPipeline_(other.depthPrepassPipeline_), pipelineLayout_(other.pipelineLayout_),
       pipeline_(other.pipeline_), pipelineOpaque_(other.pipelineOpaque_),
@@ -151,6 +151,7 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
     prevViewProj_ = other.prevViewProj_;
     isHistoryValid_ = other.isHistoryValid_;
     giFrameIndex_ = other.giFrameIndex_;
+    staticShadowDirty_ = other.staticShadowDirty_;
 
     other.device_ = nullptr;
     other.colorTarget_ = {};
@@ -164,6 +165,7 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
     other.sceneDescriptorSet_ = {};
     other.lightingUniformBuffer_ = {};
     other.shadowDepthTarget_ = {};
+    other.staticShadowTarget_ = {};
     other.shadowSampler_ = {};
     other.shadowVertexShader_ = {};
     other.shadowPipelineLayout_ = {};
@@ -252,6 +254,8 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         sceneDescriptorSet_ = other.sceneDescriptorSet_;
         lightingUniformBuffer_ = other.lightingUniformBuffer_;
         shadowDepthTarget_ = other.shadowDepthTarget_;
+        staticShadowTarget_ = other.staticShadowTarget_;
+        staticShadowDirty_ = other.staticShadowDirty_;
         shadowSampler_ = other.shadowSampler_;
         shadowVertexShader_ = other.shadowVertexShader_;
         shadowPipelineLayout_ = other.shadowPipelineLayout_;
@@ -362,6 +366,7 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         other.sceneDescriptorSet_ = {};
         other.lightingUniformBuffer_ = {};
         other.shadowDepthTarget_ = {};
+        other.staticShadowTarget_ = {};
         other.shadowSampler_ = {};
         other.shadowVertexShader_ = {};
         other.shadowPipelineLayout_ = {};
@@ -511,6 +516,15 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
         return shadowRes.error();
     }
     shadowDepthTarget_ = shadowRes.value();
+
+    shadowDesc.debugName = "StaticShadowMapCache";
+    auto staticShadowRes = device_->createTexture(shadowDesc);
+    if (!staticShadowRes.hasValue()) {
+        shutdown();
+        return staticShadowRes.error();
+    }
+    staticShadowTarget_ = staticShadowRes.value();
+    staticShadowDirty_ = true;
 
     // 2c. Allocate shadow comparison sampler
     rhi::SamplerDesc shadowSampDesc{
@@ -1268,6 +1282,10 @@ void SceneRenderer::shutdown() {
             device_->destroyTexture(shadowDepthTarget_);
             shadowDepthTarget_ = {};
         }
+        if (staticShadowTarget_.isValid()) {
+            device_->destroyTexture(staticShadowTarget_);
+            staticShadowTarget_ = {};
+        }
         if (sceneDescriptorPool_.isValid()) {
             device_->destroyDescriptorPool(sceneDescriptorPool_);
             sceneDescriptorPool_ = {};
@@ -1431,6 +1449,10 @@ Result<void> SceneRenderer::applyGraphicsSettings(const GraphicsSettings& newSet
             device_->destroyTexture(shadowDepthTarget_);
             shadowDepthTarget_ = {};
         }
+        if (staticShadowTarget_.isValid()) {
+            device_->destroyTexture(staticShadowTarget_);
+            staticShadowTarget_ = {};
+        }
 
         rhi::TextureDesc shadowDesc{
             .type = rhi::TextureType::Texture2D,
@@ -1449,6 +1471,14 @@ Result<void> SceneRenderer::applyGraphicsSettings(const GraphicsSettings& newSet
             return shadowRes.error();
         }
         shadowDepthTarget_ = shadowRes.value();
+
+        shadowDesc.debugName = "StaticShadowMapCache";
+        auto staticShadowRes = device_->createTexture(shadowDesc);
+        if (!staticShadowRes.hasValue()) {
+            return staticShadowRes.error();
+        }
+        staticShadowTarget_ = staticShadowRes.value();
+        staticShadowDirty_ = true;
 
         if (sceneDescriptorSet_.isValid() && shadowSampler_.isValid()) {
             std::array<rhi::DescriptorWrite, 1> shadowWrite{
@@ -1759,22 +1789,9 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
     if (currentHasTimestamps_) {
         cmdList.writeTimestamp(currentBaseQuery_ + 2, rhi::GpuTimestampStage::TopOfPipe);
     }
-    rhi::RenderPassBeginInfo shadowPassInfo{
-        .colorTarget = {},
-        .depthTarget = shadowDepthTarget_,
-        .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
-        .clearDepth = 1.0F,
-        .clearTarget = false,
-        .clearDepthTarget = true,
-        .renderWidth = shadowResolution_,
-        .renderHeight = shadowResolution_,
-    };
-    cmdList.beginRenderPass(shadowPassInfo);
-    cmdList.bindPipeline(shadowPipeline_);
 
-    const bool applyLightCulling = settings_.performance.frustumCulling;
-
-    shadowCasters_.clear();
+    staticShadowCasters_.clear();
+    dynamicShadowCasters_.clear();
     auto& ecs = currentWorld_->getRawWorld();
     auto shadowMeshQuery = ecs.query<const MeshComponent>();
     shadowMeshQuery.each([&](flecs::entity e, const MeshComponent& meshComp) {
@@ -1841,22 +1858,105 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
 
         const Vec3 center = (worldBounds.minBound + worldBounds.maxBound) * 0.5F;
         const float distToLight = Vec3::dot(center, currentLightDir_);
-        shadowCasters_.push_back({
+        const bool isDynamic = (!meshComp.isStatic) ||
+                               e.has<physics::PhysicsTransformComponent>() ||
+                               e.has<physics::RigidBodyComponent>();
+
+        ShadowCasterItem item{
             .gpuMesh = gpuMesh,
             .model = model,
             .submeshIndex = meshComp.submeshIndex,
             .worldBounds = worldBounds,
             .distanceToLight = distToLight,
-        });
+            .isDynamic = isDynamic,
+        };
+
+        if (isDynamic) {
+            dynamicShadowCasters_.push_back(item);
+        } else {
+            staticShadowCasters_.push_back(item);
+        }
     });
 
-    // Sort shadow casters front-to-back from directional light source
-    std::sort(shadowCasters_.begin(), shadowCasters_.end(),
-              [](const ShadowCasterItem& a, const ShadowCasterItem& b) {
-                  return a.distanceToLight > b.distanceToLight;
-              });
+    auto sortFrontToBack = [](const ShadowCasterItem& a, const ShadowCasterItem& b) {
+        return a.distanceToLight > b.distanceToLight;
+    };
+    std::sort(staticShadowCasters_.begin(), staticShadowCasters_.end(), sortFrontToBack);
+    std::sort(dynamicShadowCasters_.begin(), dynamicShadowCasters_.end(), sortFrontToBack);
 
+    if (staticShadowTarget_.isValid()) {
+        if (staticShadowDirty_) {
+            rhi::RenderPassBeginInfo staticPassInfo{
+                .colorTarget = {},
+                .depthTarget = staticShadowTarget_,
+                .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
+                .clearDepth = 1.0F,
+                .clearTarget = false,
+                .clearDepthTarget = true,
+                .renderWidth = shadowResolution_,
+                .renderHeight = shadowResolution_,
+            };
+            cmdList.beginRenderPass(staticPassInfo);
+            cmdList.bindPipeline(shadowPipeline_);
+            renderCasters(cmdList, staticShadowCasters_);
+            cmdList.endRenderPass();
+            staticShadowDirty_ = false;
+        }
+
+        // Copy static shadow cache to composite shadow depth target
+        cmdList.copyTexture(staticShadowTarget_, shadowDepthTarget_);
+
+        // Render dynamic casters directly on top of static depth without clearing
+        if (!dynamicShadowCasters_.empty()) {
+            rhi::RenderPassBeginInfo dynamicPassInfo{
+                .colorTarget = {},
+                .depthTarget = shadowDepthTarget_,
+                .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
+                .clearDepth = 1.0F,
+                .clearTarget = false,
+                .clearDepthTarget = false,
+                .renderWidth = shadowResolution_,
+                .renderHeight = shadowResolution_,
+            };
+            cmdList.beginRenderPass(dynamicPassInfo);
+            cmdList.bindPipeline(shadowPipeline_);
+            renderCasters(cmdList, dynamicShadowCasters_);
+            cmdList.endRenderPass();
+        }
+    } else {
+        // Fallback when static shadow cache target is unallocated
+        rhi::RenderPassBeginInfo shadowPassInfo{
+            .colorTarget = {},
+            .depthTarget = shadowDepthTarget_,
+            .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
+            .clearDepth = 1.0F,
+            .clearTarget = false,
+            .clearDepthTarget = true,
+            .renderWidth = shadowResolution_,
+            .renderHeight = shadowResolution_,
+        };
+        cmdList.beginRenderPass(shadowPassInfo);
+        cmdList.bindPipeline(shadowPipeline_);
+        renderCasters(cmdList, staticShadowCasters_);
+        renderCasters(cmdList, dynamicShadowCasters_);
+        cmdList.endRenderPass();
+        staticShadowDirty_ = false;
+    }
+
+    if (currentHasTimestamps_) {
+        cmdList.writeTimestamp(currentBaseQuery_ + 3, rhi::GpuTimestampStage::BottomOfPipe);
+    }
+    shadowDirty_ = false;
+}
+
+void SceneRenderer::renderCasters(rhi::RhiCommandList& cmdList,
+                                  const std::vector<ShadowCasterItem>& casters) {
+    if (casters.empty() || !shadowPipeline_.isValid()) {
+        return;
+    }
+    const bool applyLightCulling = settings_.performance.frustumCulling;
     const size_t numCascades = shadowCascades_.empty() ? 1 : shadowCascades_.size();
+
     for (size_t cIdx = 0; cIdx < numCascades; ++cIdx) {
         float vpX = 0.0F;
         float vpY = 0.0F;
@@ -1884,7 +1984,7 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
         bool hasPushedMvp = false;
         Mat4 lastMvp{};
 
-        for (const auto& caster : shadowCasters_) {
+        for (const auto& caster : casters) {
             if (applyLightCulling) {
                 if (!lightFrustum.intersectsAABB(caster.worldBounds)) {
                     lastRenderStats_.culledPrimitives++;
@@ -1937,12 +2037,6 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
             }
         }
     }
-
-    cmdList.endRenderPass();
-    if (currentHasTimestamps_) {
-        cmdList.writeTimestamp(currentBaseQuery_ + 3, rhi::GpuTimestampStage::BottomOfPipe);
-    }
-    shadowDirty_ = false;
 }
 
 void SceneRenderer::recordDepthPrepass(rhi::RhiCommandList& cmdList) {
@@ -2713,65 +2807,56 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         std::ignore =
             device.writeBuffer(lightingUniformBuffer_, 0, &lightingData, sizeof(GpuLightingData));
     }
-    uint64_t currentCasterChecksum = 0;
-    uint32_t casterCount = 0;
+    uint64_t currentStaticChecksum = 0;
+    uint64_t currentDynamicChecksum = 0;
+    uint32_t staticCasterCount = 0;
+    uint32_t dynamicCasterCount = 0;
     if (settings_.shadows.enabled) {
         auto shadowCasterQuery = ecs.query<const MeshComponent>();
         shadowCasterQuery.each([&](flecs::entity e, const MeshComponent& mc) {
             if (!mc.visible || !mc.castShadows) {
                 return;
             }
-            casterCount++;
-            uint64_t id = static_cast<uint64_t>(e.id());
-            currentCasterChecksum ^= (id * 1099511628211ULL);
+            const bool isDynamic = (!mc.isStatic) || e.has<physics::PhysicsTransformComponent>() ||
+                                   e.has<physics::RigidBodyComponent>();
+
+            uint64_t entChecksum = static_cast<uint64_t>(e.id()) * 1099511628211ULL;
+            Vec3 trans = Vec3::zero();
             if (e.has<world::WorldTransformComponent>()) {
                 const auto* wt = e.get<world::WorldTransformComponent>();
                 if (wt != nullptr) {
-                    float tx = wt->worldMatrix.m[3];
-                    float ty = wt->worldMatrix.m[7];
-                    float tz = wt->worldMatrix.m[11];
-                    uint32_t bx = 0;
-                    uint32_t by = 0;
-                    uint32_t bz = 0;
-                    std::memcpy(&bx, &tx, sizeof(float));
-                    std::memcpy(&by, &ty, sizeof(float));
-                    std::memcpy(&bz, &tz, sizeof(float));
-                    currentCasterChecksum ^=
-                        (static_cast<uint64_t>(bx) | (static_cast<uint64_t>(by) << 32));
-                    currentCasterChecksum ^= (static_cast<uint64_t>(bz) * 16777619ULL);
+                    trans = wt->worldMatrix.getTranslation();
                 }
             } else if (e.has<world::TransformComponent>()) {
                 const auto* tc = e.get<world::TransformComponent>();
                 if (tc != nullptr) {
-                    float tx = tc->transform.position.x;
-                    float ty = tc->transform.position.y;
-                    float tz = tc->transform.position.z;
-                    uint32_t bx = 0;
-                    uint32_t by = 0;
-                    uint32_t bz = 0;
-                    std::memcpy(&bx, &tx, sizeof(float));
-                    std::memcpy(&by, &ty, sizeof(float));
-                    std::memcpy(&bz, &tz, sizeof(float));
-                    currentCasterChecksum ^=
-                        (static_cast<uint64_t>(bx) | (static_cast<uint64_t>(by) << 32));
-                    currentCasterChecksum ^= (static_cast<uint64_t>(bz) * 16777619ULL);
+                    trans = tc->transform.position;
                 }
             } else if (e.has<physics::PhysicsTransformComponent>()) {
                 const auto* tc = e.get<physics::PhysicsTransformComponent>();
                 if (tc != nullptr) {
-                    float tx = tc->transform.position.x;
-                    float ty = tc->transform.position.y;
-                    float tz = tc->transform.position.z;
-                    uint32_t bx = 0;
-                    uint32_t by = 0;
-                    uint32_t bz = 0;
-                    std::memcpy(&bx, &tx, sizeof(float));
-                    std::memcpy(&by, &ty, sizeof(float));
-                    std::memcpy(&bz, &tz, sizeof(float));
-                    currentCasterChecksum ^=
-                        (static_cast<uint64_t>(bx) | (static_cast<uint64_t>(by) << 32));
-                    currentCasterChecksum ^= (static_cast<uint64_t>(bz) * 16777619ULL);
+                    trans = tc->transform.position;
                 }
+            }
+
+            float tx = trans.x;
+            float ty = trans.y;
+            float tz = trans.z;
+            uint32_t bx = 0;
+            uint32_t by = 0;
+            uint32_t bz = 0;
+            std::memcpy(&bx, &tx, sizeof(float));
+            std::memcpy(&by, &ty, sizeof(float));
+            std::memcpy(&bz, &tz, sizeof(float));
+            entChecksum ^= (static_cast<uint64_t>(bx) | (static_cast<uint64_t>(by) << 32));
+            entChecksum ^= (static_cast<uint64_t>(bz) * 16777619ULL);
+
+            if (isDynamic) {
+                dynamicCasterCount++;
+                currentDynamicChecksum ^= entChecksum;
+            } else {
+                staticCasterCount++;
+                currentStaticChecksum ^= entChecksum;
             }
         });
     }
@@ -2788,17 +2873,26 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         }
     }
 
-    if (&world != lastWorld_ || casterCount != lastCasterCount_ ||
-        currentCasterChecksum != lastCasterChecksum_ || !dir.isNearlyEqual(lastLightDir_) ||
+    if (&world != lastWorld_ || staticCasterCount != lastStaticCasterCount_ ||
+        currentStaticChecksum != lastStaticCasterChecksum_ || !dir.isNearlyEqual(lastLightDir_) ||
         cascadesChanged) {
+        staticShadowDirty_ = true;
         shadowDirty_ = true;
-        lastWorld_ = &world;
-        lastCasterCount_ = casterCount;
-        lastCasterChecksum_ = currentCasterChecksum;
-        lastLightDir_ = dir;
-        for (size_t i = 0; i < shadowCascades_.size() && i < 4; ++i) {
-            lastCascadeViewProj_[i] = shadowCascades_[i].viewProjMatrix;
-        }
+    } else if (dynamicCasterCount != lastDynamicCasterCount_ ||
+               currentDynamicChecksum != lastDynamicCasterChecksum_) {
+        shadowDirty_ = true;
+    }
+
+    lastWorld_ = &world;
+    lastStaticCasterCount_ = staticCasterCount;
+    lastStaticCasterChecksum_ = currentStaticChecksum;
+    lastDynamicCasterCount_ = dynamicCasterCount;
+    lastDynamicCasterChecksum_ = currentDynamicChecksum;
+    lastCasterCount_ = staticCasterCount + dynamicCasterCount;
+    lastCasterChecksum_ = currentStaticChecksum ^ currentDynamicChecksum;
+    lastLightDir_ = dir;
+    for (size_t i = 0; i < shadowCascades_.size() && i < 4; ++i) {
+        lastCascadeViewProj_[i] = shadowCascades_[i].viewProjMatrix;
     }
     lastRenderStats_ = RenderStats{};
 

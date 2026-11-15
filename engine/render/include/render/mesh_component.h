@@ -35,6 +35,7 @@ struct MeshComponent {
     AssetId materialAsset{};
     bool visible{true};
     bool castShadows{true};
+    bool isStatic{true}; ///< Distinguishes static environmental scenery from moving dynamic casters
 };
 
 /// @brief Registers render-related ECS components in the Flecs World.
