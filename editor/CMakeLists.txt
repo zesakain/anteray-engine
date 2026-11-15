@@ -39,6 +39,7 @@ if(NOT imgui_POPULATED)
             Vulkan::Vulkan
     )
     target_compile_options(imgui_static PRIVATE -w)
+    target_compile_definitions(imgui_static PUBLIC ImDrawIdx=unsigned\ int)
 endif()
 
 add_library(editor_lib STATIC

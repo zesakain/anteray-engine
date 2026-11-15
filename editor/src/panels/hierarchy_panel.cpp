@@ -687,19 +687,27 @@ void HierarchyPanel::draw(EditorContext& ctx) {
 
             std::string_view searchView(searchFilter_.data());
 
+            std::vector<world::EntityHandle> candidateRoots;
             if (searchView.empty() && componentFilter_ == ComponentFilter::All) {
-                ImGuiListClipper clipper;
-                clipper.Begin(static_cast<int>(roots.size()));
-                while (clipper.Step()) {
-                    for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
-                        drawEntityNode(ctx, roots[static_cast<size_t>(i)], displayedHandles,
-                                       entityCount, searchView, componentFilter_);
+                candidateRoots = std::move(roots);
+            } else {
+                candidateRoots.reserve(roots.size());
+                for (world::EntityHandle root : roots) {
+                    if (entityMatchesFilter(*ctx.world, root, searchView, componentFilter_) ||
+                        (ctx.world->hasChildren(root) &&
+                         entityOrDescendantsMatch(*ctx.world, ctx.world->getChildren(root),
+                                                  searchView, componentFilter_))) {
+                        candidateRoots.push_back(root);
                     }
                 }
-            } else {
-                for (world::EntityHandle root : roots) {
-                    drawEntityNode(ctx, root, displayedHandles, entityCount, searchView,
-                                   componentFilter_);
+            }
+
+            ImGuiListClipper clipper;
+            clipper.Begin(static_cast<int>(candidateRoots.size()));
+            while (clipper.Step()) {
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+                    drawEntityNode(ctx, candidateRoots[static_cast<size_t>(i)], displayedHandles,
+                                   entityCount, searchView, componentFilter_);
                 }
             }
 
