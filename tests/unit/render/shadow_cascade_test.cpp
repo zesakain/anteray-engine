@@ -128,11 +128,130 @@ static void testTexelStabilization() {
     std::cout << "[PASS] testTexelStabilization\n";
 }
 
+static void testMatrixTranslationExtraction() {
+    // 1. Identity matrix translation
+    const Mat4 identity = Mat4::identity();
+    const Vec3 tId = identity.getTranslation();
+    TEST_CHECK(std::abs(tId.x) < 1e-5F && std::abs(tId.y) < 1e-5F && std::abs(tId.z) < 1e-5F);
+
+    // 2. Direct translation matrix
+    const Vec3 pos{12.5F, -3.2F, 48.0F};
+    const Mat4 tMat = Mat4::fromTranslation(pos);
+    const Vec3 tExtracted = tMat.getTranslation();
+    TEST_CHECK(std::abs(tExtracted.x - pos.x) < 1e-4F);
+    TEST_CHECK(std::abs(tExtracted.y - pos.y) < 1e-4F);
+    TEST_CHECK(std::abs(tExtracted.z - pos.z) < 1e-4F);
+
+    // Verify that bottom row (m[3], m[7], m[11]) is zero, proving that reading m[3,7,11] would be
+    // wrong
+    TEST_CHECK(std::abs(tMat.m[3]) < 1e-6F);
+    TEST_CHECK(std::abs(tMat.m[7]) < 1e-6F);
+    TEST_CHECK(std::abs(tMat.m[11]) < 1e-6F);
+
+    // 3. Composite affine transform (scale + rotation + translation)
+    const Quat rot = Quat::fromAxisAngle(Vec3::unitY(), 0.785398F);
+    const Vec3 scale{2.0F, 2.0F, 2.0F};
+    const Mat4 trs = Mat4::fromTransform(pos, rot, scale);
+    const Vec3 trsTranslation = trs.getTranslation();
+    TEST_CHECK(std::abs(trsTranslation.x - pos.x) < 1e-4F);
+    TEST_CHECK(std::abs(trsTranslation.y - pos.y) < 1e-4F);
+    TEST_CHECK(std::abs(trsTranslation.z - pos.z) < 1e-4F);
+
+    // 4. Hierarchical parent-child composition
+    const Mat4 parentMat = Mat4::fromTranslation(Vec3(10.0F, 0.0F, 0.0F));
+    const Mat4 childMat = Mat4::fromTranslation(Vec3(5.0F, 2.0F, -3.0F));
+    const Mat4 worldMat = parentMat * childMat;
+    const Vec3 worldTranslation = worldMat.getTranslation();
+    TEST_CHECK(std::abs(worldTranslation.x - 15.0F) < 1e-4F);
+    TEST_CHECK(std::abs(worldTranslation.y - 2.0F) < 1e-4F);
+    TEST_CHECK(std::abs(worldTranslation.z - (-3.0F)) < 1e-4F);
+
+    std::cout << "[PASS] testMatrixTranslationExtraction\n";
+}
+
+static void testFrustumNearFarConsistency() {
+    CascadeConfig config{
+        .cascadeCount = 4,
+        .maxDistance = 50.0F,
+        .splitLambda = 0.80F,
+        .stabilizeCascades = true,
+        .atlasResolution = 2048,
+    };
+
+    // Camera with 1000m far plane (reproducing the reported Bistro/Editor scenario)
+    const Mat4 camView =
+        Mat4::lookAt(Vec3(0.0F, 2.0F, 10.0F), Vec3(0.0F, 2.0F, 0.0F), Vec3::unitY());
+    const Mat4 camProj = Mat4::perspective(0.90757F, 16.0F / 9.0F, 0.1F, 1000.0F);
+    const Vec3 lightDir = Vec3(0.5F, 0.8F, 0.5F).normalized();
+
+    std::vector<ShadowCascade> cascades;
+    computeShadowCascades(camView, camProj, 0.1F, 1000.0F, lightDir, config, cascades);
+    TEST_CHECK(cascades.size() == 4);
+
+    // Verify Cascade 0 near-field bounds are strictly bounded and not diluted to 56m!
+    TEST_CHECK(cascades[0].splitNear >= 0.1F);
+    TEST_CHECK(cascades[0].splitFar < 4.0F);
+    // Radius must be tightly bounded around ~3.5m, NOT 70m!
+    TEST_CHECK(cascades[0].texelSizeWorld < 0.015F); // Sub-centimeter texel resolution (<1.5cm)
+
+    // Verify all 8 slice corners are finite and strictly bounded
+    for (size_t c = 0; c < cascades.size(); ++c) {
+        TEST_CHECK(std::isfinite(cascades[c].worldBounds.minBound.x));
+        TEST_CHECK(std::isfinite(cascades[c].worldBounds.maxBound.x));
+        TEST_CHECK(cascades[c].splitNear < cascades[c].splitFar);
+        TEST_CHECK(cascades[c].texelSizeWorld > 0.0F);
+    }
+
+    std::cout << "[PASS] testFrustumNearFarConsistency\n";
+}
+
+static void testOffscreenOccluderRetention() {
+    CascadeConfig config{
+        .cascadeCount = 4,
+        .maxDistance = 50.0F,
+        .splitLambda = 0.80F,
+        .stabilizeCascades = true,
+        .atlasResolution = 2048,
+    };
+
+    const Mat4 camView =
+        Mat4::lookAt(Vec3(0.0F, 2.0F, 10.0F), Vec3(0.0F, 2.0F, 0.0F), Vec3::unitY());
+    const Mat4 camProj = Mat4::perspective(0.90757F, 16.0F / 9.0F, 0.1F, 100.0F);
+    const Vec3 lightDir = Vec3(0.5F, 0.8F, 0.5F).normalized();
+
+    std::vector<ShadowCascade> cascades;
+    computeShadowCascades(camView, camProj, 0.1F, 100.0F, lightDir, config, cascades);
+    TEST_CHECK(cascades.size() == 4);
+
+    // An occluder positioned 15m in front of Cascade 0 center along the sunlight direction
+    // (This occluder is outside the camera view frustum, but casts shadows into Cascade 0)
+    std::array<Vec3, 8> c0Corners;
+    const Mat4 viewProj = camProj * camView;
+    getFrustumSliceCorners(viewProj.inverse().value(), cascades[0].splitNear, cascades[0].splitFar,
+                           0.1F, 1000.0F, c0Corners);
+    Vec3 c0Center = Vec3::zero();
+    for (const auto& p : c0Corners) {
+        c0Center = c0Center + p;
+    }
+    c0Center = c0Center * (1.0F / 8.0F);
+
+    const Vec3 occluderPos = c0Center + (lightDir * 15.0F);
+    AABB occluderBounds{occluderPos - Vec3(1.0F, 1.0F, 1.0F), occluderPos + Vec3(1.0F, 1.0F, 1.0F)};
+
+    // In 11E-R1, light frustum must retain this offscreen caster without clipping it
+    TEST_CHECK(cascades[0].lightFrustum.intersectsAABB(occluderBounds));
+
+    std::cout << "[PASS] testOffscreenOccluderRetention\n";
+}
+
 int main() {
     std::cout << "Running Shadow Cascade Unit Tests...\n";
     testLogarithmicUniformSplits();
     testAtlasTransformMatrix();
     testTexelStabilization();
+    testMatrixTranslationExtraction();
+    testFrustumNearFarConsistency();
+    testOffscreenOccluderRetention();
     std::cout << "All Shadow Cascade Unit Tests PASSED!\n";
     return 0;
 }

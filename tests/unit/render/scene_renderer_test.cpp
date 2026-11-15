@@ -888,6 +888,124 @@ static int testSceneRendererShadowCacheInvalidationAndOffscreenCasters() {
     return 0;
 }
 
+static int testStaticDynamicShadowCacheSeparation() {
+    auto deviceRes = rhi::createNullDevice();
+    TEST_CHECK(deviceRes.hasValue());
+    auto device = std::move(deviceRes.value());
+
+    world::World world;
+    registerRenderComponents(world);
+    AssetManager assetManager;
+
+    auto loadRes = assetManager.loadMesh("assets/models/cube.obj");
+    TEST_CHECK(loadRes.hasValue());
+    AssetId cubeId = loadRes.value();
+
+    auto& ecs = world.getRawWorld();
+
+    // Entity 1: Static environment caster
+    auto staticEntity = ecs.entity("StaticBuilding");
+    staticEntity.set<MeshComponent>(MeshComponent{
+        .meshAsset = cubeId,
+        .visible = true,
+        .castShadows = true,
+        .isStatic = true,
+    });
+    staticEntity.set<world::TransformComponent>(world::TransformComponent{
+        Transform(Vec3(0.0F, 0.0F, -5.0F)),
+    });
+
+    // Entity 2: Dynamic moving caster
+    auto dynamicEntity = ecs.entity("DynamicVehicle");
+    dynamicEntity.set<MeshComponent>(MeshComponent{
+        .meshAsset = cubeId,
+        .visible = true,
+        .castShadows = true,
+        .isStatic = false,
+    });
+    dynamicEntity.set<world::TransformComponent>(world::TransformComponent{
+        Transform(Vec3(2.0F, 0.0F, -5.0F)),
+    });
+
+    // Directional light
+    auto lightEntity = ecs.entity("Sun");
+    DirectionalLightComponent sunLight{};
+    sunLight.enabled = true;
+    sunLight.castShadows = true;
+    sunLight.direction = Vec3(0.0F, 1.0F, 0.0F);
+    lightEntity.set<DirectionalLightComponent>(sunLight);
+
+    world::updateHierarchyTransforms(world);
+
+    SceneRenderer renderer;
+    auto initRes = renderer.init(*device, 64, 64);
+    TEST_CHECK(initRes.hasValue());
+
+    constexpr float kPi = 3.14159265358979323846F;
+    Mat4 view =
+        Mat4::lookAt(Vec3(0.0F, 0.0F, 0.0F), Vec3(0.0F, 0.0F, -1.0F), Vec3(0.0F, 1.0F, 0.0F));
+    Mat4 proj = Mat4::perspective(60.0F * (kPi / 180.0F), 1.0F, 0.1F, 50.0F);
+    Mat4 viewProj = proj * view;
+
+    auto renderFrame = [&](RenderStats& outStats) {
+        auto cmdRes = device->createCommandList();
+        TEST_CHECK(cmdRes.hasValue());
+        auto cmd = std::move(cmdRes.value());
+        cmd->begin();
+        outStats = renderer.renderScene(world, assetManager, *device, *cmd, viewProj);
+        cmd->end();
+        TEST_CHECK(device->submit(cmd.get()).hasValue());
+        device->waitIdle();
+        return 0;
+    };
+
+    RenderStats stats{};
+
+    // Frame 1: Initial cold render -> both static and dynamic casters are rendered
+    TEST_CHECK(renderFrame(stats) == 0);
+    const uint32_t totalColdDraws = stats.shadowDrawCalls;
+    TEST_CHECK(totalColdDraws >= 2); // 1 static + 1 dynamic across visible cascades
+    TEST_CHECK(!renderer.isStaticShadowDirty());
+    TEST_CHECK(!renderer.isShadowDirty());
+
+    // Frame 2: Identical stationary frame -> 0 shadow draw calls (full cache hit)
+    TEST_CHECK(renderFrame(stats) == 0);
+    TEST_CHECK(stats.shadowDrawCalls == 0);
+
+    // Frame 3: Move ONLY dynamic entity
+    dynamicEntity.set<world::TransformComponent>(world::TransformComponent{
+        Transform(Vec3(3.0F, 0.0F, -5.0F)),
+    });
+    world::updateHierarchyTransforms(world);
+
+    TEST_CHECK(renderFrame(stats) == 0);
+    // CRITICAL: Static cache must NOT be dirtied when dynamic object moves!
+    TEST_CHECK(!renderer.isStaticShadowDirty());
+    // Only the dynamic caster was rendered across cascades; static caster was reused via
+    // copyTexture!
+    TEST_CHECK(stats.shadowDrawCalls > 0 && stats.shadowDrawCalls < 6);
+    const uint32_t dynamicDraws = stats.shadowDrawCalls;
+    TEST_CHECK(dynamicDraws == 3);
+
+    // Frame 4: Stationary again -> 0 shadow draw calls
+    TEST_CHECK(renderFrame(stats) == 0);
+    TEST_CHECK(stats.shadowDrawCalls == 0);
+
+    // Frame 5: Move static entity -> static cache must be invalidated
+    staticEntity.set<world::TransformComponent>(world::TransformComponent{
+        Transform(Vec3(0.5F, 0.0F, -5.0F)),
+    });
+    world::updateHierarchyTransforms(world);
+
+    TEST_CHECK(renderFrame(stats) == 0);
+    // Both static and dynamic casters re-rendered on static invalidation
+    TEST_CHECK(stats.shadowDrawCalls == totalColdDraws);
+
+    renderer.shutdown();
+    std::cout << "SceneRenderer static vs dynamic shadow cache separation verified!\n";
+    return 0;
+}
+
 int main() {
     std::cout << "Running SceneRenderer Tests...\n";
 
@@ -916,6 +1034,9 @@ int main() {
         return 1;
     }
     if (testSceneRendererShadowCacheInvalidationAndOffscreenCasters() != 0) {
+        return 1;
+    }
+    if (testStaticDynamicShadowCacheSeparation() != 0) {
         return 1;
     }
 
