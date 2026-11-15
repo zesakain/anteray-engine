@@ -121,3 +121,23 @@ Each managed texture asset in `AssetManager` transitions through explicit reside
    - Add descriptor fallback update path upon texture eviction.
    - Add unit test suite in `texture_residency_test.cpp`.
    - Run stress tests and full regression verification.
+
+---
+
+## 5. Corrective Audit & Architectural Refinements (Milestone 11F-R1)
+
+### 5.1 Elimination of `waitIdle()` in Ordinary Texture Eviction
+- **Root Cause**: Early Phase 5 called `device.waitIdle()` directly inside `evictTexture()` and `enforceTextureBudget()` to prevent destroying `VkImage` resources while referenced by in-flight command buffers. While safe, this stalled all GPU queues and introduced frame-time spikes during budget pressure.
+- **Architectural Solution**: RHI submission serial tracking (`getCurrentSubmissionSerial()`, `getCompletedSubmissionSerial()`, `pollCompletedSubmissionSerial()`). Textures are retired into an asynchronous retirement queue (`retiredTextures_`) tagged with the current submission serial. Descriptors are rebound immediately to fallback textures, and actual destruction occurs only once `pollCompletedSubmissionSerial() >= retiredSubmissionSerial`.
+
+### 5.2 Formal Residency Transition Graph & Failure Diagnostics
+- **Root Cause**: In early Phase 5, successful eviction was conflated with the `Failed` terminal state, and failures lacked structured diagnostic information.
+- **Architectural Solution**: Defined a formal unidirectional and bidirectional transition table via `isValidResidencyTransition()`. Introduced `TextureFailureInfo` with `TextureFailureStage` and `TextureFailureReason`, enforcing bounded retry limits (`kMaxRetries = 3`). Successful evictions return cleanly to `Unloaded` or `CpuResident`.
+
+### 5.3 Real Staged Mip Residency vs Hardware Sparse Texturing
+- **Hardware Context**: Full per-mip physical page deallocation without texture reallocation requires Vulkan sparse residency (`VK_IMAGE_CREATE_SPARSE_BINDING_BIT`), which is a Tier 1 hardware capability that cannot be assumed universally on Tier 0 Pascal GPUs.
+- **Architectural Solution**: Implemented real staged mip residency in `AssetManager`. Calling `demoteTextureMips()` box-downsamples the cached host bitmap to allocate a 50% scale coarse texture, retiring the full-resolution texture via the deferred destruction queue and genuinely reducing GPU VRAM allocation by ~75%. `promoteTextureMips()` restores full resolution. When CPU bitmaps are unavailable, it safely falls back to `SamplerCache` LOD clamping.
+
+### 5.4 Screen-Space Refraction RenderGraph Constraint
+- **RenderGraph Constraint**: In `MainPbrPass`, `hdrTarget_` is bound as a color attachment. Sampling `hdrTarget_` while active as a render attachment causes an attachment feedback loop prohibited by Vulkan §14.2.2.
+- **Path Forward**: Analytical Beer-Lambert volume transmission is physically grounded and hazard-free. Full screen-space refraction is explicitly deferred until RenderGraph multi-pass support introduces an intermediate `OpaqueSceneCopyPass`.

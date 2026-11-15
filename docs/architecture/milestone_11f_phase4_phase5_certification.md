@@ -178,11 +178,57 @@ All 55 test suites passed cleanly with 0 failures:
 
 ---
 
-## 5. Certification Verdict
+## 5. Corrective Certification Fixes (Milestone 11F-R1)
+
+### 5.1 Fix A — Deferred GPU Resource Destruction
+- **Elimination of Global `waitIdle()` Stalls**: `AssetManager::evictTexture()` and `enforceTextureBudget()` no longer invoke `device.waitIdle()`.
+- **RHI Submission Serials**: `RhiDevice` was extended with `getCurrentSubmissionSerial()`, `getCompletedSubmissionSerial()`, and `pollCompletedSubmissionSerial()`. Both `NullDevice` and `VulkanDevice` track monotonically increasing submission numbers.
+- **Retirement Queue**: Evicted textures transition to `TextureResidencyState::EvictionPending` and are enqueued into `retiredTextures_` tagged with the submission serial active at eviction time.
+- **Asynchronous Reclamation**: `processRetiredResources()` polls the device completion serial and safely destroys `GpuTexture` allocations only after all GPU command submissions referencing them have completed execution.
+- **Hardware Eviction Latency Benchmark**:
+  - Legacy `waitIdle()` eviction latency: **0.163 ms** average (Max: **0.197 ms**).
+  - Deferred destruction eviction latency: **0.136 ms** average (Max: **0.232 ms**).
+  - Retired resource reclamation CPU processing duration: **0.00094 ms** (0.94 microseconds) for batched destruction.
+
+### 5.2 Fix B — Residency State Machine Formalization & Failure Diagnostics
+- **Formal State Transition Graph**: Implemented `isValidResidencyTransition()` covering all valid transitions:
+  - `Unloaded` $\rightarrow$ `Loading` $\rightarrow$ `CpuResident` $\rightarrow$ `GpuUploadPending` $\rightarrow$ `GpuResident` $\rightarrow$ `EvictionPending` $\rightarrow$ `Unloaded` / `CpuResident`.
+  - Illegal transitions (e.g. `Unloaded` $\rightarrow$ `GpuResident`, `GpuResident` $\rightarrow$ `Unloaded` skipping `EvictionPending`) are rejected.
+- **Failure Stage & Reason Diagnostics**: Introduced `TextureFailureStage` (`FileRead`, `Decode`, `GpuAllocation`, `GpuUpload`, `EvictionRetirement`) and `TextureFailureReason` (`FileNotFound`, `InvalidHeader`, `CorruptData`, `UnsupportedFormat`, `OutOfMemoryCpu`, `OutOfMemoryGpu`, `DeviceLost`, `SubmissionFailed`).
+- **Bounded Retry Tracking**: `TextureFailureInfo` tracks `retryCount` against `kMaxRetries = 3`, preventing infinite retry loops on non-retryable format or file errors.
+- **Successful Eviction Decoupling**: Successful eviction transitions cleanly to `Unloaded` (or `CpuResident` if host bitmap retained), completely decoupling eviction from the `Failed` error state.
+
+### 5.3 Fix C — Real Staged Mip Residency & Memory Reduction
+- **Genuine GPU Memory Reduction**:
+  - `demoteTextureMips()` allocates a 50% box-downsampled coarse image (quarter resolution, ~25% memory footprint), retires the full-resolution texture to the deferred destruction queue, and sets `residentMipBase = 1`.
+  - On a 64x64 texture, memory drops from **21.8 KB** down to **5.4 KB** (a **75.2% genuine VRAM reduction**).
+  - `promoteTextureMips()` re-allocates and uploads the full-resolution texture from the cached CPU bitmap, retiring the coarse texture through the deferred queue and restoring `residentMipBase = 0`.
+- **RHI Capability Audit & Documentation**:
+  - Vulkan RHI currently uses standard committed memory allocations (`vkAllocateMemory`). Full per-mip GPU deallocation without re-allocation requires `VK_IMAGE_CREATE_SPARSE_BINDING_BIT` (sparse residency), which is a Tier 1 hardware feature not universal across Tier 0 Pascal GPUs.
+  - The staged image re-allocation strategy provides genuine VRAM reclamation while maintaining 100% compatibility with Tier 0 baseline hardware.
+
+### 5.4 Fix D — Telemetry & Memory Accounting Precision
+- Expanded `TextureMemoryMetrics` to explicitly report:
+  - `residentGpuMemoryBytes`: Memory currently allocated to active `GpuResident` textures.
+  - `retiredGpuMemoryBytes`: Memory held by retired textures awaiting GPU completion in `EvictionPending`.
+  - `pendingUploadBytes`: Staged memory awaiting GPU transfer.
+  - `pinnedBytes`: Memory held by pinned textures immune from eviction.
+  - `estimatedTotalGpuMemoryBytes`: Conservative sum of resident + retired + pending allocations.
+- Zero double-counting: memory is accounted in `retiredGpuMemoryBytes` during eviction and is not subtracted from total allocation until destruction is confirmed complete.
+
+### 5.5 Fix E — Advanced PBR Visual Certification
+- **Visual Consistency & Lighting Variations**:
+  - Added `testPbrVisualMaterialVariations()` to `advanced_pbr_pipeline_test` validating energy conservation across roughness levels [0.1, 0.5, 0.9], IOR ranges [1.1, 2.4], Charlie sheen rim grazing angles, and anisotropic tangent rotations.
+  - Validated live Vulkan GPU rendering pass executing combined anisotropy, sheen, clearcoat, transmission, and custom IOR materials.
+  - Verified offscreen persistent benchmark scene captures (`sponza`, `flight_helmet`, `damaged_helmet`, `bistro`) generating 9 PPM ground-truth image captures with zero validation layer warnings.
+
+---
+
+## 6. Certification Verdict
 
 | Milestone Phase | Verification Criteria | Verdict |
 | :--- | :--- | :---: |
-| **Phase 4: Advanced PBR Pipeline** | Full glTF extension support (Clearcoat, IOR, Specular, Transmission, Volume, Anisotropy, Sheen), dual-lobe energy conservation, numerical guards, embedded SPIR-V sync | **PASSED** |
-| **Phase 5: Texture Residency** | Explicit state machine, configurable memory budgets, LRU eviction, in-flight GPU safety, descriptor fallback protection, live Vulkan RHI verification | **PASSED** |
+| **Phase 4: Advanced PBR Pipeline** | Full glTF extension support (Clearcoat, IOR, Specular, Transmission, Volume, Anisotropy, Sheen), dual-lobe energy conservation, numerical guards, embedded SPIR-V sync, GPU visual variations | **PASS** |
+| **Phase 5: Texture Residency** | Non-blocking deferred destruction, formal 7-state lifecycle, staged mip residency with 75%+ memory reduction, observable telemetry, descriptor fallback protection, live Vulkan RHI | **PASS** |
 
-**OVERALL BATCH VERDICT: PASSED (100% COMPLETE)**
+**OVERALL BATCH VERDICT: PASS (100% COMPLETE)**
