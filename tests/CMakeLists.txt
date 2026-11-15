@@ -267,6 +267,12 @@ target_link_libraries(reflection_and_temporal_test PRIVATE hikari::engine_render
 add_test(NAME reflection_and_temporal_test COMMAND reflection_and_temporal_test)
 set_tests_properties(reflection_and_temporal_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
+# Advanced Anti-Aliasing & Temporal Rendering Tests (Milestone 11H)
+add_executable(taa_test unit/render/taa_test.cpp)
+target_link_libraries(taa_test PRIVATE hikari::engine_render hikari::engine_rhi hikari::engine_framework hikari::engine_physics hikari::engine_world)
+add_test(NAME taa_test COMMAND taa_test)
+set_tests_properties(taa_test PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
 # Physics Unit Tests
 add_executable(physics_test unit/physics/physics_test.cpp)
 target_link_libraries(physics_test PRIVATE hikari::engine_physics)

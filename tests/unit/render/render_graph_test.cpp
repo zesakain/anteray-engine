@@ -319,6 +319,9 @@ static int testSceneRendererRenderGraphIntegration() {
     // 3. Test dynamically disabling shadow pass alters RenderGraph structure
     GraphicsSettings settings = renderer.getGraphicsSettings();
     settings.shadows.enabled = false;
+    settings.postProcess.enabled = false;
+    settings.quality.antiAliasing = AntiAliasingMode::None;
+    settings.quality.taa.enabled = false;
     auto applyRes = renderer.applyGraphicsSettings(settings);
     TEST_CHECK(applyRes.hasValue());
 

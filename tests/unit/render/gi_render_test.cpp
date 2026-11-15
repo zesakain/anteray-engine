@@ -323,6 +323,8 @@ static int testSsgiColorBleed(RhiDevice& device, SceneRenderer& renderer) {
     // Enable SSGI with HDR post-processing
     GraphicsSettings settingsSsgi = renderer.getGraphicsSettings();
     settingsSsgi.postProcess.enabled = true;
+    settingsSsgi.quality.antiAliasing = AntiAliasingMode::None;
+    settingsSsgi.quality.taa.enabled = false;
     settingsSsgi.lighting.gtaoEnabled = false;
     settingsSsgi.lighting.ssgiEnabled = true;
     settingsSsgi.lighting.giIntensity = 3.0F;
