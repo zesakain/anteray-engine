@@ -1,7 +1,7 @@
 # Hikari Engine — Milestone 11F: Material & Surface Fidelity
 # Phase 2 Certification: Texture Quality, Filtering & Anisotropic Control
 
-**Project:** Hikari Engine (C++20)  
+**Project:** Hikari Machine (C++20)  
 **Milestone:** 11F (Material & Surface Fidelity)  
 **Phase:** Phase 2 (Texture Quality, Filtering & Anisotropic Control)  
 **Certification Status:** **PASSED (100% COMPLETE)**  

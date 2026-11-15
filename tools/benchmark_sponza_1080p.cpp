@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
     }
 
     std::cout << "======================================================================\n";
-    std::cout << "  Hikari Engine | Native 1080p Sponza Benchmark Certification Suite   \n";
+    std::cout << "  Hikari Machine | Native 1080p Sponza Benchmark Certification Suite  \n";
     std::cout << "======================================================================\n\n";
 
     constexpr uint32_t width = 1920;

@@ -1,5 +1,5 @@
 /// @file rmlui_system_backend.cpp
-/// @brief Implementation of RmlUi SystemInterface for Hikari Engine.
+/// @brief Implementation of RmlUi SystemInterface for Hikari Machine.
 
 #include "rmlui_system_backend.h"
 

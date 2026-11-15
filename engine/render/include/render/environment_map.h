@@ -151,7 +151,7 @@ struct BrdfLutData {
 };
 
 /// @enum EnvironmentTimeOfDay
-/// @brief Primary lighting condition and atmospheric state for Hikari Engine scenes.
+/// @brief Primary lighting condition and atmospheric state for Hikari Machine scenes.
 enum class EnvironmentTimeOfDay : uint8_t {
     /// Crisp, natural daylight with rich Rayleigh blue sky, balanced sunlight, and cool skylight
     /// fill.

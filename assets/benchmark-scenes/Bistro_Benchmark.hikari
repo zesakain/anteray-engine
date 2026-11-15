@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "metadata": {
     "name": "Amazon Lumberyard Bistro Benchmark",
-    "generator": "Hikari Engine Benchmark Certification",
+    "generator": "Hikari Machine Benchmark Certification",
     "timestamp": 20261114
   },
   "entities": [

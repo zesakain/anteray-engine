@@ -88,7 +88,7 @@ static bool generateSponza(const std::filesystem::path& outDir) {
 
     framework::SceneMetadata meta{
         .name = "Sponza Benchmark",
-        .generator = "Hikari Engine 10G Benchmark Certification",
+        .generator = "Hikari Machine 10G Benchmark Certification",
         .timestamp = 20261112,
     };
 
@@ -158,7 +158,7 @@ static bool generateFlightHelmet(const std::filesystem::path& outDir) {
 
     framework::SceneMetadata meta{
         .name = "Flight Helmet Benchmark",
-        .generator = "Hikari Engine 10G Benchmark Certification",
+        .generator = "Hikari Machine 10G Benchmark Certification",
         .timestamp = 20261112,
     };
 
@@ -229,7 +229,7 @@ static bool generateDamagedHelmet(const std::filesystem::path& outDir) {
 
     framework::SceneMetadata meta{
         .name = "Damaged Helmet Benchmark",
-        .generator = "Hikari Engine 10G Benchmark Certification",
+        .generator = "Hikari Machine 10G Benchmark Certification",
         .timestamp = 20261112,
     };
 
@@ -340,7 +340,7 @@ static bool generateBistro(const std::filesystem::path& outDir) {
 
     framework::SceneMetadata meta{
         .name = "Amazon Lumberyard Bistro Benchmark",
-        .generator = "Hikari Engine Benchmark Certification",
+        .generator = "Hikari Machine Benchmark Certification",
         .timestamp = 20261114,
     };
 

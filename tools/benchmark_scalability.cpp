@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
     std::filesystem::create_directories(outDir);
 
     std::cout << "======================================================================\n";
-    std::cout << "  Hikari Engine | Milestone 11B: Scalability Benchmark Certification  \n";
+    std::cout << "  Hikari Machine | Milestone 11B: Scalability Benchmark Certification \n";
     std::cout << "======================================================================\n\n";
 
     rhi::VulkanDeviceDesc vkDesc{

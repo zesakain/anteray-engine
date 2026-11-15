@@ -4,7 +4,7 @@
 /// Purpose:
 /// Declares the master GraphicsSettings struct and modular sub-configurations (quality,
 /// lighting, shadows, post-processing, performance, and debug rendering) governing
-/// Hikari Engine's rendering pipeline.
+/// Hikari Machine's rendering pipeline.
 ///
 /// Ownership and Lifetime:
 /// Value types with zero heap allocation in hot path. Safely copyable across rendering,
@@ -185,7 +185,7 @@ struct DebugSettings {
 };
 
 /// @struct GraphicsSettings
-/// @brief Master centralized configuration model for Hikari Engine rendering.
+/// @brief Master centralized configuration model for Hikari Machine rendering.
 struct GraphicsSettings {
     uint32_t version{1};
     QualitySettings quality{};

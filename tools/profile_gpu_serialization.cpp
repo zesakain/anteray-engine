@@ -294,7 +294,7 @@ static WorkloadBenchmarkResult runWorkload(platform::Platform& platform, platfor
 
 int main(int, char**) {
     std::cout << "=========================================================================\n";
-    std::cout << " Hikari Engine: GPU Utilization, Frame Latency & Synchronization Profiler \n";
+    std::cout << " Hikari Machine: GPU Utilization, Frame Latency & Synchronization Profiler\n";
     std::cout << "=========================================================================\n";
 
     platform::PlatformConfig platConfig{.headless = false};
