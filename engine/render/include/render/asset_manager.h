@@ -233,6 +233,18 @@ public:
     /// bandwidth/memory.
     Result<void> demoteTextureMips(AssetId id, rhi::RhiDevice& device) noexcept;
 
+    /// @brief Begins a batch of texture/material uploads, deferring descriptor set rebinding.
+    void beginBatchUpload() noexcept { deferMaterialRebinding_ = true; }
+
+    /// @brief Ends batch upload mode and flushes any pending material descriptor rebinding.
+    void endBatchUpload(rhi::RhiDevice& device) noexcept {
+        deferMaterialRebinding_ = false;
+        if (materialBindingsDirty_) {
+            rebindMaterialTextures(device);
+            materialBindingsDirty_ = false;
+        }
+    }
+
     /// @brief Rebinds all active material descriptor sets to current GPU textures or fallbacks.
     void rebindMaterialTextures(rhi::RhiDevice& device) noexcept;
 
@@ -290,6 +302,8 @@ private:
     TextureMemoryMetrics metrics_{};
     rhi::RhiDevice* device_{nullptr};
     uint64_t currentFrame_{0};
+    bool deferMaterialRebinding_{false};
+    bool materialBindingsDirty_{false};
 };
 
 } // namespace eng::render

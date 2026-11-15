@@ -104,11 +104,10 @@ struct CgltfGuard {
 
 [[nodiscard]] MeshData extractMeshGeometry(const cgltf_data* data, const cgltf_mesh* mesh,
                                            const std::string& meshName,
-                                           std::string_view baseDir = "",
-                                           std::string_view sourcePath = "") {
+                                           const std::vector<Material>& materials) {
     MeshData meshData{};
     meshData.name = meshName;
-    meshData.materials = detail::extractAllMaterials(data, baseDir, sourcePath);
+    meshData.materials = materials;
 
     bool anyMissingNormals = false;
 
@@ -339,6 +338,10 @@ GltfSceneImportResult GltfSceneImporter::importScene(const std::string& filePath
 
     const std::string baseDir = std::filesystem::path(filePath).parent_path().string();
 
+    // Extract all materials once for the entire scene (O(M) instead of O(Meshes * M))
+    const std::vector<Material> allMaterials =
+        detail::extractAllMaterials(parsedData, baseDir, filePath);
+
     // Extract and register all meshes if an AssetManager was supplied
     for (cgltf_size m = 0; m < parsedData->meshes_count; ++m) {
         const auto* mesh = &parsedData->meshes[m];
@@ -346,7 +349,7 @@ GltfSceneImportResult GltfSceneImporter::importScene(const std::string& filePath
                                          ? std::string(mesh->name)
                                          : ("Mesh_" + std::to_string(m));
         const std::string meshUri = filePath + "#mesh_" + std::to_string(m);
-        MeshData meshData = extractMeshGeometry(parsedData, mesh, meshName, baseDir, filePath);
+        MeshData meshData = extractMeshGeometry(parsedData, mesh, meshName, allMaterials);
 
         if (assetManager != nullptr) {
             (void)assetManager->registerMesh(meshUri, std::move(meshData));

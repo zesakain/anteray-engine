@@ -426,7 +426,11 @@ Result<GpuTexture*> AssetManager::uploadTexture(AssetId id, rhi::RhiDevice& devi
     }
 
     updateMemoryMetrics();
-    rebindMaterialTextures(device);
+    if (deferMaterialRebinding_) {
+        materialBindingsDirty_ = true;
+    } else {
+        rebindMaterialTextures(device);
+    }
 
     return Result<GpuTexture*>::success(it->second.gpuTexture.get());
 }
