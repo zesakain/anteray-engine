@@ -198,7 +198,8 @@ float sampleCascadeShadow(int cascadeIdx, vec3 worldPos, float NdotL, float base
     float currentDepth = shadowCoord.z - bias;
 
     uint pcfQuality = (uLighting.shadowPackedParams >> 16u) & 0xFFu;
-    if (pcfQuality == 0u) {
+    bool softShadowsEnabled = (uLighting.cascadeParams.w > 0.5);
+    if (!softShadowsEnabled || pcfQuality == 0u) {
         return texture(uShadowMap, vec3(clamp(shadowCoord.xy, tileMin, tileMax), currentDepth));
     }
 
@@ -239,7 +240,9 @@ float sampleCascadeShadow(int cascadeIdx, vec3 worldPos, float NdotL, float base
 }
 
 float calculateCascadedShadow(vec3 worldPos, float NdotL, float baseBias, vec2 screenPos) {
-    float viewDist = length(uLighting.cameraPosAndAmbientIntensity.xyz - worldPos);
+    vec3 camPos = uLighting.cameraPosAndAmbientIntensity.xyz;
+    vec3 camForward = -normalize(uLighting.invViewProj[2].xyz);
+    float viewDist = max(0.0, dot(worldPos - camPos, camForward));
     int cascadeCount = int(clamp(uLighting.cascadeParams.x, 1.0, 4.0));
     float blendRange = clamp(uLighting.cascadeParams.y, 0.0, 0.30);
 
