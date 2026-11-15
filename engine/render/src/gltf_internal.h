@@ -6,6 +6,7 @@
 #pragma once
 
 #include "core/error.h"
+#include "core/log.h"
 #include "core/result.h"
 #include "render/image.h"
 #include "render/material.h"
@@ -98,6 +99,13 @@ parseTextureInfo(const cgltf_data* data, const cgltf_texture_view& view, std::st
     info.isPresent = true;
     info.colorSpace = colorSpace;
     info.texCoordIndex = view.texcoord;
+    if (info.texCoordIndex > 0) {
+        ENG_LOG_FORMAT(
+            ::eng::LogLevel::Warning, "glTF",
+            "Texture coordinate set %d requested, but vertex format currently supports TEXCOORD_0; "
+            "sampling will use TEXCOORD_0",
+            info.texCoordIndex);
+    }
     info.scale = (view.scale != 0.0F) ? view.scale : 1.0F;
     info.strength = (view.scale != 0.0F) ? view.scale : 1.0F;
     info.sampler = parseSampler(view);
@@ -235,11 +243,60 @@ parseTextureInfo(const cgltf_data* data, const cgltf_texture_view& view, std::st
         mat.alphaMode = AlphaMode::Opaque;
     }
 
-    if (cgMat.has_transmission) {
-        mat.transmissionFactor = cgMat.transmission.transmission_factor;
+    // 1. KHR_materials_clearcoat
+    if (cgMat.has_clearcoat) {
+        mat.clearcoat.factor = cgMat.clearcoat.clearcoat_factor;
+        mat.clearcoat.roughnessFactor = cgMat.clearcoat.clearcoat_roughness_factor;
+        mat.clearcoat.texture = parseTextureInfo(data, cgMat.clearcoat.clearcoat_texture, baseDir,
+                                                 TextureColorSpace::Linear, sourcePath);
+        mat.clearcoat.roughnessTexture =
+            parseTextureInfo(data, cgMat.clearcoat.clearcoat_roughness_texture, baseDir,
+                             TextureColorSpace::Linear, sourcePath);
+        mat.clearcoat.normalTexture =
+            parseTextureInfo(data, cgMat.clearcoat.clearcoat_normal_texture, baseDir,
+                             TextureColorSpace::Linear, sourcePath);
+        if (mat.clearcoat.normalTexture.isPresent &&
+            cgMat.clearcoat.clearcoat_normal_texture.scale != 0.0F) {
+            mat.clearcoat.normalTexture.scale = cgMat.clearcoat.clearcoat_normal_texture.scale;
+        }
     }
+
+    // 2. KHR_materials_transmission
+    if (cgMat.has_transmission) {
+        mat.transmission.factor = cgMat.transmission.transmission_factor;
+        mat.transmissionFactor = mat.transmission.factor;
+        mat.transmission.texture = parseTextureInfo(data, cgMat.transmission.transmission_texture,
+                                                    baseDir, TextureColorSpace::Linear, sourcePath);
+    }
+
+    // 3. KHR_materials_volume
+    if (cgMat.has_volume) {
+        mat.volume.thicknessFactor = cgMat.volume.thickness_factor;
+        mat.volume.thicknessTexture = parseTextureInfo(
+            data, cgMat.volume.thickness_texture, baseDir, TextureColorSpace::Linear, sourcePath);
+        mat.volume.attenuationDistance =
+            (cgMat.volume.attenuation_distance > 0.0F) ? cgMat.volume.attenuation_distance : 1e9F;
+        mat.volume.attenuationColor =
+            Vec3{cgMat.volume.attenuation_color[0], cgMat.volume.attenuation_color[1],
+                 cgMat.volume.attenuation_color[2]};
+    }
+
+    // 4. KHR_materials_ior
     if (cgMat.has_ior) {
-        mat.ior = cgMat.ior.ior;
+        mat.iorExt.ior = cgMat.ior.ior;
+        mat.ior = mat.iorExt.ior;
+    }
+
+    // 5. KHR_materials_specular
+    if (cgMat.has_specular) {
+        mat.specular.factor = cgMat.specular.specular_factor;
+        mat.specular.texture = parseTextureInfo(data, cgMat.specular.specular_texture, baseDir,
+                                                TextureColorSpace::Linear, sourcePath);
+        mat.specular.colorFactor =
+            Vec3{cgMat.specular.specular_color_factor[0], cgMat.specular.specular_color_factor[1],
+                 cgMat.specular.specular_color_factor[2]};
+        mat.specular.colorTexture = parseTextureInfo(data, cgMat.specular.specular_color_texture,
+                                                     baseDir, TextureColorSpace::sRGB, sourcePath);
     }
 
     return mat;
