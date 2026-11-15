@@ -105,17 +105,21 @@ Result<std::unique_ptr<GpuMaterial>> GpuMaterial::create(rhi::RhiDevice& device,
         if (info.isPresent && !info.uri.empty()) {
             AssetId texId = info.textureAsset;
             if (!assetManager.isLoaded(texId)) {
-                auto loadRes =
-                    assetManager.loadTexture(info.uri, info.colorSpace == TextureColorSpace::sRGB);
-                if (loadRes.hasValue()) {
-                    texId = loadRes.value();
+                if (!assetManager.isFailed(texId)) {
+                    auto loadRes = assetManager.loadTexture(info.uri, info.colorSpace ==
+                                                                          TextureColorSpace::sRGB);
+                    if (loadRes.hasValue()) {
+                        texId = loadRes.value();
+                    }
                 }
             }
-            rhi::SamplerDesc smp = toRhiSamplerDesc(info.sampler);
-            auto upRes = assetManager.uploadTexture(texId, device, true, &smp);
-            if (upRes.hasValue() && upRes.value() != nullptr && upRes.value()->isValid()) {
-                outHasTex = 1u;
-                return {upRes.value()->getTexture(), upRes.value()->getSampler()};
+            if (assetManager.isLoaded(texId)) {
+                rhi::SamplerDesc smp = toRhiSamplerDesc(info.sampler);
+                auto upRes = assetManager.uploadTexture(texId, device, true, &smp);
+                if (upRes.hasValue() && upRes.value() != nullptr && upRes.value()->isValid()) {
+                    outHasTex = 1u;
+                    return {upRes.value()->getTexture(), upRes.value()->getSampler()};
+                }
             }
         }
         outHasTex = 0u;

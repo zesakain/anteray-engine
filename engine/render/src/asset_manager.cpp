@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 
 namespace eng::render {
 
@@ -35,6 +36,11 @@ AssetManager::~AssetManager() noexcept {
 
 Result<AssetId> AssetManager::loadMesh(std::string_view path) {
     const std::string normPath = normalizePath(path);
+
+    auto failIt = failedPaths_.find(normPath);
+    if (failIt != failedPaths_.end()) {
+        return Result<AssetId>::failure(Error(ErrorCode::EntityNotFound, failIt->second));
+    }
 
     auto pathIt = pathToId_.find(normPath);
     if (pathIt != pathToId_.end()) {
@@ -84,7 +90,11 @@ Result<AssetId> AssetManager::loadMesh(std::string_view path) {
     }
 
     if (!importRes.hasValue()) {
-        ENG_LOG_WARN("AssetManager", "Failed to load mesh from path");
+        const std::string errMsg = "Failed to load mesh from path: " + normPath;
+        ENG_LOG_WARN("AssetManager", errMsg);
+        const AssetId id = makeAssetIdFromPath(normPath);
+        failedIds_.insert(id);
+        failedPaths_[normPath] = errMsg;
         return importRes.error();
     }
 
@@ -101,7 +111,7 @@ Result<AssetId> AssetManager::loadMesh(std::string_view path) {
     pathToId_[normPath] = id;
     meshEntries_[id] = std::move(entry);
 
-    ENG_LOG_INFO("AssetManager", "Loaded mesh asset successfully");
+    ENG_LOG_INFO("AssetManager", "Loaded mesh asset successfully: " + normPath);
 
     return Result<AssetId>::success(id);
 }
@@ -131,9 +141,9 @@ Result<AssetId> AssetManager::registerMesh(std::string_view path, MeshData mesh)
 
 Result<GpuMesh*> AssetManager::uploadMesh(AssetId id, rhi::RhiDevice& device) {
     auto it = meshEntries_.find(id);
-    if (it == meshEntries_.end()) {
+    if (it == meshEntries_.end() || it->second.metadata.loadState != AssetLoadState::Loaded) {
         return Error{.code = ErrorCode::InvalidArgument,
-                     .message = "Asset not found in AssetManager"};
+                     .message = "Mesh asset not loaded in AssetManager"};
     }
 
     if (it->second.gpuMesh != nullptr) {
@@ -142,7 +152,8 @@ Result<GpuMesh*> AssetManager::uploadMesh(AssetId id, rhi::RhiDevice& device) {
 
     auto gpuRes = GpuMesh::create(device, it->second.cpuMesh);
     if (!gpuRes.hasValue()) {
-        ENG_LOG_ERROR("AssetManager", "Failed to create GPU mesh for asset");
+        ENG_LOG_ERROR("AssetManager",
+                      "Failed to create GPU mesh for asset: " + it->second.metadata.path);
         return gpuRes.error();
     }
 
@@ -263,6 +274,11 @@ Result<AssetId> AssetManager::loadTexture(std::string_view path, bool srgb) {
                                      ? normPath
                                      : (normPath + colorSuffix);
 
+    auto failIt = failedPaths_.find(cacheKey);
+    if (failIt != failedPaths_.end()) {
+        return Result<AssetId>::failure(Error(ErrorCode::EntityNotFound, failIt->second));
+    }
+
     auto pathIt = pathToId_.find(cacheKey);
     if (pathIt != pathToId_.end()) {
         auto entryIt = textureEntries_.find(pathIt->second);
@@ -287,11 +303,25 @@ Result<AssetId> AssetManager::loadTexture(std::string_view path, bool srgb) {
         } else if (filePath.ends_with("#linear")) {
             filePath = filePath.substr(0, filePath.size() - 7);
         }
+        if (!std::filesystem::exists(filePath)) {
+            const std::string errMsg = "Texture file not found on disk: " + filePath;
+            ENG_LOG_WARN("AssetManager", errMsg);
+            const AssetId id = makeAssetIdFromPath(cacheKey);
+            failedIds_.insert(id);
+            failedPaths_[cacheKey] = errMsg;
+            failedPaths_[normPath] = errMsg;
+            return Result<AssetId>::failure(Error(ErrorCode::EntityNotFound, errMsg));
+        }
         decodeRes = ImageDecoder::decodeFromFile(filePath, 4, srgb);
     }
 
     if (!decodeRes.hasValue()) {
-        ENG_LOG_WARN("AssetManager", "Failed to decode image from path");
+        const std::string errMsg = "Failed to decode image from path: " + normPath;
+        ENG_LOG_WARN("AssetManager", errMsg);
+        const AssetId id = makeAssetIdFromPath(cacheKey);
+        failedIds_.insert(id);
+        failedPaths_[cacheKey] = errMsg;
+        failedPaths_[normPath] = errMsg;
         return decodeRes.error();
     }
 
@@ -312,7 +342,7 @@ Result<AssetId> AssetManager::loadTexture(std::string_view path, bool srgb) {
     }
     textureEntries_[id] = std::move(entry);
 
-    ENG_LOG_INFO("AssetManager", "Loaded texture asset successfully");
+    ENG_LOG_INFO("AssetManager", "Loaded texture asset successfully: " + normPath);
     return Result<AssetId>::success(id);
 }
 
@@ -353,9 +383,9 @@ Result<GpuTexture*> AssetManager::uploadTexture(AssetId id, rhi::RhiDevice& devi
                                                 bool generateMips,
                                                 const rhi::SamplerDesc* samplerDesc) {
     auto it = textureEntries_.find(id);
-    if (it == textureEntries_.end()) {
+    if (it == textureEntries_.end() || it->second.metadata.loadState != AssetLoadState::Loaded) {
         return Error{.code = ErrorCode::InvalidArgument,
-                     .message = "Texture asset not found in AssetManager"};
+                     .message = "Texture asset not loaded in AssetManager"};
     }
 
     if (it->second.gpuTexture != nullptr) {
@@ -364,7 +394,8 @@ Result<GpuTexture*> AssetManager::uploadTexture(AssetId id, rhi::RhiDevice& devi
 
     auto gpuRes = GpuTexture::create(device, it->second.cpuImage, generateMips, samplerDesc);
     if (!gpuRes.hasValue()) {
-        ENG_LOG_ERROR("AssetManager", "Failed to create GPU texture for asset");
+        ENG_LOG_ERROR("AssetManager",
+                      "Failed to create GPU texture for asset: " + it->second.metadata.path);
         return gpuRes.error();
     }
 
@@ -500,7 +531,12 @@ bool AssetManager::isLoaded(AssetId id) const noexcept {
            itTex->second.metadata.loadState == AssetLoadState::Loaded;
 }
 
+bool AssetManager::isFailed(AssetId id) const noexcept {
+    return failedIds_.find(id) != failedIds_.end();
+}
+
 void AssetManager::unload(AssetId id) noexcept {
+    failedIds_.erase(id);
     auto it = meshEntries_.find(id);
     if (it != meshEntries_.end()) {
         pathToId_.erase(it->second.metadata.path);
@@ -534,6 +570,8 @@ void AssetManager::unloadAll() noexcept {
     pathToId_.clear();
     meshEntries_.clear();
     textureEntries_.clear();
+    failedIds_.clear();
+    failedPaths_.clear();
 }
 
 std::vector<AssetMetadata> AssetManager::getAllMetadata() const {

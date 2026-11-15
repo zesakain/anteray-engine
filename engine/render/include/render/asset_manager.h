@@ -31,6 +31,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace eng::render {
@@ -158,6 +159,9 @@ public:
     /// @brief Checks whether the specified asset is loaded in CPU memory.
     [[nodiscard]] bool isLoaded(AssetId id) const noexcept;
 
+    /// @brief Checks whether the specified asset previously failed to load.
+    [[nodiscard]] bool isFailed(AssetId id) const noexcept;
+
     /// @brief Unloads CPU and GPU data for a specific asset.
     void unload(AssetId id) noexcept;
 
@@ -184,6 +188,8 @@ private:
     std::unordered_map<AssetId, MeshEntry> meshEntries_{};
     std::unordered_map<AssetId, TextureEntry> textureEntries_{};
     std::unordered_map<std::string, AssetId> pathToId_{};
+    std::unordered_set<AssetId> failedIds_{};
+    std::unordered_map<std::string, std::string> failedPaths_{};
     std::unordered_map<DefaultTextureType, std::unique_ptr<GpuTexture>> defaultTextures_{};
     std::unique_ptr<GpuMaterial> defaultMaterial_{nullptr};
 };
