@@ -116,6 +116,23 @@ struct MeshData {
     /// Computes tangent vectors and handedness (+1/-1) from vertex positions, normals, and UVs.
     void generateTangents() noexcept;
 
+    /// Computes tangent vectors and handedness for a contiguous submesh index and vertex range.
+    ///
+    /// Purpose:
+    /// Generates orthonormal tangent vectors for a subset of vertices and triangles (e.g.
+    /// primitives lacking tangents in glTF assets) while preserving valid imported tangents on
+    /// other primitives.
+    ///
+    /// Contract:
+    /// Precondition: firstIndex + indexCount <= indices.size(), vertexBase + vertexCount <=
+    /// vertices.size(). Postcondition: vertices in [vertexBase, vertexBase + vertexCount) have
+    /// finite unit tangents.
+    ///
+    /// Cost:
+    /// Allocates temporary accumulator vectors proportional to vertexCount; not for hot path.
+    void generateTangentsForRange(uint32_t firstIndex, uint32_t indexCount, uint32_t vertexBase,
+                                  uint32_t vertexCount) noexcept;
+
     /// Clears all vertices, indices, submeshes, and materials.
     void clear() noexcept {
         vertices.clear();
