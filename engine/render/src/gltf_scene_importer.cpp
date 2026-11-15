@@ -111,7 +111,6 @@ struct CgltfGuard {
     meshData.materials = detail::extractAllMaterials(data, baseDir, sourcePath);
 
     bool anyMissingNormals = false;
-    bool anyMissingTangents = false;
 
     for (cgltf_size pIdx = 0; pIdx < mesh->primitives_count; ++pIdx) {
         const auto& prim = mesh->primitives[pIdx];
@@ -154,9 +153,6 @@ struct CgltfGuard {
 
         if (normAttr == nullptr) {
             anyMissingNormals = true;
-        }
-        if (tanAttr == nullptr) {
-            anyMissingTangents = true;
         }
 
         for (size_t v = 0; v < vertCount; ++v) {
@@ -225,14 +221,16 @@ struct CgltfGuard {
         } else {
             submesh.materialIndex = 0;
         }
+        if (tanAttr == nullptr && submesh.indexCount >= 3) {
+            meshData.generateTangentsForRange(submesh.firstIndex, submesh.indexCount, vertexBase,
+                                              static_cast<uint32_t>(vertCount));
+        }
+
         meshData.submeshes.push_back(std::move(submesh));
     }
 
     if (anyMissingNormals && !meshData.indices.empty()) {
         meshData.generateNormals();
-    }
-    if (anyMissingTangents && !meshData.indices.empty()) {
-        meshData.generateTangents();
     }
     meshData.recalculateBounds();
 

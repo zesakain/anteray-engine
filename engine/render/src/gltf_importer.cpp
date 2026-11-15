@@ -168,7 +168,6 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
 
     // 3. Process Primitives and Geometry
     bool anyMissingNormals = false;
-    bool anyMissingTangents = false;
 
     for (const auto& inst : meshInstances) {
         const auto* mesh = inst.mesh;
@@ -222,9 +221,6 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
 
             if (normAttr == nullptr) {
                 anyMissingNormals = true;
-            }
-            if (tanAttr == nullptr) {
-                anyMissingTangents = true;
             }
 
             for (size_t v = 0; v < vertCount; ++v) {
@@ -350,15 +346,18 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
 
             submesh.indexCount =
                 static_cast<uint32_t>(meshData.indices.size() - submesh.firstIndex);
+
+            if (tanAttr == nullptr && submesh.indexCount >= 3) {
+                meshData.generateTangentsForRange(submesh.firstIndex, submesh.indexCount,
+                                                  vertexBase, static_cast<uint32_t>(vertCount));
+            }
+
             meshData.submeshes.push_back(std::move(submesh));
         }
     }
 
     if (anyMissingNormals) {
         meshData.generateNormals();
-    }
-    if (anyMissingTangents) {
-        meshData.generateTangents();
     }
 
     meshData.recalculateBounds();
