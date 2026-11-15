@@ -3,6 +3,7 @@
 # Framework module providing Mode interfaces and Two-State Conductor execution runtime.
 
 add_library(engine_framework STATIC
+    src/async_scene_loader.cpp
     src/conductor.cpp
     src/runtime_session.cpp
     src/scene.cpp
