@@ -282,7 +282,8 @@ GraphicsSettings::computeChangeSeverity(const GraphicsSettings& other) const noe
         return SettingChangeSeverity::PipelineRecompilation;
     }
 
-    // Resource allocation required if shadow resolution, cascade count, render scale, or HDR target changed
+    // Resource allocation required if shadow resolution, cascade count, render scale, or HDR target
+    // changed
     if (shadows.resolution != other.shadows.resolution ||
         shadows.cascadeCount != other.shadows.cascadeCount ||
         std::abs(quality.renderScale - other.quality.renderScale) > 1e-4F ||
