@@ -36,7 +36,8 @@ public:
         return Result<void>::success();
     }
 
-    [[nodiscard]] Result<PreparationStatus> prepare(world::World&, const Budget&) override {
+    [[nodiscard]] Result<PreparationStatus> prepare(const world::ReadOnlyWorld&, StateContext&,
+                                                    const Budget&) override {
         return PreparationStatus::Ready;
     }
 

@@ -59,8 +59,8 @@ public:
 
     [[nodiscard]] Result<void> exit(world::World&) override { return Result<void>::success(); }
 
-    [[nodiscard]] Result<framework::PreparationStatus> prepare(world::World&,
-                                                               const Budget&) override {
+    [[nodiscard]] Result<framework::PreparationStatus>
+    prepare(const world::ReadOnlyWorld&, framework::StateContext&, const Budget&) override {
         return framework::PreparationStatus::Ready;
     }
 

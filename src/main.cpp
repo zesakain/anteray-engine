@@ -71,9 +71,9 @@ public:
         return Result<void>::success();
     }
 
-    [[nodiscard]] Result<framework::PreparationStatus> prepare(world::World& /*world*/,
-                                                               const Budget& /*budget*/
-                                                               ) override {
+    [[nodiscard]] Result<framework::PreparationStatus>
+    prepare(const world::ReadOnlyWorld& /*world*/, framework::StateContext& /*standbyContext*/,
+            const Budget& /*budget*/) override {
         // Speculatively prepares entry state for State A
         return framework::PreparationStatus::Ready;
     }
@@ -107,9 +107,9 @@ public:
         return Result<void>::success();
     }
 
-    [[nodiscard]] Result<framework::PreparationStatus> prepare(world::World& /*world*/,
-                                                               const Budget& /*budget*/
-                                                               ) override {
+    [[nodiscard]] Result<framework::PreparationStatus>
+    prepare(const world::ReadOnlyWorld& /*world*/, framework::StateContext& /*standbyContext*/,
+            const Budget& /*budget*/) override {
         // Standby preparation: speculatively prepares entry state for State B
         return framework::PreparationStatus::Ready;
     }

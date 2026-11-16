@@ -60,7 +60,8 @@ public:
         return Result<void>::success();
     }
 
-    [[nodiscard]] Result<PreparationStatus> prepare(World& /*world*/,
+    [[nodiscard]] Result<PreparationStatus> prepare(const ReadOnlyWorld& /*world*/,
+                                                    StateContext& /*standbyContext*/,
                                                     const Budget& /*budget*/) override {
         // Standby preparation is fast and ready immediately
         return PreparationStatus::Ready;

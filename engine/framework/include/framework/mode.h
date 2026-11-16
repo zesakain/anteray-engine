@@ -22,6 +22,8 @@
 
 #include "core/result.h"
 #include "core/time.h"
+#include "framework/state_context.h"
+#include "world/read_only_world.h"
 #include "world/world.h"
 
 #include <string_view>
@@ -73,12 +75,15 @@ public:
     ///
     /// Invariants:
     /// - Must yield immediately when budget.isExhausted() evaluates to true.
-    /// - Output is a speculative cache; must never mutate active shared world components directly.
+    /// - Output is a speculative cache stored in standbyContext; must never mutate active shared
+    ///   world components directly.
     ///
-    /// @param world Reference to the shared simulation World.
+    /// @param world Read-only view of the shared simulation World.
+    /// @param standbyContext Mutable StateContext for the standby slot's speculative cache.
     /// @param budget Execution time budget allotted for this frame.
     /// @return PreparationStatus indicating InProgress, Ready, or Failed.
-    [[nodiscard]] virtual Result<PreparationStatus> prepare(world::World& world,
+    [[nodiscard]] virtual Result<PreparationStatus> prepare(const world::ReadOnlyWorld& world,
+                                                            StateContext& standbyContext,
                                                             const Budget& budget) = 0;
 
     /// Validates the speculative cache and installs mode-specific state into the shared world.

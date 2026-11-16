@@ -113,7 +113,8 @@ void Conductor::update(Duration realDelta) {
     // 6. Incremental standby preparation
     if (state_ == ConductorState::Preparing) {
         const auto budget = Budget::fromMicroseconds(config_.prepareBudgetUs);
-        auto prepRes = getStandbyMode().prepare(world_, budget);
+        const world::ReadOnlyWorld roWorld(world_);
+        auto prepRes = getStandbyMode().prepare(roWorld, getStandbyStateContext(), budget);
         if (prepRes.hasValue()) {
             if (prepRes.value() == PreparationStatus::Ready) {
                 state_ = ConductorState::Prepared;

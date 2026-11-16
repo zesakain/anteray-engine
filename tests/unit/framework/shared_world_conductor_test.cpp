@@ -62,9 +62,10 @@ public:
         return Result<void>::success();
     }
 
-    [[nodiscard]] Result<PreparationStatus> prepare(World& world,
+    [[nodiscard]] Result<PreparationStatus> prepare(const ReadOnlyWorld& world,
+                                                    StateContext& /*standbyContext*/,
                                                     const Budget& /*budget*/) override {
-        lastObservedWorld_ = &world;
+        lastObservedInstanceId_ = world.getInstanceId();
         ++prepareCount;
         if (failPreparation) {
             return PreparationStatus::Failed;
@@ -88,6 +89,7 @@ public:
 
     std::string_view name_;
     const World* lastObservedWorld_{nullptr};
+    uint64_t lastObservedInstanceId_{0};
     uint32_t enterCount{0};
     uint32_t updateCount{0};
     uint32_t exitCount{0};

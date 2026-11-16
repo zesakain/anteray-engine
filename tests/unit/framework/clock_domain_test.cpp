@@ -29,7 +29,8 @@ public:
     [[nodiscard]] Result<void> enter(World& /*world*/) override { return Result<void>::success(); }
     void update(World& /*world*/, Duration /*delta*/) override {}
     [[nodiscard]] Result<void> exit(World& /*world*/) override { return Result<void>::success(); }
-    [[nodiscard]] Result<PreparationStatus> prepare(World& /*world*/,
+    [[nodiscard]] Result<PreparationStatus> prepare(const ReadOnlyWorld& /*world*/,
+                                                    StateContext& /*standbyContext*/,
                                                     const Budget& /*budget*/) override {
         return PreparationStatus::Ready;
     }
