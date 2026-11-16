@@ -2411,6 +2411,21 @@ void SceneRenderer::renderCasters(rhi::RhiCommandList& cmdList,
             lightFrustum = cascade.lightFrustum;
         }
 
+        // In far cascades (cIdx >= 1), skip sub-texel shadow casters whose world AABB
+        // diagonal is smaller than 2 shadow texels, avoiding thousands of invisible draw calls.
+        float minCasterSizeSq = 0.0F;
+        if (cIdx >= 1 && vpW > 0.0F) {
+            const float scaleX =
+                std::sqrt(cascadeVp.m[0] * cascadeVp.m[0] + cascadeVp.m[1] * cascadeVp.m[1] +
+                          cascadeVp.m[2] * cascadeVp.m[2]);
+            if (scaleX > 1e-6F) {
+                const float worldSpan = 2.0F / scaleX;
+                const float texelWorldSize = worldSpan / vpW;
+                const float minDiag = texelWorldSize * 2.0F;
+                minCasterSizeSq = minDiag * minDiag;
+            }
+        }
+
         cmdList.setViewport(vpX, vpY, vpW, vpH);
         cmdList.setScissor(static_cast<int32_t>(vpX), static_cast<int32_t>(vpY),
                            static_cast<uint32_t>(vpW), static_cast<uint32_t>(vpH));
@@ -2421,6 +2436,13 @@ void SceneRenderer::renderCasters(rhi::RhiCommandList& cmdList,
         Mat4 lastMvp{};
 
         for (const auto& caster : casters) {
+            if (minCasterSizeSq > 0.0F) {
+                const Vec3 ext = caster.worldBounds.maxBound - caster.worldBounds.minBound;
+                if (ext.lengthSq() < minCasterSizeSq) {
+                    lastRenderStats_.culledPrimitives++;
+                    continue;
+                }
+            }
             if (applyLightCulling) {
                 if (!lightFrustum.intersectsAABB(caster.worldBounds)) {
                     lastRenderStats_.culledPrimitives++;
@@ -2632,167 +2654,232 @@ void SceneRenderer::collectVisibleMeshes() {
         settings_.performance.frustumCulling && !currentViewProj_.isNearlyEqual(Mat4::identity());
     const Frustum cameraFrustum = Frustum::fromViewProjection(currentViewProj_);
 
-    visibleItems_.clear();
     auto& ecs = currentWorld_->getRawWorld();
-    ecs.each<const MeshComponent>([&](flecs::entity e, const MeshComponent& meshComp) {
-        if (!meshComp.visible) {
-            lastRenderStats_.culledPrimitives++;
-            return;
-        }
+    const uint64_t currentTransformVersion = currentWorld_->getTransformVersion();
+    const uint64_t currentWorldInstanceId = currentWorld_->getInstanceId();
+    const uint64_t currentWorldGen = currentWorld_->getSceneGeneration();
+    const int32_t currentMeshCount = ecs.count<MeshComponent>();
 
-        AssetId meshId = meshComp.meshAsset;
-        if ((!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) &&
-            !meshComp.assetPath.empty()) {
-            meshId = currentAssetManager_->findAssetByPath(meshComp.assetPath);
-            if (!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) {
-                auto loadRes = currentAssetManager_->loadMesh(meshComp.assetPath);
-                if (loadRes.hasValue()) {
-                    meshId = loadRes.value();
-                }
-            }
-        }
+    // Fast contiguous scan over MeshComponent to detect visibility/meshAsset/submesh edits
+    // without touching transforms, AssetManager maps, or AABB transforms.
+    uint64_t currentStateHash = 14695981039346656037ULL;
+    ecs.each<const MeshComponent>([&](flecs::entity e, const MeshComponent& mc) {
+        uint64_t h = static_cast<uint64_t>(e.id());
+        h ^= (static_cast<uint64_t>(mc.visible ? 1U : 0U) << 56);
+        h ^= mc.meshAsset.value() * 11400714819323198485ULL;
+        h ^= static_cast<uint64_t>(mc.submeshIndex) * 1099511628211ULL;
+        currentStateHash ^= h * 16777619ULL;
+    });
 
-        if (!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) {
-            lastRenderStats_.culledPrimitives++;
-            return;
-        }
+    const bool cacheHit = cachedSceneValid_ && cachedSceneWorld_ == currentWorld_ &&
+                          cachedSceneWorldInstanceId_ == currentWorldInstanceId &&
+                          cachedSceneWorldGen_ == currentWorldGen &&
+                          cachedSceneAssetManager_ == currentAssetManager_ &&
+                          cachedSceneTransformVersion_ == currentTransformVersion &&
+                          cachedSceneMeshCount_ == currentMeshCount &&
+                          cachedSceneStateHash_ == currentStateHash &&
+                          prevEntityTransforms_.empty();
 
-        GpuMesh* gpuMesh = currentAssetManager_->getGpuMesh(meshId);
-        if (gpuMesh == nullptr) {
-            auto uploadRes = currentAssetManager_->uploadMesh(meshId, *currentDevice_);
-            if (uploadRes.hasValue()) {
-                gpuMesh = uploadRes.value();
-            }
-        }
+    visibleItems_.clear();
 
-        if (gpuMesh == nullptr || !gpuMesh->isValid()) {
-            lastRenderStats_.culledPrimitives++;
-            return;
-        }
+    if (!cacheHit) {
+        cachedSceneItems_.clear();
+        bool allAssetsReady = true;
+        uint32_t resolvedMeshes = 0;
 
-        Mat4 model = Mat4::identity();
-        if (const auto* wt = e.get<world::WorldTransformComponent>()) {
-            model = wt->worldMatrix;
-        } else if (const auto* tc = e.get<world::TransformComponent>()) {
-            model = tc->transform.toMatrix();
-        } else if (const auto* ptc = e.get<physics::PhysicsTransformComponent>()) {
-            model = ptc->transform.toMatrix();
-        }
-
-        const AABB localBounds = (meshComp.submeshIndex < gpuMesh->getSubmeshes().size())
-                                     ? gpuMesh->getSubmeshes()[meshComp.submeshIndex].bounds
-                                     : gpuMesh->getBounds();
-        const AABB worldBounds = localBounds.transform(model);
-
-        if (applyCameraCulling) {
-            if (!cameraFrustum.intersectsAABB(worldBounds)) {
-                lastRenderStats_.culledPrimitives++;
+        ecs.each<const MeshComponent>([&](flecs::entity e, const MeshComponent& meshComp) {
+            if (!meshComp.visible) {
                 return;
             }
+
+            AssetId meshId = meshComp.meshAsset;
+            if ((!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) &&
+                !meshComp.assetPath.empty()) {
+                meshId = currentAssetManager_->findAssetByPath(meshComp.assetPath);
+                if (!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) {
+                    auto loadRes = currentAssetManager_->loadMesh(meshComp.assetPath);
+                    if (loadRes.hasValue()) {
+                        meshId = loadRes.value();
+                    }
+                }
+            }
+
+            if (!meshId.isValid() || !currentAssetManager_->isLoaded(meshId)) {
+                allAssetsReady = false;
+                return;
+            }
+
+            GpuMesh* gpuMesh = currentAssetManager_->getGpuMesh(meshId);
+            if (gpuMesh == nullptr) {
+                auto uploadRes = currentAssetManager_->uploadMesh(meshId, *currentDevice_);
+                if (uploadRes.hasValue()) {
+                    gpuMesh = uploadRes.value();
+                }
+            }
+
+            if (gpuMesh == nullptr || !gpuMesh->isValid()) {
+                allAssetsReady = false;
+                return;
+            }
+
+            Mat4 model = Mat4::identity();
+            if (const auto* wt = e.get<world::WorldTransformComponent>()) {
+                model = wt->worldMatrix;
+            } else if (const auto* tc = e.get<world::TransformComponent>()) {
+                model = tc->transform.toMatrix();
+            } else if (const auto* ptc = e.get<physics::PhysicsTransformComponent>()) {
+                model = ptc->transform.toMatrix();
+            }
+
+            const AABB localBounds = (meshComp.submeshIndex < gpuMesh->getSubmeshes().size())
+                                         ? gpuMesh->getSubmeshes()[meshComp.submeshIndex].bounds
+                                         : gpuMesh->getBounds();
+            const AABB worldBounds = localBounds.transform(model);
+
+            auto resolveMaterial =
+                [&](uint32_t matIndex) -> std::tuple<rhi::DescriptorSetHandle, bool, bool, bool> {
+                if (pipelineLayout_.isValid() && materialDescriptorSetLayout_.isValid()) {
+                    GpuMaterial* mat = currentAssetManager_->getGpuMaterial(meshId, matIndex);
+                    if (mat == nullptr) {
+                        auto upMat = currentAssetManager_->uploadMaterial(
+                            meshId, matIndex, *currentDevice_, materialDescriptorSetLayout_);
+                        if (upMat.hasValue()) {
+                            mat = upMat.value();
+                        } else {
+                            auto defMat = currentAssetManager_->getOrCreateDefaultMaterial(
+                                *currentDevice_, materialDescriptorSetLayout_);
+                            if (defMat.hasValue()) {
+                                mat = defMat.value();
+                            }
+                        }
+                    }
+                    if (mat != nullptr && mat->isValid()) {
+                        const auto& u = mat->getUniformData();
+                        const bool isMasked = (u.alphaMode == 1);
+                        const bool isDoubleSided = (u.doubleSided != 0);
+                        const bool isTransparent =
+                            (u.alphaMode == 2) || (u.transmissionFactor > 0.0F);
+                        return {mat->getDescriptorSet(), isMasked, isDoubleSided, isTransparent};
+                    }
+                }
+                allAssetsReady = false;
+                return {{}, false, false, false};
+            };
+
+            Mat4 prevModel = model;
+            bool hasValidPrev = false;
+            if (!prevEntityTransforms_.empty()) {
+                const uint64_t entityIdVal = static_cast<uint64_t>(e.id());
+                for (const auto& cache : prevEntityTransforms_) {
+                    if (cache.entityId == entityIdVal) {
+                        prevModel = cache.model;
+                        hasValidPrev = true;
+                        break;
+                    }
+                }
+            }
+
+            const auto& submeshes = gpuMesh->getSubmeshes();
+            if (meshComp.submeshIndex < submeshes.size()) {
+                const auto [matSet, isMasked, isDoubleSided, isTransparent] =
+                    resolveMaterial(submeshes[meshComp.submeshIndex].materialIndex);
+                cachedSceneItems_.push_back({
+                    .item =
+                        {
+                            .gpuMesh = gpuMesh,
+                            .materialSet = matSet,
+                            .model = model,
+                            .prevModel = prevModel,
+                            .submeshIndex = meshComp.submeshIndex,
+                            .depthSq = 0.0F,
+                            .isAlphaMasked = isMasked,
+                            .isDoubleSided = isDoubleSided,
+                            .isTransparent = isTransparent,
+                            .hasValidPrevTransform = hasValidPrev && isTaaHistoryValid_,
+                        },
+                    .worldBounds = worldBounds,
+                });
+            } else if (submeshes.empty()) {
+                const auto [matSet, isMasked, isDoubleSided, isTransparent] = resolveMaterial(0);
+                cachedSceneItems_.push_back({
+                    .item =
+                        {
+                            .gpuMesh = gpuMesh,
+                            .materialSet = matSet,
+                            .model = model,
+                            .prevModel = prevModel,
+                            .submeshIndex = 0,
+                            .depthSq = 0.0F,
+                            .isAlphaMasked = isMasked,
+                            .isDoubleSided = isDoubleSided,
+                            .isTransparent = isTransparent,
+                            .hasValidPrevTransform = hasValidPrev && isTaaHistoryValid_,
+                        },
+                    .worldBounds = worldBounds,
+                });
+            } else {
+                for (uint32_t sIdx = 0; sIdx < submeshes.size(); ++sIdx) {
+                    const auto [matSet, isMasked, isDoubleSided, isTransparent] =
+                        resolveMaterial(submeshes[sIdx].materialIndex);
+                    cachedSceneItems_.push_back({
+                        .item =
+                            {
+                                .gpuMesh = gpuMesh,
+                                .materialSet = matSet,
+                                .model = model,
+                                .prevModel = prevModel,
+                                .submeshIndex = sIdx,
+                                .depthSq = 0.0F,
+                                .isAlphaMasked = isMasked,
+                                .isDoubleSided = isDoubleSided,
+                                .isTransparent = isTransparent,
+                                .hasValidPrevTransform = hasValidPrev && isTaaHistoryValid_,
+                            },
+                        .worldBounds = worldBounds,
+                        .isFirstSubmeshOfEntity = (sIdx == 0),
+                    });
+                }
+            }
+            ++resolvedMeshes;
+        });
+
+        cachedSceneWorld_ = currentWorld_;
+        cachedSceneWorldInstanceId_ = currentWorldInstanceId;
+        cachedSceneWorldGen_ = currentWorldGen;
+        cachedSceneAssetManager_ = currentAssetManager_;
+        cachedSceneTransformVersion_ = currentTransformVersion;
+        cachedSceneMeshCount_ = currentMeshCount;
+        cachedSceneStateHash_ = currentStateHash;
+        cachedSceneValid_ = allAssetsReady && prevEntityTransforms_.empty() && resolvedMeshes > 0;
+    }
+
+    for (const auto& cached : cachedSceneItems_) {
+        if (applyCameraCulling) {
+            if (!cameraFrustum.intersectsAABB(cached.worldBounds)) {
+                if (cached.isFirstSubmeshOfEntity) {
+                    lastRenderStats_.culledPrimitives++;
+                }
+                continue;
+            }
         }
 
-        const float minX = std::min(worldBounds.minBound.x, worldBounds.maxBound.x);
-        const float maxX = std::max(worldBounds.minBound.x, worldBounds.maxBound.x);
-        const float minY = std::min(worldBounds.minBound.y, worldBounds.maxBound.y);
-        const float maxY = std::max(worldBounds.minBound.y, worldBounds.maxBound.y);
-        const float minZ = std::min(worldBounds.minBound.z, worldBounds.maxBound.z);
-        const float maxZ = std::max(worldBounds.minBound.z, worldBounds.maxBound.z);
+        const float minX = std::min(cached.worldBounds.minBound.x, cached.worldBounds.maxBound.x);
+        const float maxX = std::max(cached.worldBounds.minBound.x, cached.worldBounds.maxBound.x);
+        const float minY = std::min(cached.worldBounds.minBound.y, cached.worldBounds.maxBound.y);
+        const float maxY = std::max(cached.worldBounds.minBound.y, cached.worldBounds.maxBound.y);
+        const float minZ = std::min(cached.worldBounds.minBound.z, cached.worldBounds.maxBound.z);
+        const float maxZ = std::max(cached.worldBounds.minBound.z, cached.worldBounds.maxBound.z);
 
         const Vec3 closestPoint{std::clamp(currentCameraPos_.x, minX, maxX),
                                 std::clamp(currentCameraPos_.y, minY, maxY),
                                 std::clamp(currentCameraPos_.z, minZ, maxZ)};
-        const float depthSq = (closestPoint - currentCameraPos_).lengthSq();
-
-        auto resolveMaterial =
-            [&](uint32_t matIndex) -> std::tuple<rhi::DescriptorSetHandle, bool, bool, bool> {
-            if (pipelineLayout_.isValid() && materialDescriptorSetLayout_.isValid()) {
-                GpuMaterial* mat = currentAssetManager_->getGpuMaterial(meshId, matIndex);
-                if (mat == nullptr) {
-                    auto upMat = currentAssetManager_->uploadMaterial(
-                        meshId, matIndex, *currentDevice_, materialDescriptorSetLayout_);
-                    if (upMat.hasValue()) {
-                        mat = upMat.value();
-                    } else {
-                        auto defMat = currentAssetManager_->getOrCreateDefaultMaterial(
-                            *currentDevice_, materialDescriptorSetLayout_);
-                        if (defMat.hasValue()) {
-                            mat = defMat.value();
-                        }
-                    }
-                }
-                if (mat != nullptr && mat->isValid()) {
-                    const auto& u = mat->getUniformData();
-                    const bool isMasked = (u.alphaMode == 1);
-                    const bool isDoubleSided = (u.doubleSided != 0);
-                    const bool isTransparent = (u.alphaMode == 2) || (u.transmissionFactor > 0.0F);
-                    return {mat->getDescriptorSet(), isMasked, isDoubleSided, isTransparent};
-                }
-            }
-            return {{}, false, false, false};
-        };
-
-        Mat4 prevModel = model;
-        bool hasValidPrev = false;
-        const uint64_t entityIdVal = static_cast<uint64_t>(e.id());
-        for (const auto& cache : prevEntityTransforms_) {
-            if (cache.entityId == entityIdVal) {
-                prevModel = cache.model;
-                hasValidPrev = true;
-                break;
-            }
+        VisibleMeshItem item = cached.item;
+        item.depthSq = (closestPoint - currentCameraPos_).lengthSq();
+        visibleItems_.push_back(item);
+        if (cached.isFirstSubmeshOfEntity) {
+            lastRenderStats_.meshesRendered++;
         }
-
-        const auto& submeshes = gpuMesh->getSubmeshes();
-        if (meshComp.submeshIndex < submeshes.size()) {
-            const auto [matSet, isMasked, isDoubleSided, isTransparent] =
-                resolveMaterial(submeshes[meshComp.submeshIndex].materialIndex);
-            visibleItems_.push_back({
-                .gpuMesh = gpuMesh,
-                .materialSet = matSet,
-                .model = model,
-                .prevModel = prevModel,
-                .submeshIndex = meshComp.submeshIndex,
-                .depthSq = depthSq,
-                .isAlphaMasked = isMasked,
-                .isDoubleSided = isDoubleSided,
-                .isTransparent = isTransparent,
-                .hasValidPrevTransform = hasValidPrev && isTaaHistoryValid_,
-            });
-        } else if (submeshes.empty()) {
-            const auto [matSet, isMasked, isDoubleSided, isTransparent] = resolveMaterial(0);
-            visibleItems_.push_back({
-                .gpuMesh = gpuMesh,
-                .materialSet = matSet,
-                .model = model,
-                .prevModel = prevModel,
-                .submeshIndex = 0,
-                .depthSq = depthSq,
-                .isAlphaMasked = isMasked,
-                .isDoubleSided = isDoubleSided,
-                .isTransparent = isTransparent,
-                .hasValidPrevTransform = hasValidPrev && isTaaHistoryValid_,
-            });
-        } else {
-            for (uint32_t sIdx = 0; sIdx < submeshes.size(); ++sIdx) {
-                const auto [matSet, isMasked, isDoubleSided, isTransparent] =
-                    resolveMaterial(submeshes[sIdx].materialIndex);
-                visibleItems_.push_back({
-                    .gpuMesh = gpuMesh,
-                    .materialSet = matSet,
-                    .model = model,
-                    .prevModel = prevModel,
-                    .submeshIndex = sIdx,
-                    .depthSq = depthSq,
-                    .isAlphaMasked = isMasked,
-                    .isDoubleSided = isDoubleSided,
-                    .isTransparent = isTransparent,
-                    .hasValidPrevTransform = hasValidPrev && isTaaHistoryValid_,
-                });
-            }
-        }
-
-        lastRenderStats_.meshesRendered++;
-    });
+    }
 
     // Sort visible submeshes:
     // 1. Opaque & Alpha-masked first (front-to-back for Early-Z rejection)
@@ -3402,7 +3489,7 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         settings_.shadows.enabled &&
         (&world != lastWorld_ || currentTransformVersion != lastTransformVersion_ ||
          currentMeshCount != lastMeshComponentCount_ || !dir.isNearlyEqual(lastLightDir_) ||
-         lastDynamicCasterCount_ > 0 || ecs.count<physics::PhysicsTransformComponent>() > 0);
+         lastDynamicCasterCount_ > 0);
     if (needChecksumQuery) {
         currentStaticChecksum = 0;
         currentDynamicChecksum = 0;

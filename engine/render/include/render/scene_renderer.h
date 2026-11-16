@@ -727,6 +727,22 @@ private:
         bool hasValidPrevTransform{false};
     };
 
+    struct CachedSceneItem {
+        VisibleMeshItem item{};
+        AABB worldBounds{};
+        bool isFirstSubmeshOfEntity{true};
+    };
+
+    std::vector<CachedSceneItem> cachedSceneItems_{};
+    world::World* cachedSceneWorld_{nullptr};
+    uint64_t cachedSceneWorldInstanceId_{0};
+    uint64_t cachedSceneWorldGen_{0};
+    AssetManager* cachedSceneAssetManager_{nullptr};
+    uint64_t cachedSceneTransformVersion_{0};
+    int32_t cachedSceneMeshCount_{-1};
+    uint64_t cachedSceneStateHash_{0};
+    bool cachedSceneValid_{false};
+
     std::vector<VisibleMeshItem> visibleItems_{};
     bool visibleItemsCollected_{false};
     void collectVisibleMeshes();
