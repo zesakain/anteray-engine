@@ -3,6 +3,7 @@
   "name": "ThirdPersonCharacter",
   "entities": [
     {
+      "id": 1,
       "name": "PlayerCharacter",
       "components": {
         "Transform": {
@@ -49,8 +50,9 @@
       }
     },
     {
+      "id": 2,
       "name": "PlayerVisual",
-      "parent": "PlayerCharacter",
+      "parent": 1,
       "components": {
         "Transform": {
           "position": [0.0, 1.05, 0.0],
