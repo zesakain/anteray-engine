@@ -343,6 +343,10 @@ if(HIKARI_BUILD_EDITOR)
     target_link_libraries(benchmark_recovery_r2 PRIVATE hikari::editor_lib hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi imgui_static)
     target_include_directories(benchmark_recovery_r2 PRIVATE ${imgui_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/editor/src)
 
+    add_executable(benchmark_bistro_60fps ${CMAKE_SOURCE_DIR}/tools/benchmark_bistro_60fps.cpp)
+    target_link_libraries(benchmark_bistro_60fps PRIVATE hikari::editor_lib hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi imgui_static)
+    target_include_directories(benchmark_bistro_60fps PRIVATE ${imgui_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/editor/src)
+
     add_executable(benchmark_scalability ${CMAKE_SOURCE_DIR}/tools/benchmark_scalability.cpp)
     target_link_libraries(benchmark_scalability PRIVATE hikari::editor_lib hikari::engine_framework hikari::engine_render hikari::engine_physics hikari::engine_world hikari::engine_rhi imgui_static)
     target_include_directories(benchmark_scalability PRIVATE ${imgui_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/editor/src)
