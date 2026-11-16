@@ -383,7 +383,7 @@ int testRuntimeSessionPhysicsPipelineOrdering() {
     // 7. PreStore
     TEST_CHECK(!timeline.empty());
     constexpr size_t kPhaseCount = 7;
-    TEST_CHECK(timeline.size() % kPhaseCount == 0);
+    TEST_CHECK(timeline.size() == kPhaseCount);
 
     for (size_t offset = 0; offset < timeline.size(); offset += kPhaseCount) {
         TEST_CHECK(timeline[offset + 0] == "OnUpdate");
@@ -527,6 +527,46 @@ static int testRepeatedPlayStopCyclesWithHierarchy() {
     return 0;
 }
 
+static int testSingleWorldProgressionPerUpdateAndStep() {
+    World editWorld;
+    RuntimeSession session;
+    session.setEditWorld(&editWorld);
+    TEST_CHECK(session.play().hasValue());
+
+    World* rtWorld = session.getRuntimeWorld();
+    TEST_CHECK(rtWorld != nullptr);
+
+    int continuousCount = 0;
+    int stateACount = 0;
+    auto& ecs = rtWorld->getRawWorld();
+    auto contSys = ecs.system<>("CountContinuous").kind(flecs::OnUpdate).run([&](flecs::iter&) {
+        ++continuousCount;
+    });
+    auto stateASys =
+        ecs.system<>("CountStateA").kind(flecs::OnUpdate).run([&](flecs::iter&) { ++stateACount; });
+    rtWorld->registerSystem(SystemGroup::Continuous, contSys);
+    rtWorld->registerSystem(SystemGroup::StateA, stateASys);
+
+    // 1. Single update() must execute Continuous and StateA exactly once each
+    session.update(Duration::fromMilliseconds(16));
+    TEST_CHECK(continuousCount == 1);
+    TEST_CHECK(stateACount == 1);
+
+    // 2. Paused update() must execute 0 times; step() must execute exactly once
+    TEST_CHECK(session.pause().hasValue());
+    session.update(Duration::fromMilliseconds(16));
+    TEST_CHECK(continuousCount == 1);
+    TEST_CHECK(stateACount == 1);
+
+    TEST_CHECK(session.step(Duration::fromMilliseconds(16)).hasValue());
+    TEST_CHECK(continuousCount == 2);
+    TEST_CHECK(stateACount == 2);
+
+    TEST_CHECK(session.stop().hasValue());
+    std::cout << "[PASS] testSingleWorldProgressionPerUpdateAndStep\n";
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -544,6 +584,8 @@ int main() {
     if (testRuntimeSessionPreservesEntityHierarchyAndTransforms() != 0)
         return 1;
     if (testRepeatedPlayStopCyclesWithHierarchy() != 0)
+        return 1;
+    if (testSingleWorldProgressionPerUpdateAndStep() != 0)
         return 1;
     std::cout << "All RuntimeSession tests PASSED!\n";
     return 0;
