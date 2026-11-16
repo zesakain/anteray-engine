@@ -27,6 +27,7 @@
 
 // Third-party Flecs ECS header
 #include <array>
+#include <atomic>
 #include <flecs.h>
 #include <memory>
 #include <string_view>
@@ -235,6 +236,10 @@ public:
     /// Monotonically increasing counter incremented when the world is cleared for a new scene.
     [[nodiscard]] uint64_t getSceneGeneration() const noexcept { return sceneGeneration_; }
 
+    /// Unique runtime instance identifier distinguishing distinct World objects even if reused at
+    /// the same memory address.
+    [[nodiscard]] uint64_t getInstanceId() const noexcept { return instanceId_; }
+
     /// Direct access to underlying Flecs world instance.
     [[nodiscard]] flecs::world& getRawWorld() noexcept { return ecs_; }
 
@@ -251,6 +256,8 @@ private:
     bool isTransformDirty_{true};
     uint64_t transformVersion_{1};
     uint64_t sceneGeneration_{1};
+    inline static std::atomic<uint64_t> sNextInstanceId_{1};
+    uint64_t instanceId_{sNextInstanceId_.fetch_add(1, std::memory_order_relaxed)};
 };
 
 } // namespace eng::world
