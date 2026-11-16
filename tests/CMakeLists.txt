@@ -131,6 +131,10 @@ add_executable(prefab_and_character_test unit/framework/prefab_and_character_tes
 target_link_libraries(prefab_and_character_test PRIVATE hikari::engine_framework)
 add_test(NAME prefab_and_character_test COMMAND prefab_and_character_test)
 
+add_executable(character_controller_test unit/framework/character_controller_test.cpp)
+target_link_libraries(character_controller_test PRIVATE hikari::engine_framework)
+add_test(NAME character_controller_test COMMAND character_controller_test)
+
 # Headless Integration / Stress Tests
 add_executable(conductor_stress_test headless/conductor_stress_test.cpp)
 target_link_libraries(conductor_stress_test PRIVATE hikari::engine_framework)
