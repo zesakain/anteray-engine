@@ -9,6 +9,7 @@ add_library(engine_core STATIC
     src/assert.cpp
     src/budget.cpp
     src/clock.cpp
+    src/cpu_profiler.cpp
     src/event.cpp
     src/frame_telemetry.cpp
     src/job_system.cpp
