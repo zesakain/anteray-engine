@@ -79,8 +79,7 @@ public:
     /// @param rgbaPixels Pointer to width * height * 4 bytes of RGBA8 image data.
     /// @param width Icon width in pixels.
     /// @param height Icon height in pixels.
-    virtual void setIcon(const uint8_t* /*rgbaPixels*/, uint32_t /*width*/, uint32_t /*height*/) {
-    }
+    virtual void setIcon(const uint8_t* /*rgbaPixels*/, uint32_t /*width*/, uint32_t /*height*/) {}
 
     /// Resizes the window client area.
     /// @param width Width in pixels (must be > 0).

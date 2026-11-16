@@ -159,7 +159,8 @@ public:
     [[nodiscard]] float getMouseSensitivity() const noexcept { return mouseSensitivity_; }
     void setMouseSensitivity(float sens) noexcept { mouseSensitivity_ = sens; }
 
-    /// Whether a sudden camera jump or cut occurred (e.g. framing or teleport) requiring temporal history invalidation.
+    /// Whether a sudden camera jump or cut occurred (e.g. framing or teleport) requiring temporal
+    /// history invalidation.
     [[nodiscard]] bool hasCutOccurred() const noexcept { return cutOccurred_; }
     void clearCutFlag() noexcept { cutOccurred_ = false; }
     void notifyCut() noexcept { cutOccurred_ = true; }

@@ -98,10 +98,9 @@ void SdlWindow::setIcon(const uint8_t* rgbaPixels, uint32_t width, uint32_t heig
     if (window_ == nullptr || rgbaPixels == nullptr || width == 0 || height == 0) {
         return;
     }
-    SDL_Surface* surface =
-        SDL_CreateSurfaceFrom(static_cast<int>(width), static_cast<int>(height),
-                              SDL_PIXELFORMAT_RGBA32, const_cast<uint8_t*>(rgbaPixels),
-                              static_cast<int>(width * 4U));
+    SDL_Surface* surface = SDL_CreateSurfaceFrom(
+        static_cast<int>(width), static_cast<int>(height), SDL_PIXELFORMAT_RGBA32,
+        const_cast<uint8_t*>(rgbaPixels), static_cast<int>(width * 4U));
     if (surface != nullptr) {
         SDL_SetWindowIcon(window_, surface);
         SDL_DestroySurface(surface);

@@ -3,14 +3,19 @@
 /// Advanced Anti-Aliasing & Temporal Rendering.
 ///
 /// Validates:
-/// 1. Halton(2, 3) low-discrepancy sequence determinism, periodicity, and subpixel range [-0.5, 0.5].
+/// 1. Halton(2, 3) low-discrepancy sequence determinism, periodicity, and subpixel range [-0.5,
+/// 0.5].
 /// 2. Projection jitter matrix transformation math, NDC shift, and depth/w element preservation.
 /// 3. Motion vector coordinate conventions: screen UV velocity (du, dv) = uv_cur - uv_prev.
-/// 4. Temporal history rejection rules: screen boundary clipping, depth disocclusion, and confidence gating.
-/// 5. YCoCg color space transformation roundtrip and 3x3 statistical variance clipping (mu +/- gamma * sigma).
+/// 4. Temporal history rejection rules: screen boundary clipping, depth disocclusion, and
+/// confidence gating.
+/// 5. YCoCg color space transformation roundtrip and 3x3 statistical variance clipping (mu +/-
+/// gamma * sigma).
 /// 6. Karis tone weighting damping response on high dynamic range fireflies.
-/// 7. Contrast-Adaptive Sharpening (RCAS) filter response, overshoot limiting, and intensity scaling.
-/// 8. GraphicsSettings TAA model, preset defaults, and JSON serialization roundtrip with backward compatibility.
+/// 7. Contrast-Adaptive Sharpening (RCAS) filter response, overshoot limiting, and intensity
+/// scaling.
+/// 8. GraphicsSettings TAA model, preset defaults, and JSON serialization roundtrip with backward
+/// compatibility.
 /// 9. SceneRenderer offscreen execution with TAA enabled/disabled under Null RHI.
 
 #include "core/assert.h"
@@ -225,8 +230,8 @@ static int testVarianceClippingInYCoCg() {
     std::vector<Vec3> neighborhood;
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
-            neighborhood.push_back(
-                Vec3(0.5F + static_cast<float>(x) * 0.02F, 0.5F + static_cast<float>(y) * 0.02F, 0.5F));
+            neighborhood.push_back(Vec3(0.5F + static_cast<float>(x) * 0.02F,
+                                        0.5F + static_cast<float>(y) * 0.02F, 0.5F));
         }
     }
 
@@ -248,10 +253,9 @@ static int testVarianceClippingInYCoCg() {
 
     // An extreme history outlier (firefly 10.0 or background black 0.0)
     Vec3 historyOutlier = rgbToYCoCg(Vec3(10.0F, 10.0F, 10.0F));
-    Vec3 clippedHistory =
-        Vec3(std::clamp(historyOutlier.x, clipMin.x, clipMax.x),
-             std::clamp(historyOutlier.y, clipMin.y, clipMax.y),
-             std::clamp(historyOutlier.z, clipMin.z, clipMax.z));
+    Vec3 clippedHistory = Vec3(std::clamp(historyOutlier.x, clipMin.x, clipMax.x),
+                               std::clamp(historyOutlier.y, clipMin.y, clipMax.y),
+                               std::clamp(historyOutlier.z, clipMin.z, clipMax.z));
 
     Vec3 clippedRgb = yCoCgToRgb(clippedHistory);
     // Clipped value must be firmly pulled back into neighborhood bounds
