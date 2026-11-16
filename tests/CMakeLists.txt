@@ -301,6 +301,11 @@ add_executable(ui_test unit/ui/ui_test.cpp)
 target_link_libraries(ui_test PRIVATE hikari::engine_ui hikari::engine_render hikari::engine_rhi)
 add_test(NAME ui_test COMMAND ui_test)
 
+# Hub Core Unit Tests
+add_executable(hub_test unit/hub/hub_test.cpp)
+target_link_libraries(hub_test PRIVATE hikari::hub_core)
+add_test(NAME hub_test COMMAND hub_test)
+
 # Editor Unit Tests (Guarded by EDITOR flag)
 if(HIKARI_BUILD_EDITOR)
     add_executable(editor_test unit/editor/editor_test.cpp)

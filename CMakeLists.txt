@@ -20,6 +20,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(HIKARI_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(HIKARI_BUILD_TESTS "Build test suite" ON)
 option(HIKARI_BUILD_EDITOR "Build editor tooling" OFF)
+option(HIKARI_BUILD_HUB "Build Hikari Machine Hub application" OFF)
 set(HIKARI_SANITIZER "" CACHE STRING "Sanitizers to enable (e.g. 'address,undefined' or 'thread')")
 
 # -----------------------------------------------------------------------------
@@ -115,6 +116,10 @@ add_subdirectory(engine)
 
 if(HIKARI_BUILD_EDITOR AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/editor/CMakeLists.txt")
     add_subdirectory(editor)
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/hub/CMakeLists.txt")
+    add_subdirectory(hub)
 endif()
 
 if(HIKARI_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CMakeLists.txt")
