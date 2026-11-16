@@ -12,6 +12,8 @@
 #include "editor/selection_model.h"
 #include "editor/workspace_manager.h"
 #include "framework/runtime_session.h"
+#include "imgui_rhi_backend.h"
+#include "imgui_utils.h"
 #include "panels/conductor_panel.h"
 #include "panels/console_panel.h"
 #include "panels/content_browser_panel.h"
@@ -37,9 +39,7 @@
 #include <cstring>
 #include <filesystem>
 #include <imgui.h>
-#include <imgui_impl_vulkan.h>
 #include <string>
-#include <vulkan/vulkan.h>
 
 namespace eng::editor {
 
@@ -243,13 +243,14 @@ struct EditorEngine::Impl {
     JobSystem* jobSystem{nullptr};
 
     render::SceneRenderer sceneRenderer{};
+    ImGuiRhiBackend imguiBackend_{};
     std::unique_ptr<render::GpuTexture> logoGpuTexture_{nullptr};
-    VkDescriptorSet logoDescriptorSet_{VK_NULL_HANDLE};
+    uint64_t logoTextureId_{0};
     rhi::SamplerHandle viewportSampler{};
-    VkDescriptorSet viewportDescriptorSet{VK_NULL_HANDLE};
-    void* registeredColorTargetView_{nullptr};
-    void* registeredSampler_{nullptr};
-    std::vector<VkDescriptorSet> pendingDescriptorFrees_{};
+    uint64_t viewportTextureId_{0};
+    rhi::TextureHandle registeredColorTarget_{};
+    rhi::SamplerHandle registeredSampler_{};
+    std::vector<uint64_t> pendingTextureFrees_{};
     uint32_t viewportWidth{0};
     uint32_t viewportHeight{0};
     Mat4 viewportCameraViewProj{Mat4::identity()};
@@ -261,14 +262,13 @@ struct EditorEngine::Impl {
     std::string clipboardData{};
 
     bool initialized{false};
-    bool vulkanBackendInitialized{false};
     framework::SimulationState lastSimulationState{framework::SimulationState::Edit};
 
     FrameTelemetryTracker telemetryTracker{};
     uint64_t lastTelemetryFrameCount{0};
 
     void updateViewportTextureRegistration() {
-        if (!vulkanBackendInitialized || rhiDevice == nullptr) {
+        if (!imguiBackend_.isInitialized() || rhiDevice == nullptr) {
             return;
         }
 
@@ -277,40 +277,35 @@ struct EditorEngine::Impl {
         }
 
         auto colorTarget = sceneRenderer.getColorTarget();
-        if (!colorTarget.isValid()) {
+        if (!colorTarget.isValid() || !viewportSampler.isValid()) {
             return;
         }
 
-        void* nativeView = rhiDevice->getNativeTextureView(colorTarget);
-        void* nativeSampler = rhiDevice->getNativeSampler(viewportSampler);
-        if (nativeView == nullptr || nativeSampler == nullptr) {
-            return;
-        }
-
-        // Avoid mid-frame descriptor destruction if already registered with active view and sampler
-        if (registeredColorTargetView_ == nativeView && registeredSampler_ == nativeSampler &&
-            viewportDescriptorSet != VK_NULL_HANDLE) {
-            context.viewportTextureId = static_cast<void*>(viewportDescriptorSet);
+        // Avoid mid-frame descriptor destruction if already registered with active target and
+        // sampler
+        if (registeredColorTarget_ == colorTarget && registeredSampler_ == viewportSampler &&
+            viewportTextureId_ != 0) {
+            context.viewportTextureId =
+                reinterpret_cast<void*>(static_cast<uintptr_t>(viewportTextureId_));
             context.gpuRenderingActive = true;
             return;
         }
 
         // Queue previous descriptor for safe deferred release at frame boundary
         // to prevent invalidating in-flight draw commands that already reference it.
-        if (viewportDescriptorSet != VK_NULL_HANDLE) {
-            pendingDescriptorFrees_.push_back(viewportDescriptorSet);
-            viewportDescriptorSet = VK_NULL_HANDLE;
+        if (viewportTextureId_ != 0) {
+            pendingTextureFrees_.push_back(viewportTextureId_);
+            viewportTextureId_ = 0;
             context.viewportTextureId = nullptr;
             context.gpuRenderingActive = false;
         }
 
-        viewportDescriptorSet = ImGui_ImplVulkan_AddTexture(
-            static_cast<VkSampler>(nativeSampler), static_cast<VkImageView>(nativeView),
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        registeredColorTargetView_ = nativeView;
-        registeredSampler_ = nativeSampler;
-        context.viewportTextureId = static_cast<void*>(viewportDescriptorSet);
-        context.gpuRenderingActive = (viewportDescriptorSet != VK_NULL_HANDLE);
+        viewportTextureId_ = imguiBackend_.registerTexture(colorTarget, viewportSampler);
+        registeredColorTarget_ = colorTarget;
+        registeredSampler_ = viewportSampler;
+        context.viewportTextureId =
+            reinterpret_cast<void*>(static_cast<uintptr_t>(viewportTextureId_));
+        context.gpuRenderingActive = (viewportTextureId_ != 0);
     }
 
     bool resizeViewport(uint32_t width, uint32_t height) {
@@ -436,70 +431,27 @@ bool EditorEngine::initialize(rhi::RhiDevice& rhiDevice, const EditorConfig& con
     impl_->workspaceManager.setLayoutFilePath(config.layoutFilePath);
 
     // Build default font atlas (required for headless / null RHI execution)
-    unsigned char* fontPixels = nullptr;
-    int fontWidth = 0;
-    int fontHeight = 0;
-    io.Fonts->GetTexDataAsRGBA32(&fontPixels, &fontWidth, &fontHeight);
+    if (!impl_->imguiBackend_.initialize(rhiDevice)) {
+        ENG_LOG_ERROR("Editor", "Failed to initialize ImGui Pure-RHI backend");
+        ImGui::DestroyContext(impl_->imguiContext);
+        impl_->imguiContext = nullptr;
+        return false;
+    }
 
-    auto nativeHandles = rhiDevice.getNativeDeviceHandles();
-    if (nativeHandles.device != nullptr) {
-        auto colorFormat = static_cast<VkFormat>(nativeHandles.colorAttachmentFormat);
-        if (colorFormat == VK_FORMAT_UNDEFINED) {
-            colorFormat = VK_FORMAT_B8G8R8A8_UNORM;
-        }
-        VkPipelineRenderingCreateInfoKHR renderingInfo{
-            .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO_KHR,
-            .pNext = nullptr,
-            .viewMask = 0,
-            .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &colorFormat,
-            .depthAttachmentFormat = VK_FORMAT_UNDEFINED,
-            .stencilAttachmentFormat = VK_FORMAT_UNDEFINED,
-        };
-
-        ImGui_ImplVulkan_InitInfo initInfo{};
-        initInfo.Instance = static_cast<VkInstance>(nativeHandles.instance);
-        initInfo.PhysicalDevice = static_cast<VkPhysicalDevice>(nativeHandles.physicalDevice);
-        initInfo.Device = static_cast<VkDevice>(nativeHandles.device);
-        initInfo.QueueFamily = nativeHandles.graphicsQueueFamily;
-        initInfo.Queue = static_cast<VkQueue>(nativeHandles.graphicsQueue);
-        initInfo.DescriptorPoolSize = 64;
-        initInfo.MinImageCount = 2;
-        initInfo.ImageCount = std::max(2U, nativeHandles.swapchainImageCount);
-        initInfo.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-        initInfo.UseDynamicRendering = true;
-        initInfo.PipelineRenderingCreateInfo = renderingInfo;
-
-        if (!ImGui_ImplVulkan_Init(&initInfo)) {
-            ENG_LOG_ERROR("Editor", "Failed to initialize ImGui Vulkan backend");
-            ImGui::DestroyContext(impl_->imguiContext);
-            impl_->imguiContext = nullptr;
-            return false;
-        }
-        impl_->vulkanBackendInitialized = true;
-        ENG_LOG_INFO("Editor", "Dear ImGui Vulkan backend initialized with Dynamic Rendering");
-
-        // Load official Hikari branding logo asset for loading screen and UI
-        const std::string logoPath = "assets/textures/branding/hikari_logo.jpg";
-        if (std::filesystem::exists(logoPath)) {
-            auto imgRes = render::ImageDecoder::decodeFromFile(logoPath, 4, true);
-            if (imgRes.hasValue()) {
-                auto texRes = render::GpuTexture::create(rhiDevice, imgRes.value(), false);
-                if (texRes.hasValue()) {
-                    impl_->logoGpuTexture_ = std::move(texRes.value());
-                    void* nativeView =
-                        rhiDevice.getNativeTextureView(impl_->logoGpuTexture_->getTexture());
-                    void* nativeSampler =
-                        rhiDevice.getNativeSampler(impl_->logoGpuTexture_->getSampler());
-                    if (nativeView != nullptr && nativeSampler != nullptr) {
-                        impl_->logoDescriptorSet_ =
-                            ImGui_ImplVulkan_AddTexture(static_cast<VkSampler>(nativeSampler),
-                                                        static_cast<VkImageView>(nativeView),
-                                                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                        ENG_LOG_INFO(
-                            "Editor",
-                            "Official Hikari branding logo successfully registered with ImGui");
-                    }
+    // Load official Hikari branding logo asset for loading screen and UI
+    const std::string logoPath = "assets/textures/branding/hikari_logo.jpg";
+    if (std::filesystem::exists(logoPath)) {
+        auto imgRes = render::ImageDecoder::decodeFromFile(logoPath, 4, true);
+        if (imgRes.hasValue()) {
+            auto texRes = render::GpuTexture::create(rhiDevice, imgRes.value(), false);
+            if (texRes.hasValue()) {
+                impl_->logoGpuTexture_ = std::move(texRes.value());
+                impl_->logoTextureId_ = impl_->imguiBackend_.registerTexture(
+                    impl_->logoGpuTexture_->getTexture(), impl_->logoGpuTexture_->getSampler());
+                if (impl_->logoTextureId_ != 0) {
+                    ENG_LOG_INFO(
+                        "Editor",
+                        "Official Hikari branding logo successfully registered with ImGui");
                 }
             }
         }
@@ -568,25 +520,24 @@ void EditorEngine::shutdown() {
             impl_->rhiDevice->waitIdle();
         }
 
-        if (impl_->vulkanBackendInitialized) {
-            if (impl_->logoDescriptorSet_ != VK_NULL_HANDLE) {
-                ImGui_ImplVulkan_RemoveTexture(impl_->logoDescriptorSet_);
-                impl_->logoDescriptorSet_ = VK_NULL_HANDLE;
+        if (impl_->imguiBackend_.isInitialized()) {
+            if (impl_->logoTextureId_ != 0) {
+                impl_->imguiBackend_.unregisterTexture(impl_->logoTextureId_);
+                impl_->logoTextureId_ = 0;
             }
             impl_->logoGpuTexture_.reset();
 
-            if (impl_->viewportDescriptorSet != VK_NULL_HANDLE) {
-                ImGui_ImplVulkan_RemoveTexture(impl_->viewportDescriptorSet);
-                impl_->viewportDescriptorSet = VK_NULL_HANDLE;
+            if (impl_->viewportTextureId_ != 0) {
+                impl_->imguiBackend_.unregisterTexture(impl_->viewportTextureId_);
+                impl_->viewportTextureId_ = 0;
             }
-            for (VkDescriptorSet ds : impl_->pendingDescriptorFrees_) {
-                if (ds != VK_NULL_HANDLE) {
-                    ImGui_ImplVulkan_RemoveTexture(ds);
+            for (uint64_t id : impl_->pendingTextureFrees_) {
+                if (id != 0) {
+                    impl_->imguiBackend_.unregisterTexture(id);
                 }
             }
-            impl_->pendingDescriptorFrees_.clear();
-            ImGui_ImplVulkan_Shutdown();
-            impl_->vulkanBackendInitialized = false;
+            impl_->pendingTextureFrees_.clear();
+            impl_->imguiBackend_.shutdown();
         }
 
         impl_->sceneRenderer.shutdown();
@@ -705,26 +656,27 @@ void EditorEngine::beginFrame(Duration dt, uint32_t width, uint32_t height) {
 
     impl_->context.editorEngine = this;
     impl_->context.sceneRenderer = &impl_->sceneRenderer;
-    impl_->context.viewportTextureId = static_cast<void*>(impl_->viewportDescriptorSet);
-    impl_->context.logoTextureId = static_cast<void*>(impl_->logoDescriptorSet_);
+    impl_->context.viewportTextureId =
+        reinterpret_cast<void*>(static_cast<uintptr_t>(impl_->viewportTextureId_));
+    impl_->context.logoTextureId =
+        reinterpret_cast<void*>(static_cast<uintptr_t>(impl_->logoTextureId_));
     impl_->context.sceneRenderWidth = impl_->viewportWidth;
     impl_->context.sceneRenderHeight = impl_->viewportHeight;
-    impl_->context.gpuRenderingActive = (impl_->viewportDescriptorSet != VK_NULL_HANDLE);
+    impl_->context.gpuRenderingActive = (impl_->viewportTextureId_ != 0);
     impl_->context.requestViewportResize = false;
 
-    if (impl_->vulkanBackendInitialized) {
+    if (impl_->imguiBackend_.isInitialized()) {
         // Safely reclaim superseded viewport descriptor sets at frame boundary
         // after the previous frame's GPU execution has completed.
-        if (!impl_->pendingDescriptorFrees_.empty() && impl_->rhiDevice != nullptr) {
+        if (!impl_->pendingTextureFrees_.empty() && impl_->rhiDevice != nullptr) {
             impl_->rhiDevice->waitIdle();
-            for (VkDescriptorSet ds : impl_->pendingDescriptorFrees_) {
-                if (ds != VK_NULL_HANDLE) {
-                    ImGui_ImplVulkan_RemoveTexture(ds);
+            for (uint64_t id : impl_->pendingTextureFrees_) {
+                if (id != 0) {
+                    impl_->imguiBackend_.unregisterTexture(id);
                 }
             }
-            impl_->pendingDescriptorFrees_.clear();
+            impl_->pendingTextureFrees_.clear();
         }
-        ImGui_ImplVulkan_NewFrame();
     }
     ImGui::NewFrame();
 }
@@ -803,12 +755,8 @@ void EditorEngine::endFrame(rhi::RhiCommandList& cmdList) {
     }
     impl_->context.executedPasses++;
 
-    if (impl_->vulkanBackendInitialized) {
-        auto nativeCmd = cmdList.getNativeCommandListHandles();
-        if (nativeCmd.commandBuffer != nullptr) {
-            ImGui_ImplVulkan_RenderDrawData(drawData,
-                                            static_cast<VkCommandBuffer>(nativeCmd.commandBuffer));
-        }
+    if (impl_->imguiBackend_.isInitialized() && cmdList.isRecording()) {
+        impl_->imguiBackend_.renderDrawData(drawData, cmdList);
     }
 }
 
@@ -1116,11 +1064,11 @@ bool EditorEngine::isSdrFallbackActive() const noexcept {
 }
 
 bool EditorEngine::isGpuViewportActive() const noexcept {
-    return impl_->context.gpuRenderingActive && (impl_->viewportDescriptorSet != VK_NULL_HANDLE);
+    return impl_->context.gpuRenderingActive && (impl_->viewportTextureId_ != 0);
 }
 
 void* EditorEngine::getLogoTextureId() const noexcept {
-    return impl_ ? static_cast<void*>(impl_->logoDescriptorSet_) : nullptr;
+    return impl_ ? reinterpret_cast<void*>(static_cast<uintptr_t>(impl_->logoTextureId_)) : nullptr;
 }
 
 } // namespace eng::editor

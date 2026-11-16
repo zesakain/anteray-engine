@@ -6,7 +6,6 @@ if(NOT HIKARI_BUILD_EDITOR)
     return()
 endif()
 
-find_package(Vulkan REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 
 include(FetchContent)
@@ -26,17 +25,11 @@ if(NOT imgui_POPULATED)
         ${imgui_SOURCE_DIR}/imgui_tables.cpp
         ${imgui_SOURCE_DIR}/imgui_widgets.cpp
         ${imgui_SOURCE_DIR}/imgui_demo.cpp
-        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
     )
     set_target_properties(imgui_static PROPERTIES SYSTEM TRUE)
     target_include_directories(imgui_static
         SYSTEM PUBLIC
             ${imgui_SOURCE_DIR}
-            ${imgui_SOURCE_DIR}/backends
-    )
-    target_link_libraries(imgui_static
-        PUBLIC
-            Vulkan::Vulkan
     )
     target_compile_options(imgui_static PRIVATE -w)
     target_compile_definitions(imgui_static PUBLIC ImDrawIdx=unsigned\ int)
@@ -46,6 +39,7 @@ add_library(editor_lib STATIC
     src/content_browser_controller.cpp
     src/editor_camera.cpp
     src/editor_engine.cpp
+    src/imgui_rhi_backend.cpp
     src/editor_preferences.cpp
     src/editor_preferences_serializer.cpp
     src/editor_theme.cpp
@@ -90,6 +84,5 @@ target_link_libraries(editor_lib
         hikari::engine_script
     PRIVATE
         imgui_static
-        Vulkan::Vulkan
         SDL3::SDL3
 )
