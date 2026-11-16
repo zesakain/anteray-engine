@@ -8,6 +8,7 @@
 #include "editor/editor_theme.h"
 #include "editor/selection_model.h"
 #include "editor/ui_helpers.h"
+#include "framework/character_components.h"
 #include "imgui_utils.h"
 #include "physics/physics_components.h"
 #include "render/asset_manager.h"
@@ -1480,6 +1481,63 @@ void InspectorPanel::draw(EditorContext& ctx) {
                 if (removeCamera) {
                     e.remove<render::CameraComponent>();
                     ctx.markDirty();
+                }
+
+                // 9. Character Config Component
+                if (e.has<framework::CharacterConfigComponent>()) {
+                    ImGui::PushID("CharacterConfigComp");
+                    if (ImGui::CollapsingHeader("Character Config",
+                                                ImGuiTreeNodeFlags_DefaultOpen)) {
+                        auto* cfg = e.get_mut<framework::CharacterConfigComponent>();
+                        ImGui::Columns(2, "CharCfgProps", false);
+                        ImGui::SetColumnWidth(0, ThemeMetrics::kPropertyLabelWidth);
+
+                        auto drawFloat = [&](const char* label, const char* id, float& val,
+                                             float step, float minV, float maxV, const char* fmt) {
+                            ImGui::TextUnformatted(label);
+                            ImGui::NextColumn();
+                            if (ImGui::DragFloat(id, &val, step, minV, maxV, fmt)) {
+                                e.modified<framework::CharacterConfigComponent>();
+                                ctx.markDirty();
+                            }
+                            ImGui::NextColumn();
+                        };
+
+                        drawFloat("Capsule Radius", "##CharRad", cfg->capsuleRadiusMeters, 0.01F,
+                                  0.05F, 5.0F, "%.2f m");
+                        drawFloat("Capsule Half-Height", "##CharHalfH",
+                                  cfg->capsuleHalfHeightMeters, 0.01F, 0.0F, 5.0F, "%.2f m");
+                        drawFloat("Eye Height", "##CharEyeH", cfg->eyeHeightMeters, 0.01F, 0.0F,
+                                  5.0F, "%.2f m");
+                        drawFloat("Max Move Speed", "##CharSpd", cfg->maxMoveSpeedMetersPerSec,
+                                  0.1F, 0.0F, 50.0F, "%.2f m/s");
+                        drawFloat("Max Slope", "##CharSlope", cfg->maxSlopeDegrees, 0.5F, 0.0F,
+                                  89.0F, "%.1f deg");
+                        drawFloat("Step Offset", "##CharStep", cfg->stepOffsetMeters, 0.01F, 0.0F,
+                                  2.0F, "%.2f m");
+                        drawFloat("Mass", "##CharMass", cfg->massKilograms, 1.0F, 1.0F, 1000.0F,
+                                  "%.1f kg");
+
+                        ImGui::Columns(1);
+                    }
+                    ImGui::PopID();
+                }
+
+                // 10. Character State Component (read-only runtime state)
+                if (e.has<framework::CharacterStateComponent>()) {
+                    ImGui::PushID("CharacterStateComp");
+                    if (ImGui::CollapsingHeader("Character State",
+                                                ImGuiTreeNodeFlags_DefaultOpen)) {
+                        const auto* cs = e.get<framework::CharacterStateComponent>();
+                        ImGui::Text("Velocity: (%.2f, %.2f, %.2f) m/s",
+                                    static_cast<double>(cs->velocityMetersPerSec.x),
+                                    static_cast<double>(cs->velocityMetersPerSec.y),
+                                    static_cast<double>(cs->velocityMetersPerSec.z));
+                        ImGui::Text("Facing Yaw: %.2f rad | Grounded: %s",
+                                    static_cast<double>(cs->facingYawRadians),
+                                    cs->isGrounded ? "Yes" : "No");
+                    }
+                    ImGui::PopID();
                 }
 
                 ImGui::Spacing();
