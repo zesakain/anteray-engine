@@ -5,6 +5,7 @@
 
 #include "core/assert.h"
 #include "core/log.h"
+#include "core/time/cpu_profiler.h"
 #include "core/time/frame_telemetry.h"
 #include "editor/editor_preferences_serializer.h"
 #include "editor/editor_theme.h"
@@ -588,6 +589,7 @@ const render::GpuPassTimings& EditorEngine::getGpuPassTimings() const noexcept {
 }
 
 void EditorEngine::beginFrame(Duration dt, uint32_t width, uint32_t height) {
+    ENG_CPU_PROFILE_SCOPE(EditorBeginFrame);
     if (!impl_->initialized) {
         return;
     }
@@ -649,7 +651,10 @@ void EditorEngine::beginFrame(Duration dt, uint32_t width, uint32_t height) {
 
     // Validate and synchronize entity selection with active World
     if (impl_->context.world != nullptr) {
-        world::updateHierarchyTransforms(*impl_->context.world);
+        {
+            ENG_CPU_PROFILE_SCOPE(TransformPropagation);
+            world::updateHierarchyTransforms(*impl_->context.world);
+        }
         impl_->selectionModel.validate(*impl_->context.world);
     }
     impl_->context.selectedEntityId = impl_->selectionModel.getPrimarySelected().id;
@@ -682,6 +687,7 @@ void EditorEngine::beginFrame(Duration dt, uint32_t width, uint32_t height) {
 }
 
 void EditorEngine::drawPanels() {
+    ENG_CPU_PROFILE_SCOPE(EditorDrawPanels);
     if (!impl_->initialized) {
         return;
     }
@@ -692,6 +698,7 @@ void EditorEngine::drawPanels() {
     impl_->viewportCameraViewProj = impl_->context.viewportCameraViewProj;
 
     if (impl_->context.world != nullptr) {
+        ENG_CPU_PROFILE_SCOPE(TransformPropagation);
         world::updateHierarchyTransforms(*impl_->context.world);
     }
 
@@ -761,6 +768,7 @@ void EditorEngine::endFrame(rhi::RhiCommandList& cmdList) {
 }
 
 void EditorEngine::processInput(const platform::InputSnapshot& input) {
+    ENG_CPU_PROFILE_SCOPE(CameraUpdateAndInput);
     if (!impl_->initialized) {
         return;
     }
@@ -897,6 +905,17 @@ WorkspaceManager& EditorEngine::getWorkspaceManager() noexcept {
 
 const WorkspaceManager& EditorEngine::getWorkspaceManager() const noexcept {
     return impl_->workspaceManager;
+}
+
+EditorCamera* EditorEngine::getViewportCamera() noexcept {
+    if (!impl_->initialized) {
+        return nullptr;
+    }
+    EditorPanel* panel = impl_->workspaceManager.findPanel("viewport");
+    if (panel == nullptr) {
+        return nullptr;
+    }
+    return &static_cast<ViewportPanel*>(panel)->getCamera();
 }
 
 SelectionModel& EditorEngine::getSelectionModel() noexcept {

@@ -4,6 +4,7 @@
 #include "panels/inspector_panel.h"
 
 #include "core/log.h"
+#include "core/time/cpu_profiler.h"
 #include "editor/editor_theme.h"
 #include "editor/selection_model.h"
 #include "editor/ui_helpers.h"
@@ -124,6 +125,7 @@ bool drawVec3Property(const char* label, float values[3], float resetValue = 0.0
 } // namespace
 
 void InspectorPanel::draw(EditorContext& ctx) {
+    ENG_CPU_PROFILE_SCOPE(InspectorPanel);
     if (!isOpen_) {
         return;
     }

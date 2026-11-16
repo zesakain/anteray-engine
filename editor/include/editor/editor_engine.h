@@ -60,6 +60,7 @@ struct RenderStats;
 
 namespace eng::editor {
 
+class EditorCamera;
 class SelectionModel;
 class WorkspaceManager;
 
@@ -171,6 +172,9 @@ public:
 
     /// Returns the workspace manager governing panels and docking layout (const).
     [[nodiscard]] const WorkspaceManager& getWorkspaceManager() const noexcept;
+
+    /// Returns the viewport editor camera, or nullptr if unavailable.
+    [[nodiscard]] EditorCamera* getViewportCamera() noexcept;
 
     /// Returns the centralized selection model governing entity selection across panels.
     [[nodiscard]] SelectionModel& getSelectionModel() noexcept;

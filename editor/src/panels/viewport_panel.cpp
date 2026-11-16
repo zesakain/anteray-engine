@@ -5,6 +5,7 @@
 #include "panels/viewport_panel.h"
 
 #include "core/log.h"
+#include "core/time/cpu_profiler.h"
 #include "editor/editor_engine.h"
 #include "editor/editor_theme.h"
 #include "editor/hierarchy_panel.h"
@@ -126,6 +127,7 @@ float distancePointToSegment(const ImVec2& p, const ImVec2& a, const ImVec2& b) 
 } // namespace
 
 void ViewportPanel::draw(EditorContext& ctx) {
+    ENG_CPU_PROFILE_SCOPE(ViewportPanel);
     if (!isOpen_) {
         return;
     }

@@ -4,6 +4,7 @@
 
 #include "panels/metrics_panel.h"
 
+#include "core/time/cpu_profiler.h"
 #include "core/time/frame_telemetry.h"
 #include "editor/editor_theme.h"
 #include "editor/ui_helpers.h"
@@ -19,6 +20,7 @@
 namespace eng::editor {
 
 void MetricsPanel::draw(EditorContext& ctx) {
+    ENG_CPU_PROFILE_SCOPE(ConsoleAndTelemetryPanels);
     if (!isOpen_) {
         return;
     }

@@ -5,6 +5,7 @@
 
 #include "anim/animation_components.h"
 #include "core/log.h"
+#include "core/time/cpu_profiler.h"
 #include "editor/editor_theme.h"
 #include "editor/selection_model.h"
 #include "editor/ui_helpers.h"
@@ -545,6 +546,7 @@ void HierarchyPanel::drawEntityNode(EditorContext& ctx, world::EntityHandle hand
 }
 
 void HierarchyPanel::draw(EditorContext& ctx) {
+    ENG_CPU_PROFILE_SCOPE(SceneHierarchyPanel);
     if (!isOpen_) {
         return;
     }

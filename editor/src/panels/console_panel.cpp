@@ -4,6 +4,7 @@
 #include "panels/console_panel.h"
 
 #include "core/log.h"
+#include "core/time/cpu_profiler.h"
 #include "editor/editor_theme.h"
 #include "imgui_utils.h"
 
@@ -18,6 +19,7 @@ bool s_collapseDuplicates = false;
 } // namespace
 
 void ConsolePanel::draw([[maybe_unused]] EditorContext& ctx) {
+    ENG_CPU_PROFILE_SCOPE(ConsoleAndTelemetryPanels);
     if (!isOpen_) {
         return;
     }

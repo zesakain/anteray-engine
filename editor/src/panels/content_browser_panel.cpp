@@ -5,6 +5,7 @@
 #include "panels/content_browser_panel.h"
 
 #include "core/log.h"
+#include "core/time/cpu_profiler.h"
 #include "editor/editor_engine.h"
 #include "editor/editor_theme.h"
 #include "editor/external_editor.h"
@@ -44,6 +45,7 @@ ContentBrowserPanel::ContentBrowserPanel(std::filesystem::path rootDir)
     : controller_(std::move(rootDir)) {}
 
 void ContentBrowserPanel::draw(EditorContext& ctx) {
+    ENG_CPU_PROFILE_SCOPE(ContentBrowserPanel);
     processPendingImports(ctx);
 
     if (!isOpen_) {
