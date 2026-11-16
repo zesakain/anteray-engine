@@ -5,6 +5,7 @@
 #include "core/job_system.h"
 #include "core/log.h"
 #include "core/time.h"
+#include "core/time/cpu_profiler.h"
 #include "framework/conductor.h"
 #include "framework/mode.h"
 #include "physics/physics_components.h"
@@ -25,7 +26,9 @@
 #include "world/world.h"
 
 #if defined(HIKARI_BUILD_EDITOR)
+#include "editor/editor_camera.h"
 #include "editor/editor_engine.h"
+#include "editor/editor_panel.h"
 #include "editor/workspace_manager.h"
 #include "framework/runtime_session.h"
 #include "framework/scene_serializer.h"
@@ -130,6 +133,8 @@ int main(int argc, char* argv[]) {
     uint32_t windowWidth = 1280;
     uint32_t windowHeight = 720;
     std::string scenePath;
+    uint32_t profileFrames = 0;
+    std::string profileScenario = "idle";
 
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
@@ -143,6 +148,10 @@ int main(int argc, char* argv[]) {
             windowHeight = static_cast<uint32_t>(std::atoi(argv[++i]));
         } else if (arg == "--scene" && i + 1 < argc) {
             scenePath = argv[++i];
+        } else if (arg == "--profile-frames" && i + 1 < argc) {
+            profileFrames = static_cast<uint32_t>(std::atoi(argv[++i]));
+        } else if (arg == "--profile-scenario" && i + 1 < argc) {
+            profileScenario = argv[++i];
         } else if (arg == "--benchmark" && i + 1 < argc) {
             std::string benchName = argv[++i];
             if (benchName == "sponza") {
@@ -385,197 +394,313 @@ body {
         Timestamp lastFrameTimestamp = Timestamp::now();
         Duration lastCpuDuration = Duration::fromMilliseconds(2);
 
+        if (profileFrames > 0) {
+            CpuProfiler::instance().configure(profileFrames);
+#if !defined(HIKARI_BUILD_EDITOR)
+            CpuProfiler::instance().setRecording(true);
+#endif
+        }
+#if defined(HIKARI_BUILD_EDITOR)
+        uint32_t warmupFramesRemaining = 120;
+        bool scenarioConfigured = false;
+        bool profilingStarted = false;
+#endif
+
         while (running) {
+            CpuProfiler::instance().beginFrame();
             const Timestamp currentFrameTimestamp = Timestamp::now();
             Duration frameDuration = currentFrameTimestamp - lastFrameTimestamp;
             lastFrameTimestamp = currentFrameTimestamp;
 
-            const Timestamp cpuStartTimestamp = Timestamp::now();
+            {
+                ENG_CPU_PROFILE_SCOPE(MainFrameLoop);
 
-            platform->pollEvents();
-            const auto& input = platform->getCurrentInput();
-            const auto& prevInput = platform->getPreviousInput();
-
-            if (window && window->shouldClose()) {
-                running = false;
-                break;
-            }
-
-            uint32_t currentWidth = window ? window->getWidth() : 1280;
-            uint32_t currentHeight = window ? window->getHeight() : 720;
-
-            if (window && !window->isMinimized()) {
-                if (currentWidth != lastWindowWidth || currentHeight != lastWindowHeight) {
-                    (void)rhiDevice->resize(currentWidth, currentHeight);
-                    uiSystem.resize(currentWidth, currentHeight);
-                    lastWindowWidth = currentWidth;
-                    lastWindowHeight = currentHeight;
-                }
-            }
-
-            // Test mode switch every 30 frames in headless
-            if (headless && frameCount > 0 && (frameCount % 30) == 0) {
-                if (conductor.getState() == framework::ConductorState::Active) {
-                    (void)conductor.requestTransition();
-                } else if (conductor.getState() == framework::ConductorState::Prepared) {
-                    (void)conductor.executeTransition();
-                }
-            }
-
-            // 1. Swapchain image acquisition (must precede recording passes that target it)
-            if (window) {
-                (void)rhiDevice->acquireNextImage();
-            }
-
-            // 2. Process Input for UI and Editor
-            uiSystem.processInput(input, prevInput);
 #if defined(HIKARI_BUILD_EDITOR)
-            if (editorEngine.isInitialized()) {
-                std::optional<Duration> gpuDur = std::nullopt;
-                const auto& gpuTimings = editorEngine.getGpuPassTimings();
-                if (gpuTimings.valid) {
-                    gpuDur = Duration::fromMicroseconds(
-                        static_cast<int64_t>(gpuTimings.totalSceneMs * 1000.0F));
+                if (profileFrames > 0 && editorEngine.isInitialized() &&
+                    !editorEngine.getWorkspaceManager().isAsyncLoading()) {
+                    if (!scenarioConfigured) {
+                        scenarioConfigured = true;
+                        auto& wm = editorEngine.getWorkspaceManager();
+                        if (profileScenario == "hierarchy_collapsed") {
+                            if (auto* p = wm.findPanel("hierarchy")) {
+                                p->setOpen(false);
+                            }
+                        } else if (profileScenario == "inspector_hidden") {
+                            if (auto* p = wm.findPanel("inspector")) {
+                                p->setOpen(false);
+                            }
+                        } else if (profileScenario == "content_browser_hidden") {
+                            if (auto* p = wm.findPanel("content_browser")) {
+                                p->setOpen(false);
+                            }
+                        } else if (profileScenario == "play_mode") {
+                            (void)editorEngine.getRuntimeSession().play();
+                        }
+                    }
+                    if (warmupFramesRemaining > 0) {
+                        warmupFramesRemaining--;
+                    } else if (!profilingStarted) {
+                        profilingStarted = true;
+                        CpuProfiler::instance().setRecording(true);
+                    }
+                    if (profilingStarted) {
+                        if (auto* cam = editorEngine.getViewportCamera()) {
+                            const float dirSign = ((frameCount / 120) % 2 == 0) ? 1.0F : -1.0F;
+                            if (profileScenario == "translate") {
+                                cam->fly(Vec3(0.4F * dirSign, 0.0F, 0.8F * dirSign), 0.016F);
+                            } else if (profileScenario == "rotate") {
+                                cam->look(0.005F, 0.001F * dirSign);
+                            } else if (profileScenario == "combined") {
+                                cam->fly(Vec3(0.4F * dirSign, 0.0F, 0.8F * dirSign), 0.016F);
+                                cam->look(0.005F, 0.001F * dirSign);
+                            }
+                        }
+                    }
                 }
-                editorEngine.recordFrameTelemetry(frameDuration, lastCpuDuration, gpuDur);
-                editorEngine.processInput(input);
-                editorEngine.beginFrame(frameDuration, currentWidth, currentHeight);
-                editorEngine.drawPanels();
-            }
 #endif
 
-            // 3. Update Conductor, World, and UI clocks
-#if defined(HIKARI_BUILD_EDITOR)
-            if (editorEngine.isInitialized()) {
-                editorEngine.getRuntimeSession().update(fixedStep);
-                if (!editorEngine.getRuntimeSession().isSimulating() &&
-                    (conductor.getState() == framework::ConductorState::Preparing ||
-                     conductor.getState() == framework::ConductorState::Transitioning)) {
-                    conductor.update(fixedStep);
+                const Timestamp cpuStartTimestamp = Timestamp::now();
+                std::optional<ScopedCpuTimer> cpuFrameScope;
+                cpuFrameScope.emplace(CpuScope::CpuFrame);
+
+                {
+                    ENG_CPU_PROFILE_SCOPE(PollEvents);
+                    platform->pollEvents();
                 }
-            } else {
-                conductor.update(fixedStep);
-                world.progress(static_cast<float>(fixedStep.toSeconds()));
-            }
+                const auto& input = platform->getCurrentInput();
+                const auto& prevInput = platform->getPreviousInput();
+
+                if (window && window->shouldClose()) {
+                    running = false;
+                    break;
+                }
+
+                uint32_t currentWidth = window ? window->getWidth() : 1280;
+                uint32_t currentHeight = window ? window->getHeight() : 720;
+
+                if (window && !window->isMinimized()) {
+                    if (currentWidth != lastWindowWidth || currentHeight != lastWindowHeight) {
+                        (void)rhiDevice->resize(currentWidth, currentHeight);
+                        uiSystem.resize(currentWidth, currentHeight);
+                        lastWindowWidth = currentWidth;
+                        lastWindowHeight = currentHeight;
+                    }
+                }
+
+                // Test mode switch every 30 frames in headless
+                if (headless && frameCount > 0 && (frameCount % 30) == 0) {
+                    if (conductor.getState() == framework::ConductorState::Active) {
+                        (void)conductor.requestTransition();
+                    } else if (conductor.getState() == framework::ConductorState::Prepared) {
+                        (void)conductor.executeTransition();
+                    }
+                }
+
+                // 1. Process Input for UI and Editor
+                uiSystem.processInput(input, prevInput);
+#if defined(HIKARI_BUILD_EDITOR)
+                if (editorEngine.isInitialized()) {
+                    std::optional<Duration> gpuDur = std::nullopt;
+                    const auto& gpuTimings = editorEngine.getGpuPassTimings();
+                    if (gpuTimings.valid) {
+                        gpuDur = Duration::fromMicroseconds(
+                            static_cast<int64_t>(gpuTimings.totalSceneMs * 1000.0F));
+                    }
+                    editorEngine.recordFrameTelemetry(frameDuration, lastCpuDuration, gpuDur);
+                    editorEngine.processInput(input);
+                    editorEngine.beginFrame(frameDuration, currentWidth, currentHeight);
+                    editorEngine.drawPanels();
+                }
+#endif
+
+                // 3. Update Conductor, World, and UI clocks
+                {
+                    ENG_CPU_PROFILE_SCOPE(EcsSystemsAndQueries);
+#if defined(HIKARI_BUILD_EDITOR)
+                    if (editorEngine.isInitialized()) {
+                        editorEngine.getRuntimeSession().update(fixedStep);
+                        if (!editorEngine.getRuntimeSession().isSimulating() &&
+                            (conductor.getState() == framework::ConductorState::Preparing ||
+                             conductor.getState() == framework::ConductorState::Transitioning)) {
+                            conductor.update(fixedStep);
+                        }
+                    } else {
+                        conductor.update(fixedStep);
+                        world.progress(static_cast<float>(fixedStep.toSeconds()));
+                    }
 #else
-            conductor.update(fixedStep);
-            world.progress(static_cast<float>(fixedStep.toSeconds()));
+                    conductor.update(fixedStep);
+                    world.progress(static_cast<float>(fixedStep.toSeconds()));
 #endif
-            uiSystem.update(fixedStep);
+                    uiSystem.update(fixedStep);
+                }
 
-            // 4. Record Frame Rendering Commands
-            mainCmd->begin();
+                // 3. Swapchain image acquisition (deferred until after CPU simulation & UI layout)
+                Duration acquireDuration = Duration::zero();
+                if (window) {
+                    ENG_CPU_PROFILE_SCOPE(AcquireNextImage);
+                    const Timestamp acqStart = Timestamp::now();
+                    (void)rhiDevice->acquireNextImage();
+                    acquireDuration = Timestamp::now() - acqStart;
+                }
+
+                // 4. Record Frame Rendering Commands
+                {
+                    ENG_CPU_PROFILE_SCOPE(RhiCommandRecordAndSubmit);
+                    mainCmd->begin();
 
 #if defined(HIKARI_BUILD_EDITOR)
-            if (editorEngine.isInitialized()) {
-                editorEngine.renderScene(*mainCmd);
-            }
+                    if (editorEngine.isInitialized()) {
+                        editorEngine.renderScene(*mainCmd);
+                    }
 #endif
 
-            rhi::RenderPassBeginInfo passInfo{
-                .clearColor = {0.08F, 0.12F, 0.20F, 1.0F}, // Deep Hikari Blue background baseline
-                .clearTarget = true,
-            };
-            mainCmd->beginRenderPass(passInfo);
+                    rhi::RenderPassBeginInfo passInfo{
+                        .clearColor = {0.08F, 0.12F, 0.20F,
+                                       1.0F}, // Deep Hikari Blue background baseline
+                        .clearTarget = true,
+                    };
+                    mainCmd->beginRenderPass(passInfo);
 
-            // Visible diagnostic mode indicator rectangle at top right
-            // Blue in State A, Amber in State B, Magenta during transition
-            float modeColor[4] = {0.2F, 0.5F, 0.9F, 1.0F};
-            if (conductor.getState() == framework::ConductorState::Transitioning) {
-                modeColor[0] = 0.8F;
-                modeColor[1] = 0.2F;
-                modeColor[2] = 0.8F;
-            } else if (conductor.getActiveSlot() == framework::ActiveSlot::SlotB) {
-                modeColor[0] = 0.9F;
-                modeColor[1] = 0.6F;
-                modeColor[2] = 0.1F;
-            }
-            mainCmd->clearRect(1000, 20, 240, 48, modeColor[0], modeColor[1], modeColor[2], 1.0F);
+                    // Visible diagnostic mode indicator rectangle at top right
+                    // Blue in State A, Amber in State B, Magenta during transition
+                    float modeColor[4] = {0.2F, 0.5F, 0.9F, 1.0F};
+                    if (conductor.getState() == framework::ConductorState::Transitioning) {
+                        modeColor[0] = 0.8F;
+                        modeColor[1] = 0.2F;
+                        modeColor[2] = 0.8F;
+                    } else if (conductor.getActiveSlot() == framework::ActiveSlot::SlotB) {
+                        modeColor[0] = 0.9F;
+                        modeColor[1] = 0.6F;
+                        modeColor[2] = 0.1F;
+                    }
+                    mainCmd->clearRect(1000, 20, 240, 48, modeColor[0], modeColor[1], modeColor[2],
+                                       1.0F);
 
-            // Render runtime UI
-            uiSystem.render(*mainCmd);
+                    // Render runtime UI
+                    uiSystem.render(*mainCmd);
 
 #if defined(HIKARI_BUILD_EDITOR)
-            if (editorEngine.isInitialized()) {
-                editorEngine.endFrame(*mainCmd);
-            }
+                    if (editorEngine.isInitialized()) {
+                        editorEngine.endFrame(*mainCmd);
+                    }
 #endif
 
-            mainCmd->endRenderPass();
-            mainCmd->end();
+                    mainCmd->endRenderPass();
+                    mainCmd->end();
+                }
 
-            // Measure CPU frame recording duration (excluding queue submit, fence wait, and
-            // present)
-            const Timestamp cpuEndTimestamp = Timestamp::now();
-            lastCpuDuration = cpuEndTimestamp - cpuStartTimestamp;
+                // Measure CPU frame recording duration (excluding swapchain acquire/fence wait,
+                // queue submit, and present)
+                cpuFrameScope.reset();
+                const Timestamp cpuEndTimestamp = Timestamp::now();
+                const Duration totalRecorded = cpuEndTimestamp - cpuStartTimestamp;
+                lastCpuDuration = totalRecorded > acquireDuration
+                                      ? (totalRecorded - acquireDuration)
+                                      : Duration::zero();
 
-            // 5. Submit recorded commands to GPU queue
-            (void)rhiDevice->submit(mainCmd.get());
+                // 5. Submit recorded commands to GPU queue
+                {
+                    ENG_CPU_PROFILE_SCOPE(RhiCommandRecordAndSubmit);
+                    (void)rhiDevice->submit(mainCmd.get());
+                }
 
-            // 6. Present rendered swapchain image to display
-            if (window) {
-                (void)rhiDevice->present();
-            }
+                // 6. Present rendered swapchain image to display
+                {
+                    ENG_CPU_PROFILE_SCOPE(PresentAndFramePacing);
+                    if (window) {
+                        (void)rhiDevice->present();
+                    }
 
 #if defined(HIKARI_BUILD_EDITOR)
-            if (editorEngine.isInitialized()) {
-                uint32_t fpsCap = editorEngine.getGraphicsSettings().performance.frameRateLimit;
-                if (fpsCap > 0) {
-                    Duration targetFrameDuration =
-                        Duration::fromSeconds(1.0 / static_cast<double>(fpsCap));
-                    Duration elapsed = Timestamp::now() - currentFrameTimestamp;
-                    if (elapsed < targetFrameDuration) {
-                        std::this_thread::sleep_for(std::chrono::microseconds(
-                            (targetFrameDuration - elapsed).asMicroseconds()));
+                    if (editorEngine.isInitialized()) {
+                        uint32_t fpsCap =
+                            editorEngine.getGraphicsSettings().performance.frameRateLimit;
+                        if (fpsCap > 0) {
+                            Duration targetFrameDuration =
+                                Duration::fromSeconds(1.0 / static_cast<double>(fpsCap));
+                            Duration elapsed = Timestamp::now() - currentFrameTimestamp;
+                            if (elapsed < targetFrameDuration) {
+                                std::this_thread::sleep_for(std::chrono::microseconds(
+                                    (targetFrameDuration - elapsed).asMicroseconds()));
+                            }
+                        }
+                    }
+#endif
+                }
+
+                frameCount++;
+
+                // Periodic telemetry logging (on frame 1 and every 300 frames)
+                if (frameCount == 1 || (frameCount % 300) == 0) {
+                    const auto& uiStats = uiSystem.renderStats();
+                    uint32_t editorDraws = 0;
+                    uint32_t editorVerts = 0;
+                    uint32_t editorIdxs = 0;
+                    uint64_t editorPasses = 0;
+#if defined(HIKARI_BUILD_EDITOR)
+                    if (editorEngine.isInitialized()) {
+                        editorDraws = editorEngine.lastDrawCallCount();
+                        editorVerts = editorEngine.lastVertexCount();
+                        editorIdxs = editorEngine.lastIndexCount();
+                        editorPasses = editorEngine.executedEditorPasses();
+                        const auto& tel = editorEngine.getTelemetryTracker();
+                        const auto& qStats = rhiDevice->getQueueTimingStats();
+                        const auto& gTim = editorEngine.getGpuPassTimings();
+                        const auto& cTim = editorEngine.getSceneRenderer().getCpuPassTimings();
+                        ENG_LOG_FORMAT(
+                            LogLevel::Info, "Render",
+                            "Frame %u Telemetry: FPS: %.1f (Avg: %.1f), Frame: %.2f ms, CPU: %.2f "
+                            "ms, "
+                            "GPU: %.2f ms [Shad=%.2f Dep=%.2f PBR=%.2f GI=%.2f Blm=%.2f TM=%.2f] "
+                            "SceneCPU: %.2f ms [Shad=%.2f Dep=%.2f PBR=%.2f] (Acq: %.2f ms, Fence: "
+                            "%.2f ms) | "
+                            "UI Draws: %u (Tris: %u), Editor Draws: %u (Verts: %u, Idxs: %u, "
+                            "Passes: "
+                            "%llu)",
+                            frameCount, static_cast<double>(tel.instantaneousFps()),
+                            static_cast<double>(tel.averageFps()),
+                            static_cast<double>(tel.frameTimeMs()),
+                            static_cast<double>(tel.cpuTimeMs()),
+                            static_cast<double>(gTim.totalSceneMs),
+                            static_cast<double>(gTim.shadowPassMs),
+                            static_cast<double>(gTim.depthPrepassMs),
+                            static_cast<double>(gTim.mainPbrPassMs),
+                            static_cast<double>(gTim.gtaoPassMs + gTim.ssgiPassMs + gTim.ssrPassMs),
+                            static_cast<double>(gTim.bloomDownsampleMs + gTim.bloomUpsampleMs),
+                            static_cast<double>(gTim.toneMappingMs),
+                            static_cast<double>(cTim.totalRenderSceneMs),
+                            static_cast<double>(cTim.shadowRecordMs),
+                            static_cast<double>(cTim.depthPrepassRecordMs),
+                            static_cast<double>(cTim.mainPbrRecordMs),
+                            static_cast<double>(qStats.acquireTimeMs),
+                            static_cast<double>(qStats.fenceWaitTimeMs), uiStats.drawCalls,
+                            uiStats.triangleCount, editorDraws, editorVerts, editorIdxs,
+                            static_cast<unsigned long long>(editorPasses));
+                    } else
+#endif
+                    {
+                        const double fpsVal = frameDuration.asNanoseconds() > 0
+                                                  ? (1.0 / frameDuration.toSeconds())
+                                                  : 60.0;
+                        ENG_LOG_FORMAT(
+                            LogLevel::Info, "Render",
+                            "Frame %u Telemetry: FPS: %.1f, Frame: %.2f ms, CPU: %.2f ms | "
+                            "UI Draws: %u (Tris: %u), Editor Draws: %u (Verts: "
+                            "%u, Idxs: %u, Passes: %llu)",
+                            frameCount, fpsVal, frameDuration.toSeconds() * 1000.0,
+                            lastCpuDuration.toSeconds() * 1000.0, uiStats.drawCalls,
+                            uiStats.triangleCount, editorDraws, editorVerts, editorIdxs,
+                            static_cast<unsigned long long>(editorPasses));
                     }
                 }
             }
-#endif
+            CpuProfiler::instance().endFrame();
 
-            frameCount++;
-
-            // Periodic telemetry logging (on frame 1 and every 300 frames)
-            if (frameCount == 1 || (frameCount % 300) == 0) {
-                const auto& uiStats = uiSystem.renderStats();
-                uint32_t editorDraws = 0;
-                uint32_t editorVerts = 0;
-                uint32_t editorIdxs = 0;
-                uint64_t editorPasses = 0;
-#if defined(HIKARI_BUILD_EDITOR)
-                if (editorEngine.isInitialized()) {
-                    editorDraws = editorEngine.lastDrawCallCount();
-                    editorVerts = editorEngine.lastVertexCount();
-                    editorIdxs = editorEngine.lastIndexCount();
-                    editorPasses = editorEngine.executedEditorPasses();
-                    const auto& tel = editorEngine.getTelemetryTracker();
-                    ENG_LOG_FORMAT(
-                        LogLevel::Info, "Render",
-                        "Frame %u Telemetry: FPS: %.1f (Avg: %.1f), Frame: %.2f ms, CPU: %.2f ms | "
-                        "UI Draws: %u (Tris: %u), Editor Draws: %u (Verts: %u, Idxs: %u, Passes: "
-                        "%llu)",
-                        frameCount, static_cast<double>(tel.instantaneousFps()),
-                        static_cast<double>(tel.averageFps()),
-                        static_cast<double>(tel.frameTimeMs()),
-                        static_cast<double>(tel.cpuTimeMs()), uiStats.drawCalls,
-                        uiStats.triangleCount, editorDraws, editorVerts, editorIdxs,
-                        static_cast<unsigned long long>(editorPasses));
-                } else
-#endif
-                {
-                    const double fpsVal = frameDuration.asNanoseconds() > 0
-                                              ? (1.0 / frameDuration.toSeconds())
-                                              : 60.0;
-                    ENG_LOG_FORMAT(LogLevel::Info, "Render",
-                                   "Frame %u Telemetry: FPS: %.1f, Frame: %.2f ms, CPU: %.2f ms | "
-                                   "UI Draws: %u (Tris: %u), Editor Draws: %u (Verts: "
-                                   "%u, Idxs: %u, Passes: %llu)",
-                                   frameCount, fpsVal, frameDuration.toSeconds() * 1000.0,
-                                   lastCpuDuration.toSeconds() * 1000.0, uiStats.drawCalls,
-                                   uiStats.triangleCount, editorDraws, editorVerts, editorIdxs,
-                                   static_cast<unsigned long long>(editorPasses));
-                }
+            if (profileFrames > 0 && CpuProfiler::instance().recordedFrames() >= profileFrames) {
+                CpuProfiler::instance().printReport(profileScenario);
+                running = false;
             }
-
             if (targetFrames > 0 && frameCount >= targetFrames) {
                 running = false;
             }
