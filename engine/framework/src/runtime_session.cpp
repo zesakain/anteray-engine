@@ -259,9 +259,12 @@ end
 
         if (runtimeConductor) {
             runtimeConductor->update(delta);
-        }
-        if (runtimeWorld) {
+        } else if (editConductor) {
+            editConductor->update(delta);
+        } else if (runtimeWorld) {
             runtimeWorld->progress(static_cast<float>(delta.toSeconds()));
+        } else if (editWorld) {
+            editWorld->progress(static_cast<float>(delta.toSeconds()));
         }
 
         ENG_LOG_INFO("RuntimeSession", "Stepped simulation by 1 frame while paused");
@@ -294,8 +297,7 @@ end
                 runtimeConductor->update(delta);
             } else if (editConductor) {
                 editConductor->update(delta);
-            }
-            if (runtimeWorld) {
+            } else if (runtimeWorld) {
                 runtimeWorld->progress(static_cast<float>(delta.toSeconds()));
             } else if (editWorld) {
                 editWorld->progress(static_cast<float>(delta.toSeconds()));

@@ -80,9 +80,35 @@ void Conductor::update(Duration realDelta) {
     // 4. Update active mode
     getActiveMode().update(world_, actionClock_.deltaTime());
 
-    // 5. Progress shared world simulation
-    const auto dtSeconds = actionClock_.deltaTime().toSecondsF();
-    world_.progress(dtSeconds);
+    // 5. Progress shared world simulation with separated time domains:
+    //    - SystemGroup::Continuous receives unscaled worldClock_ delta.
+    //    - SystemGroup::StateA / StateB / Transition receive actionClock_ delta.
+    const float worldDtSeconds = worldClock_.deltaTime().toSecondsF();
+    const float actionDtSeconds = actionClock_.deltaTime().toSecondsF();
+    if (worldDtSeconds == actionDtSeconds) {
+        world_.progress(worldDtSeconds);
+    } else {
+        const bool contWasActive = world_.isSystemGroupActive(world::SystemGroup::Continuous);
+        const bool stateAWasActive = world_.isSystemGroupActive(world::SystemGroup::StateA);
+        const bool stateBWasActive = world_.isSystemGroupActive(world::SystemGroup::StateB);
+        const bool transWasActive = world_.isSystemGroupActive(world::SystemGroup::Transition);
+
+        if (stateAWasActive || stateBWasActive || transWasActive) {
+            world_.setSystemGroupActive(world::SystemGroup::Continuous, false);
+            world_.progress(actionDtSeconds);
+            world_.setSystemGroupActive(world::SystemGroup::Continuous, contWasActive);
+        }
+
+        if (contWasActive) {
+            world_.setSystemGroupActive(world::SystemGroup::StateA, false);
+            world_.setSystemGroupActive(world::SystemGroup::StateB, false);
+            world_.setSystemGroupActive(world::SystemGroup::Transition, false);
+            world_.progress(worldDtSeconds);
+            world_.setSystemGroupActive(world::SystemGroup::StateA, stateAWasActive);
+            world_.setSystemGroupActive(world::SystemGroup::StateB, stateBWasActive);
+            world_.setSystemGroupActive(world::SystemGroup::Transition, transWasActive);
+        }
+    }
 
     // 6. Incremental standby preparation
     if (state_ == ConductorState::Preparing) {
