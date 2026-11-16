@@ -1,6 +1,6 @@
 # ADR-0020: Prefab Architecture for Shared World Entities
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-16
 - **Authors**: zesakain
 

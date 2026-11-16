@@ -1,6 +1,6 @@
 # ADR-0018: Standby Preparation Isolation via ReadOnlyWorld
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-11-16
 - **Authors**: zesakain
 
