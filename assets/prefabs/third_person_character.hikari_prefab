@@ -1,0 +1,69 @@
+{
+  "formatVersion": 1,
+  "name": "ThirdPersonCharacter",
+  "entities": [
+    {
+      "name": "PlayerCharacter",
+      "components": {
+        "Transform": {
+          "position": [0.0, 0.05, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "CharacterTag": {},
+        "CharacterConfig": {
+          "capsuleRadiusMeters": 0.35,
+          "capsuleHalfHeightMeters": 0.70,
+          "eyeHeightMeters": 1.55,
+          "maxMoveSpeedMetersPerSec": 6.0,
+          "groundAccelerationMetersPerSecSq": 35.0,
+          "groundDecelerationMetersPerSecSq": 40.0,
+          "airAccelerationMetersPerSecSq": 12.0,
+          "rotationSpeedRadiansPerSec": 12.0,
+          "jumpSpeedMetersPerSec": 5.5,
+          "gravityMetersPerSecSq": 18.0,
+          "groundCheckDistanceMeters": 0.08,
+          "pushImpulseNewtonSeconds": 8.0,
+          "maxSlopeDegrees": 45.0,
+          "stepOffsetMeters": 0.35,
+          "massKilograms": 70.0
+        },
+        "CharacterState": {
+          "velocityMetersPerSec": [0.0, 0.0, 0.0],
+          "groundNormal": [0.0, 1.0, 0.0],
+          "facingYawRadians": 0.0,
+          "isGrounded": false
+        },
+        "RigidBody": {
+          "motionType": "Kinematic",
+          "collisionLayer": 2
+        },
+        "Collider": {
+          "type": "Capsule",
+          "halfExtents": [0.35, 1.05, 0.35],
+          "radius": 0.35,
+          "halfHeight": 0.70,
+          "offset": [0.0, 1.05, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0]
+        }
+      }
+    },
+    {
+      "name": "PlayerVisual",
+      "parent": "PlayerCharacter",
+      "components": {
+        "Transform": {
+          "position": [0.0, 1.05, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [0.6, 1.8, 0.6]
+        },
+        "Mesh": {
+          "assetPath": "assets/models/cube.glb",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    }
+  ]
+}

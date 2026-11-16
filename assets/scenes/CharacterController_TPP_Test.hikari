@@ -1,0 +1,467 @@
+{
+  "formatVersion": 1,
+  "metadata": {
+    "name": "CharacterController_TPP_Test",
+    "generator": "Hikari Machine 0.1.0",
+    "timestamp": 1731780000
+  },
+  "entities": [
+    {
+      "id": 1,
+      "name": "SunLight",
+      "components": {
+        "Transform": {
+          "position": [10.0, 20.0, 10.0],
+          "rotation": [-0.35, 0.25, 0.10, 0.90],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "DirectionalLight": {
+          "color": [1.0, 0.97, 0.92],
+          "intensity": 3.0,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 2,
+      "name": "ThirdPersonCamera",
+      "components": {
+        "Transform": {
+          "position": [0.0, 3.0, 5.5],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "Camera": {
+          "fovDegrees": 60.0,
+          "nearPlane": 0.1,
+          "farPlane": 500.0,
+          "isPrimary": true
+        },
+        "ThirdPersonCamera": {
+          "targetEntityId": 100,
+          "yawRadians": 0.0,
+          "pitchRadians": 0.25,
+          "minPitchRadians": -0.60,
+          "maxPitchRadians": 1.20,
+          "distanceMeters": 5.5,
+          "minDistanceMeters": 1.0,
+          "heightOffsetMeters": 1.55,
+          "collisionRadiusMeters": 0.20,
+          "followSmoothSpeed": 18.0
+        }
+      }
+    },
+    {
+      "id": 100,
+      "name": "PlayerCharacter",
+      "components": {
+        "Transform": {
+          "position": [0.0, 0.05, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "CharacterTag": {},
+        "CharacterConfig": {
+          "capsuleRadiusMeters": 0.35,
+          "capsuleHalfHeightMeters": 0.70,
+          "eyeHeightMeters": 1.55,
+          "maxMoveSpeedMetersPerSec": 6.0,
+          "groundAccelerationMetersPerSecSq": 35.0,
+          "groundDecelerationMetersPerSecSq": 40.0,
+          "airAccelerationMetersPerSecSq": 12.0,
+          "rotationSpeedRadiansPerSec": 12.0,
+          "jumpSpeedMetersPerSec": 5.5,
+          "gravityMetersPerSecSq": 18.0,
+          "groundCheckDistanceMeters": 0.08,
+          "pushImpulseNewtonSeconds": 8.0,
+          "maxSlopeDegrees": 45.0,
+          "stepOffsetMeters": 0.35,
+          "massKilograms": 70.0
+        },
+        "CharacterState": {
+          "velocityMetersPerSec": [0.0, 0.0, 0.0],
+          "groundNormal": [0.0, 1.0, 0.0],
+          "facingYawRadians": 0.0,
+          "isGrounded": false
+        },
+        "RigidBody": {
+          "motionType": "Kinematic",
+          "collisionLayer": 2
+        },
+        "Collider": {
+          "type": "Capsule",
+          "halfExtents": [0.35, 1.05, 0.35],
+          "radius": 0.35,
+          "halfHeight": 0.70,
+          "offset": [0.0, 1.05, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0]
+        }
+      }
+    },
+    {
+      "id": 101,
+      "parentId": 100,
+      "name": "PlayerVisual",
+      "components": {
+        "Transform": {
+          "position": [0.0, 1.05, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [0.6, 1.8, 0.6]
+        },
+        "Mesh": {
+          "assetPath": "assets/models/cube.glb",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": true
+        }
+      }
+    },
+    {
+      "id": 10,
+      "name": "AreaA_MainGround",
+      "components": {
+        "Transform": {
+          "position": [0.0, -0.5, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [80.0, 1.0, 80.0]
+        },
+        "RigidBody": {
+          "motionType": "Static",
+          "collisionLayer": 0
+        },
+        "Collider": {
+          "type": "Box",
+          "halfExtents": [40.0, 0.5, 40.0]
+        },
+        "Mesh": {
+          "assetPath": "assets/models/cube.glb",
+          "submeshIndex": 0,
+          "visible": true,
+          "castShadows": false
+        }
+      }
+    },
+    {
+      "id": 20,
+      "name": "AreaB_Ramp_Walkable_15deg",
+      "components": {
+        "Transform": {
+          "position": [-8.0, 0.45, -11.0],
+          "rotation": [0.1305262, 0.0, 0.0, 0.9914449],
+          "scale": [3.0, 0.3, 6.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [1.5, 0.15, 3.0] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 21,
+      "name": "AreaB_Ramp_Walkable_30deg",
+      "components": {
+        "Transform": {
+          "position": [-3.0, 1.15, -11.0],
+          "rotation": [0.2588190, 0.0, 0.0, 0.9659258],
+          "scale": [3.0, 0.3, 6.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [1.5, 0.15, 3.0] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 22,
+      "name": "AreaB_Ramp_Steep_60deg",
+      "components": {
+        "Transform": {
+          "position": [2.5, 2.0, -11.0],
+          "rotation": [0.5000000, 0.0, 0.0, 0.8660254],
+          "scale": [3.0, 0.3, 5.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [1.5, 0.15, 2.5] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 23,
+      "name": "AreaB_Stair_Step1_020m",
+      "components": {
+        "Transform": {
+          "position": [7.5, 0.10, -9.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [3.0, 0.20, 1.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [1.5, 0.10, 0.5] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 24,
+      "name": "AreaB_Stair_Step2_040m",
+      "components": {
+        "Transform": {
+          "position": [7.5, 0.20, -10.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [3.0, 0.40, 1.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [1.5, 0.20, 0.5] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 25,
+      "name": "AreaB_Stair_Step3_065m",
+      "components": {
+        "Transform": {
+          "position": [7.5, 0.325, -11.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [3.0, 0.65, 1.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [1.5, 0.325, 0.5] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 26,
+      "name": "AreaB_Stair_TallBlock_055m",
+      "components": {
+        "Transform": {
+          "position": [7.5, 0.275, -14.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [3.0, 0.55, 1.5]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [1.5, 0.275, 0.75] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 27,
+      "name": "AreaB_RaisedPlatform",
+      "components": {
+        "Transform": {
+          "position": [-3.0, 2.30, -16.5],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [6.0, 0.4, 5.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [3.0, 0.2, 2.5] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 28,
+      "name": "AreaB_SlopedPlatform",
+      "components": {
+        "Transform": {
+          "position": [7.5, 1.2, -18.0],
+          "rotation": [0.0, 0.0, 0.1736482, 0.9848078],
+          "scale": [5.0, 0.3, 4.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [2.5, 0.15, 2.0] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 30,
+      "name": "AreaC_Wall_East",
+      "components": {
+        "Transform": {
+          "position": [16.0, 1.5, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [0.8, 3.0, 12.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [0.4, 1.5, 6.0] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 31,
+      "name": "AreaC_CorridorWall_Left",
+      "components": {
+        "Transform": {
+          "position": [12.0, 1.5, -2.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [0.6, 3.0, 6.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [0.3, 1.5, 3.0] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 32,
+      "name": "AreaC_CorridorWall_Right",
+      "components": {
+        "Transform": {
+          "position": [14.2, 1.5, -2.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [0.6, 3.0, 6.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [0.3, 1.5, 3.0] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 33,
+      "name": "AreaC_Pillar_1",
+      "components": {
+        "Transform": {
+          "position": [11.0, 2.0, 4.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 4.0, 1.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [0.5, 2.0, 0.5] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 34,
+      "name": "AreaC_Pillar_2",
+      "components": {
+        "Transform": {
+          "position": [13.5, 2.0, 4.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 4.0, 1.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [0.5, 2.0, 0.5] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 35,
+      "name": "AreaC_LowObstacle_025m",
+      "components": {
+        "Transform": {
+          "position": [10.0, 0.125, 0.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.6, 0.25, 1.6]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [0.8, 0.125, 0.8] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 40,
+      "name": "AreaD_DynamicBox_Light_10kg",
+      "components": {
+        "Transform": {
+          "position": [-10.0, 0.55, 1.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.0, 1.0, 1.0]
+        },
+        "RigidBody": { "motionType": "Dynamic", "collisionLayer": 1 },
+        "Collider": { "type": "Box", "halfExtents": [0.5, 0.5, 0.5] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 41,
+      "name": "AreaD_DynamicBox_Medium_50kg",
+      "components": {
+        "Transform": {
+          "position": [-10.0, 0.65, 4.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.2, 1.2, 1.2]
+        },
+        "RigidBody": { "motionType": "Dynamic", "collisionLayer": 1 },
+        "Collider": { "type": "Box", "halfExtents": [0.6, 0.6, 0.6] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 42,
+      "name": "AreaD_StaticReferenceBlock",
+      "components": {
+        "Transform": {
+          "position": [-14.0, 0.75, 2.5],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.5, 1.5, 1.5]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [0.75, 0.75, 0.75] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 50,
+      "name": "AreaE_StepPlatform_1",
+      "components": {
+        "Transform": {
+          "position": [0.0, 0.4, 11.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [2.0, 0.8, 2.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [1.0, 0.4, 1.0] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 51,
+      "name": "AreaE_StepPlatform_2",
+      "components": {
+        "Transform": {
+          "position": [0.0, 0.6, 14.5],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [1.6, 1.2, 1.6]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [0.8, 0.6, 0.8] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 52,
+      "name": "AreaE_DropLedge_And_Landing",
+      "components": {
+        "Transform": {
+          "position": [5.0, 1.0, 14.5],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [3.0, 2.0, 3.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [1.5, 1.0, 1.5] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 60,
+      "name": "AreaF_CameraTest_TallTower",
+      "components": {
+        "Transform": {
+          "position": [-11.0, 4.0, 13.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [2.0, 8.0, 2.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [1.0, 4.0, 1.0] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 61,
+      "name": "AreaF_CameraTest_Wall",
+      "components": {
+        "Transform": {
+          "position": [-15.0, 3.0, 16.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [0.6, 6.0, 8.0]
+        },
+        "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
+        "Collider": { "type": "Box", "halfExtents": [0.3, 3.0, 4.0] },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    }
+  ]
+}
