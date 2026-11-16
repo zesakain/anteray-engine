@@ -424,6 +424,41 @@ Result<void> PhysicsWorld::setMotionType(BodyHandle handle, MotionType motionTyp
     return Result<void>::success();
 }
 
+namespace {
+
+class LayerMaskFilter final : public JPH::ObjectLayerFilter {
+public:
+    explicit LayerMaskFilter(uint16_t mask) noexcept : mask_(mask) {}
+
+    [[nodiscard]] bool ShouldCollide(JPH::ObjectLayer inLayer) const override {
+        if (inLayer >= CollisionLayer::kCount) {
+            return true;
+        }
+        return (mask_ & static_cast<uint16_t>(1U << inLayer)) != 0U;
+    }
+
+private:
+    uint16_t mask_;
+};
+
+class IgnoreBodyFilter final : public JPH::BodyFilter {
+public:
+    explicit IgnoreBodyFilter(JPH::BodyID ignoredId) noexcept : ignoredId_(ignoredId) {}
+
+    [[nodiscard]] bool ShouldCollide(const JPH::BodyID& inBodyID) const override {
+        return ignoredId_.IsInvalid() || inBodyID != ignoredId_;
+    }
+
+    [[nodiscard]] bool ShouldCollideLocked(const JPH::Body& inBody) const override {
+        return ignoredId_.IsInvalid() || inBody.GetID() != ignoredId_;
+    }
+
+private:
+    JPH::BodyID ignoredId_;
+};
+
+} // namespace
+
 RaycastHit PhysicsWorld::castRay(const RaycastQuery& query) const {
     RaycastHit result{};
     if (!impl_) {
@@ -433,7 +468,14 @@ RaycastHit PhysicsWorld::castRay(const RaycastQuery& query) const {
     const JPH::RRayCast ray(toJolt(query.origin), toJolt(query.direction * query.maxDistance));
     JPH::RayCastResult hitResult;
 
-    const bool hasHit = impl_->physicsSystem_.GetNarrowPhaseQuery().CastRay(ray, hitResult);
+    const LayerMaskFilter layerFilter(query.layerMask);
+    const JPH::BodyID ignoredId = isBodyValid(query.ignoreBody)
+                                      ? impl_->slots_[query.ignoreBody.index].bodyId
+                                      : JPH::BodyID();
+    const IgnoreBodyFilter bodyFilter(ignoredId);
+
+    const bool hasHit = impl_->physicsSystem_.GetNarrowPhaseQuery().CastRay(
+        ray, hitResult, JPH::BroadPhaseLayerFilter{}, layerFilter, bodyFilter);
     if (hasHit) {
         result.hasHit = true;
         result.fraction = hitResult.mFraction;
@@ -468,11 +510,20 @@ ShapeCastHit PhysicsWorld::castShape(const ShapeCastQuery& query) const {
     const JPH::Vec3 castDir = toJolt(query.direction * query.maxDistance);
 
     JPH::RShapeCast shapeCast(shape, JPH::Vec3::sReplicate(1.0F), startMat, castDir);
-    JPH::ShapeCastResult castResult;
+    JPH::ShapeCastSettings castSettings{};
+    castSettings.mReturnDeepestPoint = true;
+    castSettings.mBackFaceModeTriangles = JPH::EBackFaceMode::IgnoreBackFaces;
+
+    const LayerMaskFilter layerFilter(query.layerMask);
+    const JPH::BodyID ignoredId = isBodyValid(query.ignoreBody)
+                                      ? impl_->slots_[query.ignoreBody.index].bodyId
+                                      : JPH::BodyID();
+    const IgnoreBodyFilter bodyFilter(ignoredId);
 
     JPH::ClosestHitCollisionCollector<JPH::CastShapeCollector> collector;
-    impl_->physicsSystem_.GetNarrowPhaseQuery().CastShape(shapeCast, JPH::ShapeCastSettings{},
-                                                          JPH::RVec3::sZero(), collector);
+    impl_->physicsSystem_.GetNarrowPhaseQuery().CastShape(
+        shapeCast, castSettings, JPH::RVec3::sZero(), collector, JPH::BroadPhaseLayerFilter{},
+        layerFilter, bodyFilter);
 
     if (collector.HadHit()) {
         result.hasHit = true;

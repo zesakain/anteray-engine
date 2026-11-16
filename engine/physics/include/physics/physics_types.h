@@ -133,6 +133,7 @@ struct RaycastQuery {
     Vec3 direction{Vec3::unitY()};
     float maxDistance{1000.0F};
     uint16_t layerMask{0xFFFF};
+    BodyHandle ignoreBody{};
 };
 
 /// @struct RaycastHit
@@ -153,6 +154,7 @@ struct ShapeCastQuery {
     Vec3 direction{Vec3::unitY()};
     float maxDistance{100.0F};
     uint16_t layerMask{0xFFFF};
+    BodyHandle ignoreBody{};
 };
 
 /// @struct ShapeCastHit
