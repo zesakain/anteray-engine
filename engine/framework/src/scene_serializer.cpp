@@ -861,16 +861,22 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                             Error(ErrorCode::InvalidArgument, "Invalid Collider primitive type"));
                     }
                     staged.collider.desc.type = *typeOpt;
-                    if (auto ext = jsonToVec3(*compData.find("halfExtents"))) {
-                        staged.collider.desc.halfExtents = *ext;
+                    if (const auto* extNode = compData.find("halfExtents")) {
+                        if (auto ext = jsonToVec3(*extNode)) {
+                            staged.collider.desc.halfExtents = *ext;
+                        }
                     }
                     staged.collider.desc.radius = compData.getFloat("radius", 0.5F);
                     staged.collider.desc.halfHeight = compData.getFloat("halfHeight", 0.5F);
-                    if (auto off = jsonToVec3(*compData.find("offset"))) {
-                        staged.collider.desc.offset = *off;
+                    if (const auto* offNode = compData.find("offset")) {
+                        if (auto off = jsonToVec3(*offNode)) {
+                            staged.collider.desc.offset = *off;
+                        }
                     }
-                    if (auto rot = jsonToQuat(*compData.find("rotation"))) {
-                        staged.collider.desc.rotation = *rot;
+                    if (const auto* rotNode = compData.find("rotation")) {
+                        if (auto rot = jsonToQuat(*rotNode)) {
+                            staged.collider.desc.rotation = *rot;
+                        }
                     }
                 } else if (compName == "Script") {
                     staged.script.present = true;
@@ -886,11 +892,15 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                     staged.mesh.castShadows = compData.getBool("castShadows", true);
                 } else if (compName == "DirectionalLight") {
                     staged.directionalLight.present = true;
-                    if (auto dir = jsonToVec3(*compData.find("direction"))) {
-                        staged.directionalLight.light.direction = dir->normalized();
+                    if (const auto* dNode = compData.find("direction")) {
+                        if (auto dir = jsonToVec3(*dNode)) {
+                            staged.directionalLight.light.direction = dir->normalized();
+                        }
                     }
-                    if (auto col = jsonToVec3(*compData.find("color"))) {
-                        staged.directionalLight.light.color = *col;
+                    if (const auto* cNode = compData.find("color")) {
+                        if (auto col = jsonToVec3(*cNode)) {
+                            staged.directionalLight.light.color = *col;
+                        }
                     }
                     staged.directionalLight.light.intensity = compData.getFloat("intensity", 2.5F);
                     staged.directionalLight.light.castShadows =
