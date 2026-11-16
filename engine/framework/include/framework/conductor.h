@@ -126,13 +126,24 @@ public:
     /// Returns the target slot of the currently pending transition, if any.
     [[nodiscard]] std::optional<ActiveSlot> getPendingTargetSlot() const noexcept;
 
-    /// Atomically validates speculative cache, reverses mode roles, and starts transition curve.
+    /// Atomically validates speculative cache, transitions mode roles, and starts transition curve.
+    ///
+    /// Lifecycle order:
+    /// 1. Validate/commit standby mode (`commit(world_)`).
+    /// 2. Exit active source mode (`exit(world_)`).
+    /// 3. Switch system groups to target slot and enter target mode (`enter(world_)`).
+    /// 4. Finalize slot swap, enable Transition group, and start slow-motion curve.
+    ///
+    /// Failure & Rollback:
+    /// - If `commit()` or `exit()` fails, the active mode and system groups remain untouched.
+    /// - If `enter()` fails, system groups are restored to the source slot and the source mode is
+    ///   re-entered so the previous active mode remains coherent and usable.
+    /// - On any failure, standby preparation is cancelled, `failedTransitions_` is incremented,
+    ///   slow-motion is not started, and Conductor returns to `ConductorState::Active`.
     ///
     /// Preconditions: ConductorState is Prepared.
-    /// Failure mode: If pre-commit validation fails, rolls back immediately, preserving the
-    ///               active mode with zero state corruption.
     ///
-    /// @return Result indicating success or CommitValidationFailed on abort.
+    /// @return Result indicating success or the failing lifecycle Error.
     [[nodiscard]] Result<void> executeTransition();
 
     /// Cancels active standby preparation or ready transition, returning Conductor to Active.

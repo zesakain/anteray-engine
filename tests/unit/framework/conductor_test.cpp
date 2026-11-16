@@ -33,6 +33,11 @@ public:
         if (eventLog != nullptr) {
             eventLog->push_back(std::string(name_) + "_enter");
         }
+        if (failEnter) {
+            return Error{.code = ErrorCode::InvalidState,
+                         .message = "Simulated mode enter failure"};
+        }
+        modeState_ = ModeState::Active;
         return Result<void>::success();
     }
 
@@ -43,6 +48,10 @@ public:
         if (eventLog != nullptr) {
             eventLog->push_back(std::string(name_) + "_exit");
         }
+        if (failExit) {
+            return Error{.code = ErrorCode::InvalidState, .message = "Simulated mode exit failure"};
+        }
+        modeState_ = ModeState::Standby;
         return Result<void>::success();
     }
 
@@ -96,6 +105,8 @@ public:
     uint32_t framesRequiredForPreparation{0};
     bool failPreparation{false};
     bool failCommit{false};
+    bool failEnter{false};
+    bool failExit{false};
     EntityHandle validateTargetEntity;
     std::vector<std::string>* eventLog{nullptr};
 };
@@ -495,6 +506,111 @@ static int testCorrectExitAndEnterCallbackOrder() {
     return 0;
 }
 
+static int testLifecycleFailuresAndTransactionalRecovery() {
+    World world;
+    const World* const worldAddr = &world;
+    auto sentinelEntity = world.createEntity("SharedWorldSentinel");
+
+    auto modeA = std::make_unique<MockMode>("ModeA");
+    auto modeB = std::make_unique<MockMode>("ModeB");
+    auto* rawA = modeA.get();
+    auto* rawB = modeB.get();
+
+    ConductorConfig cfg;
+    cfg.slowMotionInitialScale = 0.25F;
+    cfg.slowMotionDuration = Duration::fromMilliseconds(200);
+    Conductor conductor(world, std::move(modeA), std::move(modeB), cfg);
+    TEST_CHECK(conductor.initialize(ActiveSlot::SlotA).hasValue());
+    TEST_CHECK(rawA->getModeState() == ModeState::Active);
+
+    // 1. Preparation failure leaves active state intact and records failure
+    rawB->failPreparation = true;
+    TEST_CHECK(conductor.requestTransition(ActiveSlot::SlotB).hasValue());
+    conductor.update(Duration::fromMilliseconds(16));
+    TEST_CHECK(conductor.getState() == ConductorState::Active);
+    TEST_CHECK(conductor.getActiveSlot() == ActiveSlot::SlotA);
+    TEST_CHECK(conductor.getFailedTransitionsCount() == 1);
+    TEST_CHECK(conductor.getSuccessfulTransitionsCount() == 0);
+    TEST_CHECK(world.isSystemGroupActive(SystemGroup::Continuous));
+    TEST_CHECK(world.isSystemGroupActive(SystemGroup::StateA));
+    TEST_CHECK(!world.isSystemGroupActive(SystemGroup::StateB));
+    TEST_CHECK(!world.isSystemGroupActive(SystemGroup::Transition));
+    TEST_CHECK(conductor.getActionClock().timeScale() == 1.0F);
+    rawB->failPreparation = false;
+
+    // 2. Exit failure aborts before switching slot/groups/slow-motion
+    rawA->failExit = true;
+    TEST_CHECK(conductor.requestTransition(ActiveSlot::SlotB).hasValue());
+    conductor.update(Duration::fromMilliseconds(16));
+    TEST_CHECK(conductor.getState() == ConductorState::Prepared);
+    auto exitFailRes = conductor.executeTransition();
+    TEST_CHECK(!exitFailRes.hasValue());
+    TEST_CHECK(conductor.getState() == ConductorState::Active);
+    TEST_CHECK(conductor.getActiveSlot() == ActiveSlot::SlotA);
+    TEST_CHECK(rawA->getModeState() == ModeState::Active);
+    TEST_CHECK(rawB->enterCount == 0);
+    TEST_CHECK(rawB->cancelPrepareCount >= 2);
+    TEST_CHECK(conductor.getFailedTransitionsCount() == 2);
+    TEST_CHECK(conductor.getSuccessfulTransitionsCount() == 0);
+    TEST_CHECK(world.isSystemGroupActive(SystemGroup::StateA));
+    TEST_CHECK(!world.isSystemGroupActive(SystemGroup::StateB));
+    TEST_CHECK(!world.isSystemGroupActive(SystemGroup::Transition));
+    TEST_CHECK(conductor.getActionClock().timeScale() == 1.0F);
+    rawA->failExit = false;
+
+    // 3. Enter failure rolls back system groups and re-enters ModeA
+    rawB->failEnter = true;
+    TEST_CHECK(conductor.requestTransition(ActiveSlot::SlotB).hasValue());
+    conductor.update(Duration::fromMilliseconds(16));
+    TEST_CHECK(conductor.getState() == ConductorState::Prepared);
+    const uint32_t prevAEnter = rawA->enterCount;
+    auto enterFailRes = conductor.executeTransition();
+    TEST_CHECK(!enterFailRes.hasValue());
+    TEST_CHECK(conductor.getState() == ConductorState::Active);
+    TEST_CHECK(conductor.getActiveSlot() == ActiveSlot::SlotA);
+    TEST_CHECK(rawA->enterCount == prevAEnter + 1); // ModeA re-entered cleanly
+    TEST_CHECK(rawA->getModeState() == ModeState::Active);
+    TEST_CHECK(world.isSystemGroupActive(SystemGroup::Continuous));
+    TEST_CHECK(world.isSystemGroupActive(SystemGroup::StateA));
+    TEST_CHECK(!world.isSystemGroupActive(SystemGroup::StateB));
+    TEST_CHECK(!world.isSystemGroupActive(SystemGroup::Transition));
+    TEST_CHECK(conductor.getActionClock().timeScale() == 1.0F);
+    TEST_CHECK(conductor.getFailedTransitionsCount() == 3);
+    TEST_CHECK(conductor.getSuccessfulTransitionsCount() == 0);
+    rawB->failEnter = false;
+
+    // Verify ModeA remains usable after failed transitions
+    const uint32_t prevAUpdate = rawA->updateCount;
+    conductor.update(Duration::fromMilliseconds(16));
+    TEST_CHECK(rawA->updateCount == prevAUpdate + 1);
+
+    // 4. Recovery: repeated A -> B -> A transitions succeed cleanly over the same Shared World
+    TEST_CHECK(conductor.requestTransition(ActiveSlot::SlotB).hasValue());
+    conductor.update(Duration::fromMilliseconds(16));
+    TEST_CHECK(conductor.executeTransition().hasValue());
+    TEST_CHECK(conductor.getActiveSlot() == ActiveSlot::SlotB);
+    TEST_CHECK(conductor.getState() == ConductorState::Transitioning);
+    TEST_CHECK(conductor.getActionClock().timeScale() == 0.25F);
+    TEST_CHECK(world.isSystemGroupActive(SystemGroup::StateB));
+    TEST_CHECK(!world.isSystemGroupActive(SystemGroup::StateA));
+    TEST_CHECK(conductor.getSuccessfulTransitionsCount() == 1);
+
+    // Finish slow-motion curve and transition back B -> A
+    conductor.update(Duration::fromMilliseconds(250));
+    TEST_CHECK(conductor.getState() == ConductorState::Active);
+    TEST_CHECK(conductor.getActionClock().timeScale() == 1.0F);
+    TEST_CHECK(conductor.requestTransition(ActiveSlot::SlotA).hasValue());
+    conductor.update(Duration::fromMilliseconds(16));
+    TEST_CHECK(conductor.executeTransition().hasValue());
+    TEST_CHECK(conductor.getActiveSlot() == ActiveSlot::SlotA);
+    TEST_CHECK(conductor.getSuccessfulTransitionsCount() == 2);
+    TEST_CHECK(conductor.getFailedTransitionsCount() == 3);
+    TEST_CHECK(&world == worldAddr);
+    TEST_CHECK(world.isAlive(sentinelEntity));
+
+    return 0;
+}
+
 int main() {
     if (testConductorInitialization() != 0) {
         return 1;
@@ -527,6 +643,9 @@ int main() {
         return 1;
     }
     if (testCorrectExitAndEnterCallbackOrder() != 0) {
+        return 1;
+    }
+    if (testLifecycleFailuresAndTransactionalRecovery() != 0) {
         return 1;
     }
     std::cout << "All Conductor unit tests passed successfully.\n";

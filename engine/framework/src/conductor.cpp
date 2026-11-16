@@ -33,6 +33,10 @@ Result<void> Conductor::initialize(ActiveSlot initialSlot) {
 
     auto enterRes = getActiveMode().enter(world_);
     if (!enterRes.hasValue()) {
+        world_.setSystemGroupActive(world::SystemGroup::Continuous, false);
+        world_.setSystemGroupActive(world::SystemGroup::StateA, false);
+        world_.setSystemGroupActive(world::SystemGroup::StateB, false);
+        world_.setSystemGroupActive(world::SystemGroup::Transition, false);
         return enterRes;
     }
 
@@ -266,23 +270,62 @@ Result<void> Conductor::executeTransition() {
     ENG_LOG_FORMAT(LogLevel::Info, "Conductor", "Transition validation result: SUCCESS for %.*s",
                    static_cast<int>(toName.size()), toName.data());
 
-    // Validation succeeded: Perform atomic role reversal
+    // 2. Exit source mode before mutating activeSlot_ or system groups
     ENG_LOG_FORMAT(LogLevel::Info, "Conductor", "Source state exit: %.*s",
                    static_cast<int>(fromName.size()), fromName.data());
-    auto exitRes = getActiveMode().exit(world_);
-    (void)exitRes; // Mode exit cleanup
+    Mode& sourceMode = getActiveMode();
+    Mode& targetMode = getStandbyMode();
 
-    activeSlot_ = toSlot;
-    world_.setSystemGroupActive(world::SystemGroup::StateA, activeSlot_ == ActiveSlot::SlotA);
-    world_.setSystemGroupActive(world::SystemGroup::StateB, activeSlot_ == ActiveSlot::SlotB);
-    world_.setSystemGroupActive(world::SystemGroup::Transition, true);
+    auto exitRes = sourceMode.exit(world_);
+    if (!exitRes.hasValue()) {
+        ENG_LOG_FORMAT(LogLevel::Warning, "Conductor",
+                       "Source mode exit failed for %.*s; aborting transition: %.*s",
+                       static_cast<int>(fromName.size()), fromName.data(),
+                       static_cast<int>(exitRes.error().message.size()),
+                       exitRes.error().message.data());
+        targetMode.cancelPrepare();
+        pendingRequest_ = {};
+        state_ = ConductorState::Active;
+        ++failedTransitions_;
+        return exitRes;
+    }
+
+    // 3. Activate target system groups and enter target mode
+    world_.setSystemGroupActive(world::SystemGroup::StateA, toSlot == ActiveSlot::SlotA);
+    world_.setSystemGroupActive(world::SystemGroup::StateB, toSlot == ActiveSlot::SlotB);
 
     ENG_LOG_FORMAT(LogLevel::Info, "Conductor", "Target state entry: %.*s (Active Role)",
                    static_cast<int>(toName.size()), toName.data());
-    auto enterRes = getActiveMode().enter(world_);
-    (void)enterRes;
+    auto enterRes = targetMode.enter(world_);
+    if (!enterRes.hasValue()) {
+        ENG_LOG_FORMAT(LogLevel::Warning, "Conductor",
+                       "Target mode enter failed for %.*s; rolling back to %.*s: %.*s",
+                       static_cast<int>(toName.size()), toName.data(),
+                       static_cast<int>(fromName.size()), fromName.data(),
+                       static_cast<int>(enterRes.error().message.size()),
+                       enterRes.error().message.data());
+        // Restore system groups and re-enter source mode so previous active state remains usable.
+        world_.setSystemGroupActive(world::SystemGroup::StateA, fromSlot == ActiveSlot::SlotA);
+        world_.setSystemGroupActive(world::SystemGroup::StateB, fromSlot == ActiveSlot::SlotB);
+        world_.setSystemGroupActive(world::SystemGroup::Transition, false);
+        auto reenterRes = sourceMode.enter(world_);
+        if (!reenterRes.hasValue()) {
+            ENG_LOG_FORMAT(LogLevel::Error, "Conductor", "Rollback re-enter failed for %.*s: %.*s",
+                           static_cast<int>(fromName.size()), fromName.data(),
+                           static_cast<int>(reenterRes.error().message.size()),
+                           reenterRes.error().message.data());
+        }
+        targetMode.cancelPrepare();
+        activeSlot_ = fromSlot;
+        pendingRequest_ = {};
+        state_ = ConductorState::Active;
+        ++failedTransitions_;
+        return enterRes;
+    }
 
-    // Start transition slow-motion curve
+    // 4. Finalize transition: commit role reversal and start slow-motion curve
+    activeSlot_ = toSlot;
+    world_.setSystemGroupActive(world::SystemGroup::Transition, true);
     state_ = ConductorState::Transitioning;
     transitionElapsed_ = Duration::zero();
     actionClock_.setTimeScale(config_.slowMotionInitialScale);
