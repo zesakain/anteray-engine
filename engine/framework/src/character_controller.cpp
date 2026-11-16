@@ -131,23 +131,28 @@ struct GroundProbeResult {
 
     const Vec3 raisedPos = position + Vec3{0.0F, availableUp, 0.0F};
 
-    // 2. Sweep horizontally from raised position
+    // 2. Sweep horizontally from raised position (probe at least 0.15m so capsule hemisphere
+    // clears the 90-degree step edge onto the flat top surface).
+    const float probeHorizDist = std::max(horizLen, 0.15F);
+    const Vec3 fwdDir = remainingHoriz / horizLen;
     physics::ShapeCastQuery fwdQuery{};
     fwdQuery.shape = shape;
     fwdQuery.startTransform = Transform{raisedPos, Quat::identity(), Vec3::one()};
-    fwdQuery.direction = remainingHoriz / horizLen;
-    fwdQuery.maxDistance = horizLen;
+    fwdQuery.direction = fwdDir;
+    fwdQuery.maxDistance = probeHorizDist;
     fwdQuery.layerMask = layerMask;
     fwdQuery.ignoreBody = ignoreBody;
 
     const physics::ShapeCastHit fwdHit = physicsWorld.castShape(fwdQuery);
     const float movedFrac =
-        fwdHit.hasHit ? std::max(0.0F, fwdHit.fraction - (kSkinWidthMeters / horizLen)) : 1.0F;
+        fwdHit.hasHit ? std::max(0.0F, fwdHit.fraction - (kSkinWidthMeters / probeHorizDist))
+                      : 1.0F;
     if (movedFrac <= 0.05F) {
         return false;
     }
 
-    const Vec3 fwdPos = raisedPos + (remainingHoriz * movedFrac);
+    const float actualHorizMove = std::min(horizLen, movedFrac * probeHorizDist);
+    const Vec3 fwdPos = raisedPos + (fwdDir * (movedFrac * probeHorizDist));
 
     // 3. Sweep down to land on step surface
     physics::ShapeCastQuery downQuery{};
@@ -170,7 +175,12 @@ struct GroundProbeResult {
 
     const float downDist =
         std::max(0.0F, (downHit.fraction * downQuery.maxDistance) - kSkinWidthMeters);
-    position = fwdPos + Vec3{0.0F, -downDist, 0.0F};
+    const float steppedY = fwdPos.y - downDist;
+    if (steppedY <= position.y + 0.01F) {
+        return false;
+    }
+    position = Vec3{position.x + (fwdDir.x * actualHorizMove), steppedY,
+                    position.z + (fwdDir.z * actualHorizMove)};
     return true;
 }
 
@@ -269,7 +279,10 @@ void stepCharacterFixed(physics::PhysicsWorld& physicsWorld, const CharacterConf
 
         physics::ShapeCastQuery query{};
         query.shape = shape;
-        query.startTransform = Transform{pos, Quat::identity(), Vec3::one()};
+        // Lift slightly (0.05m) so flat floor contact / convex radius underneath does not trigger
+        // a t=0 hit during horizontal sweeps.
+        query.startTransform =
+            Transform{pos + Vec3{0.0F, 0.05F, 0.0F}, Quat::identity(), Vec3::one()};
         query.direction = dir;
         query.maxDistance = dist + kSkinWidthMeters;
         query.layerMask = solidMask;

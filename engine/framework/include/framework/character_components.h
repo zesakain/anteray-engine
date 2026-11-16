@@ -47,7 +47,7 @@ struct CharacterConfigComponent {
     float jumpSpeedMetersPerSec{5.5F};
     float gravityMetersPerSecSq{18.0F};
     float groundCheckDistanceMeters{0.08F};
-    float pushImpulseNewtonSeconds{8.0F};
+    float pushImpulseNewtonSeconds{120.0F};
     float maxSlopeDegrees{45.0F};
     float stepOffsetMeters{0.35F};
     float massKilograms{70.0F};
