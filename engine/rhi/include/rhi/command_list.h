@@ -74,6 +74,9 @@ public:
     /// Ends command recording, sealing the command list for queue submission.
     virtual void end() = 0;
 
+    /// Returns true if the command list is currently between begin() and end().
+    [[nodiscard]] virtual bool isRecording() const noexcept { return false; }
+
     /// Begins a dynamic rendering pass targeting the active swapchain image or color target.
     virtual void beginRenderPass(const RenderPassBeginInfo& info) = 0;
 

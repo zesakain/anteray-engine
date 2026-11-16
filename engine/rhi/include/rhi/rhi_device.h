@@ -296,6 +296,12 @@ public:
     /// Returns whether vertical synchronization is currently enabled on the device swapchain.
     [[nodiscard]] virtual bool isVsyncEnabled() const noexcept { return false; }
 
+    /// Returns the pixel format used by the device swapchain (or default BGRA8_UNORM in headless
+    /// mode).
+    [[nodiscard]] virtual TextureFormat getSwapchainFormat() const noexcept {
+        return TextureFormat::BGRA8_UNORM;
+    }
+
     /// Returns opaque pointers to underlying backend device handles (or null in headless/null
     /// mode).
     [[nodiscard]] virtual NativeDeviceHandles getNativeDeviceHandles() const noexcept { return {}; }

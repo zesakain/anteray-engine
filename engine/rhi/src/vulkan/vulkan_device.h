@@ -93,6 +93,7 @@ public:
     Result<void> setVsync(bool enabled) override;
     [[nodiscard]] bool isVsyncEnabled() const noexcept override;
 
+    [[nodiscard]] TextureFormat getSwapchainFormat() const noexcept override;
     [[nodiscard]] NativeDeviceHandles getNativeDeviceHandles() const noexcept override;
     [[nodiscard]] void* getNativeTextureView(TextureHandle handle) const noexcept override;
     [[nodiscard]] void* getNativeSampler(SamplerHandle handle) const noexcept override;

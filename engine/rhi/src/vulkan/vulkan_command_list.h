@@ -106,6 +106,8 @@ public:
         VkDeviceMemory memory{VK_NULL_HANDLE};
     };
 
+    [[nodiscard]] bool isRecording() const noexcept override { return isRecording_; }
+
     void cleanupStagingResources() noexcept;
     void onDeviceDestroyed() noexcept;
     void setSubmittedSerial(uint64_t serial) noexcept;

@@ -173,6 +173,7 @@ public:
     void generateMipmaps(TextureHandle texture) override;
     void updateBuffer(BufferHandle dst, size_t dstOffset, const void* data, size_t size) override;
 
+    [[nodiscard]] bool isRecording() const noexcept override { return state_ == State::Recording; }
     [[nodiscard]] State getState() const noexcept { return state_; }
     void setState(State state) noexcept { state_ = state; }
 

@@ -1958,6 +1958,23 @@ bool VulkanDevice::isVsyncEnabled() const noexcept {
     return swapchain_ ? swapchain_->isVsyncEnabled() : false;
 }
 
+TextureFormat VulkanDevice::getSwapchainFormat() const noexcept {
+    if (!swapchain_) {
+        return TextureFormat::BGRA8_UNORM;
+    }
+    switch (swapchain_->getImageFormat()) {
+    case VK_FORMAT_B8G8R8A8_SRGB:
+        return TextureFormat::BGRA8_SRGB;
+    case VK_FORMAT_R8G8B8A8_UNORM:
+        return TextureFormat::RGBA8_UNORM;
+    case VK_FORMAT_R8G8B8A8_SRGB:
+        return TextureFormat::RGBA8_SRGB;
+    case VK_FORMAT_B8G8R8A8_UNORM:
+    default:
+        return TextureFormat::BGRA8_UNORM;
+    }
+}
+
 NativeDeviceHandles VulkanDevice::getNativeDeviceHandles() const noexcept {
     return NativeDeviceHandles{
         .instance = instance_ ? instance_->handle() : VK_NULL_HANDLE,
