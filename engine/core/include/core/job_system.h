@@ -138,6 +138,7 @@ struct JobSystemConfig {
     static constexpr uint32_t kDefaultMaxJobs = 256;
     static constexpr uint32_t kDefaultMaxDependencies = 1024;
     static constexpr uint32_t kMaxSupportedWorkers = 64;
+    static constexpr uint32_t kMaxSupportedJobs = 1'048'576;
 
     uint32_t workerCount{0};                           ///< Number of background worker threads.
     uint32_t maxJobs{kDefaultMaxJobs};                 ///< Maximum concurrent jobs tracked.
@@ -176,9 +177,13 @@ public:
 
     /// @brief Returns minimum memory alignment required for backing storage.
     [[nodiscard]] static constexpr size_t requiredAlignment() noexcept {
-        return std::max(
-            {alignof(JobSlot), alignof(DependencyEdge), alignof(uint32_t), alignof(void*)});
+        return std::max({alignof(JobSlot), alignof(DependencyEdge), alignof(uint64_t),
+                         alignof(uint32_t), alignof(void*)});
     }
+
+    /// @brief Validates a JobSystemConfig before computing backing storage or constructing.
+    /// @return Success if valid, or Error(InvalidArgument) for invalid capacities/workerCount.
+    [[nodiscard]] static Result<void, Error> validateConfig(const JobSystemConfig& config) noexcept;
 
     /// @brief Calculates required backing bytes for the given configuration.
     [[nodiscard]] static size_t requiredBytes(const JobSystemConfig& config) noexcept;
@@ -283,6 +288,9 @@ private:
     uint32_t* readyQueue_{nullptr};
     uint32_t* slotFreeList_{nullptr};
     uint32_t* edgeFreeList_{nullptr};
+    mutable uint64_t* visitedWords_{nullptr};
+    mutable uint32_t* traversalStack_{nullptr};
+    uint32_t visitedWordCount_{0};
 
     uint32_t freeSlotCount_{0};
     uint32_t freeEdgeCount_{0};

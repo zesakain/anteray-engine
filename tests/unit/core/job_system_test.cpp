@@ -588,6 +588,187 @@ int testJobSystemGenerationOverflowSafety() {
     return 0;
 }
 
+int testLargeCapacityCycleDetectionAndConfigValidation() {
+    // 1. Invalid configuration validation
+    {
+        eng::JobSystemConfig zeroJobs{.workerCount = 0, .maxJobs = 0, .maxDependencies = 16};
+        TEST_CHECK(!eng::JobSystem::validateConfig(zeroJobs).hasValue());
+
+        eng::JobSystemConfig tooManyJobs{
+            .workerCount = 0,
+            .maxJobs = eng::JobSystemConfig::kMaxSupportedJobs + 1,
+            .maxDependencies = 16,
+        };
+        TEST_CHECK(!eng::JobSystem::validateConfig(tooManyJobs).hasValue());
+
+        eng::JobSystemConfig zeroDeps{.workerCount = 0, .maxJobs = 64, .maxDependencies = 0};
+        TEST_CHECK(!eng::JobSystem::validateConfig(zeroDeps).hasValue());
+
+        eng::JobSystemConfig tooManyWorkers{
+            .workerCount = eng::JobSystemConfig::kMaxSupportedWorkers + 1,
+            .maxJobs = 64,
+            .maxDependencies = 16,
+        };
+        TEST_CHECK(!eng::JobSystem::validateConfig(tooManyWorkers).hasValue());
+
+        eng::JobSystemConfig maxSupported{
+            .workerCount = 0,
+            .maxJobs = eng::JobSystemConfig::kMaxSupportedJobs,
+            .maxDependencies = 1024,
+        };
+        TEST_CHECK(eng::JobSystem::validateConfig(maxSupported).hasValue());
+        TEST_CHECK(eng::JobSystem::requiredBytes(maxSupported) > 0);
+    }
+
+    // 2. Large capacity (>= 4096) cycle detection & acyclic chain crossing 4096
+    eng::JobSystemConfig cfg{
+        .workerCount = 2,
+        .maxJobs = 8192,
+        .maxDependencies = 16384,
+    };
+    TEST_CHECK(eng::JobSystem::validateConfig(cfg).hasValue());
+    std::vector<std::byte> storage(eng::JobSystem::requiredBytes(cfg));
+    eng::JobSystem js(storage, cfg);
+
+    std::atomic<bool> gate{false};
+    auto gateJob = js.submit(
+                         [](void* ctx) noexcept -> bool {
+                             auto* flag = static_cast<std::atomic<bool>*>(ctx);
+                             while (!flag->load(std::memory_order_acquire)) {
+                                 std::this_thread::yield();
+                             }
+                             return true;
+                         },
+                         &gate)
+                       .value();
+
+    // Submit 5000 chained jobs crossing the old 4096 boundary while gated
+    std::vector<eng::JobHandle> chain;
+    chain.reserve(5000);
+    eng::JobHandle prev = gateJob;
+    for (uint32_t i = 0; i < 5000; ++i) {
+        std::array<eng::JobHandle, 1> deps{prev};
+        auto res = js.submit([](void*) noexcept -> bool { return true; }, nullptr, deps);
+        TEST_CHECK(res.hasValue());
+        chain.push_back(res.value());
+        prev = res.value();
+    }
+
+    // Verify indices >= 4096 exist in the chain
+    TEST_CHECK(chain.back().index() >= 4096);
+
+    // Attempt to create a cycle involving jobs above index 4096 (chain[4100] -> chain[4500] -> ...
+    // -> chain[4100])
+    auto cycleRes = js.addDependency(chain[4100], chain[4500]);
+    TEST_CHECK(!cycleRes.hasValue());
+    TEST_CHECK(cycleRes.error().code == eng::ErrorCode::InvalidArgument);
+
+    // Also attempt a cycle from a job below 4096 to a job above 4096
+    auto crossCycleRes = js.addDependency(chain[100], chain[4200]);
+    TEST_CHECK(!crossCycleRes.hasValue());
+    TEST_CHECK(crossCycleRes.error().code == eng::ErrorCode::InvalidArgument);
+
+    gate.store(true, std::memory_order_release);
+    TEST_CHECK(js.waitAll().hasValue());
+    TEST_CHECK(js.isSucceeded(chain.back()));
+
+    return 0;
+}
+
+int testDeepAndWideFailurePropagation() {
+    eng::JobSystemConfig cfg{
+        .workerCount = 4,
+        .maxJobs = 1024,
+        .maxDependencies = 4096,
+    };
+    std::vector<std::byte> storage(eng::JobSystem::requiredBytes(cfg));
+    eng::JobSystem js(storage, cfg);
+
+    for (int iter = 0; iter < 10; ++iter) {
+        std::atomic<uint32_t> executedDescendants{0};
+
+        // Failing root job
+        auto root = js.submit([](void*) noexcept -> bool { return false; }, nullptr).value();
+
+        // 1. Deep chain (> 32): 80 levels deep
+        std::vector<eng::JobHandle> deepChain;
+        deepChain.reserve(80);
+        eng::JobHandle prev = root;
+        for (int d = 0; d < 80; ++d) {
+            std::array<eng::JobHandle, 1> deps{prev};
+            auto h = js.submit(
+                           [](void* ctx) noexcept -> bool {
+                               static_cast<std::atomic<uint32_t>*>(ctx)->fetch_add(1);
+                               return true;
+                           },
+                           &executedDescendants, deps)
+                         .value();
+            deepChain.push_back(h);
+            prev = h;
+        }
+
+        // 2. Wide fan-out (> 32 direct descendants: 64 branches) + shared diamond join
+        std::vector<eng::JobHandle> wideBranchLeaves;
+        wideBranchLeaves.reserve(64);
+        for (int w = 0; w < 64; ++w) {
+            std::array<eng::JobHandle, 1> rootDep{root};
+            auto mid = js.submit(
+                             [](void* ctx) noexcept -> bool {
+                                 static_cast<std::atomic<uint32_t>*>(ctx)->fetch_add(1);
+                                 return true;
+                             },
+                             &executedDescendants, rootDep)
+                           .value();
+            std::array<eng::JobHandle, 1> midDep{mid};
+            auto leaf = js.submit(
+                              [](void* ctx) noexcept -> bool {
+                                  static_cast<std::atomic<uint32_t>*>(ctx)->fetch_add(1);
+                                  return true;
+                              },
+                              &executedDescendants, midDep)
+                            .value();
+            wideBranchLeaves.push_back(leaf);
+        }
+
+        // Diamond join depending on deepChain.back() and 4 wide leaves
+        std::array<eng::JobHandle, 5> joinDeps{
+            deepChain.back(),     wideBranchLeaves[0],  wideBranchLeaves[20],
+            wideBranchLeaves[40], wideBranchLeaves[63],
+        };
+        auto joinJob = js.submit(
+                             [](void* ctx) noexcept -> bool {
+                                 static_cast<std::atomic<uint32_t>*>(ctx)->fetch_add(1);
+                                 return true;
+                             },
+                             &executedDescendants, joinDeps)
+                           .value();
+
+        TEST_CHECK(js.waitAll().hasValue());
+        TEST_CHECK(js.wait(joinJob).hasValue());
+        TEST_CHECK(js.isFailed(root));
+        for (const auto& h : deepChain) {
+            TEST_CHECK(js.isFailed(h));
+        }
+        for (const auto& h : wideBranchLeaves) {
+            TEST_CHECK(js.isFailed(h));
+        }
+        TEST_CHECK(js.isFailed(joinJob));
+        TEST_CHECK(executedDescendants.load() == 0);
+
+        // Reclaim all completed/failed slots between stress iterations
+        (void)js.reclaim(root);
+        for (const auto& h : deepChain) {
+            (void)js.reclaim(h);
+        }
+        for (const auto& h : wideBranchLeaves) {
+            (void)js.reclaim(h);
+        }
+        (void)js.reclaim(joinJob);
+    }
+
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -629,6 +810,12 @@ int main() {
     }
     if (testJobSystemGenerationOverflowSafety() != 0) {
         return 13;
+    }
+    if (testLargeCapacityCycleDetectionAndConfigValidation() != 0) {
+        return 14;
+    }
+    if (testDeepAndWideFailurePropagation() != 0) {
+        return 15;
     }
 
     return 0;

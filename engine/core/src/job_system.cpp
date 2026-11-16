@@ -6,6 +6,22 @@
 
 namespace eng {
 
+Result<void, Error> JobSystem::validateConfig(const JobSystemConfig& config) noexcept {
+    if (config.maxJobs == 0 || config.maxJobs > JobSystemConfig::kMaxSupportedJobs) {
+        return Result<void, Error>::failure(
+            Error(ErrorCode::InvalidArgument, "maxJobs must be in [1, kMaxSupportedJobs]"));
+    }
+    if (config.maxDependencies == 0) {
+        return Result<void, Error>::failure(
+            Error(ErrorCode::InvalidArgument, "maxDependencies must be greater than zero"));
+    }
+    if (config.workerCount > JobSystemConfig::kMaxSupportedWorkers) {
+        return Result<void, Error>::failure(
+            Error(ErrorCode::InvalidArgument, "workerCount exceeds maximum supported workers"));
+    }
+    return Result<void, Error>::success();
+}
+
 size_t JobSystem::requiredBytes(const JobSystemConfig& config) noexcept {
     size_t offset = 0;
     offset = alignUp(offset, alignof(JobSlot));
@@ -22,6 +38,13 @@ size_t JobSystem::requiredBytes(const JobSystemConfig& config) noexcept {
 
     offset = alignUp(offset, alignof(uint32_t));
     offset += static_cast<size_t>(config.maxDependencies) * sizeof(uint32_t); // edgeFreeList_
+
+    const uint32_t visitedWords = (config.maxJobs + 63U) / 64U;
+    offset = alignUp(offset, alignof(uint64_t));
+    offset += static_cast<size_t>(visitedWords) * sizeof(uint64_t); // visitedWords_
+
+    offset = alignUp(offset, alignof(uint32_t));
+    offset += static_cast<size_t>(config.maxJobs) * sizeof(uint32_t); // traversalStack_
 
     return offset;
 }
@@ -57,6 +80,15 @@ JobSystem::JobSystem(std::span<std::byte> storage, const JobSystemConfig& config
     offset = alignUp(offset, alignof(uint32_t));
     edgeFreeList_ = reinterpret_cast<uint32_t*>(base + offset);
     offset += static_cast<size_t>(maxDependencies_) * sizeof(uint32_t);
+
+    visitedWordCount_ = (maxJobs_ + 63U) / 64U;
+    offset = alignUp(offset, alignof(uint64_t));
+    visitedWords_ = reinterpret_cast<uint64_t*>(base + offset);
+    offset += static_cast<size_t>(visitedWordCount_) * sizeof(uint64_t);
+
+    offset = alignUp(offset, alignof(uint32_t));
+    traversalStack_ = reinterpret_cast<uint32_t*>(base + offset);
+    offset += static_cast<size_t>(maxJobs_) * sizeof(uint32_t);
     ENG_ASSERT(offset <= storage.size(), "JobSystem layout exceeded storage bounds");
 
     for (uint32_t i = 0; i < maxJobs_; ++i) {
@@ -579,25 +611,33 @@ void JobSystem::finishJob(uint32_t jobIndex, bool success) noexcept {
         JobSlot& succSlot = jobs_[succIndex];
 
         if (!success) {
-            std::array<uint32_t, 32> failStack{};
-            uint32_t failTop = 0;
-            succSlot.state.store(JobState::Failed, std::memory_order_release);
-            failStack[failTop++] = succIndex;
+            const JobState succState = succSlot.state.load(std::memory_order_acquire);
+            if (succState != JobState::Failed && succState != JobState::Canceled &&
+                succState != JobState::Succeeded) {
+                succSlot.state.store(JobState::Failed, std::memory_order_release);
+                uint32_t failTop = 0;
+                traversalStack_[failTop++] = succIndex;
 
-            while (failTop > 0) {
-                uint32_t failedJob = failStack[--failTop];
-                JobSlot& fSlot = jobs_[failedJob];
-                uint32_t fEdge = fSlot.firstSuccessorEdge;
-                fSlot.firstSuccessorEdge = kInvalidIndex;
-                while (fEdge != kInvalidIndex) {
-                    DependencyEdge curEdge = edges_[fEdge];
-                    edgeFreeList_[freeEdgeCount_++] = fEdge;
-                    uint32_t downstreamJob = curEdge.successorJobIndex;
-                    jobs_[downstreamJob].state.store(JobState::Failed, std::memory_order_release);
-                    if (failTop < failStack.size()) {
-                        failStack[failTop++] = downstreamJob;
+                while (failTop > 0) {
+                    const uint32_t failedJob = traversalStack_[--failTop];
+                    JobSlot& fSlot = jobs_[failedJob];
+                    uint32_t fEdge = fSlot.firstSuccessorEdge;
+                    fSlot.firstSuccessorEdge = kInvalidIndex;
+                    while (fEdge != kInvalidIndex) {
+                        const DependencyEdge curEdge = edges_[fEdge];
+                        edgeFreeList_[freeEdgeCount_++] = fEdge;
+                        const uint32_t downstreamJob = curEdge.successorJobIndex;
+                        JobSlot& dSlot = jobs_[downstreamJob];
+                        const JobState dState = dSlot.state.load(std::memory_order_acquire);
+                        if (dState != JobState::Failed && dState != JobState::Canceled &&
+                            dState != JobState::Succeeded) {
+                            dSlot.state.store(JobState::Failed, std::memory_order_release);
+                            ENG_ASSERT(failTop < maxJobs_,
+                                       "Failure propagation stack exceeded maxJobs");
+                            traversalStack_[failTop++] = downstreamJob;
+                        }
+                        fEdge = curEdge.nextEdgeIndex;
                     }
-                    fEdge = curEdge.nextEdgeIndex;
                 }
             }
         } else {
@@ -654,29 +694,36 @@ void JobSystem::reclaimCompletedSlotsLocked() noexcept {
 
 bool JobSystem::transitivelyDependsOnLocked(uint32_t fromJobIndex,
                                             uint32_t targetJobIndex) const noexcept {
+    if (fromJobIndex >= maxJobs_ || targetJobIndex >= maxJobs_) {
+        return false;
+    }
     if (fromJobIndex == targetJobIndex) {
         return true;
     }
 
-    std::array<uint64_t, 64> visited{};
-    std::array<uint32_t, 64> stack{};
-    uint32_t stackTop = 0;
+    for (uint32_t w = 0; w < visitedWordCount_; ++w) {
+        visitedWords_[w] = 0ULL;
+    }
 
-    stack[stackTop++] = fromJobIndex;
-    visited[fromJobIndex / 64] |= (1ULL << (fromJobIndex % 64));
+    uint32_t stackTop = 0;
+    traversalStack_[stackTop++] = fromJobIndex;
+    visitedWords_[fromJobIndex / 64U] |= (1ULL << (fromJobIndex % 64U));
 
     while (stackTop > 0) {
-        uint32_t curr = stack[--stackTop];
+        const uint32_t curr = traversalStack_[--stackTop];
         const JobSlot& slot = jobs_[curr];
         for (uint32_t i = 0; i < slot.predecessorCount; ++i) {
-            uint32_t pred = slot.predecessors[i];
+            const uint32_t pred = slot.predecessors[i];
             if (pred == targetJobIndex) {
                 return true;
             }
-            if (pred < 4096 && (visited[pred / 64] & (1ULL << (pred % 64))) == 0) {
-                visited[pred / 64] |= (1ULL << (pred % 64));
-                if (stackTop < stack.size()) {
-                    stack[stackTop++] = pred;
+            if (pred < maxJobs_) {
+                const uint32_t word = pred / 64U;
+                const uint64_t mask = 1ULL << (pred % 64U);
+                if ((visitedWords_[word] & mask) == 0ULL) {
+                    visitedWords_[word] |= mask;
+                    ENG_ASSERT(stackTop < maxJobs_, "Cycle traversal stack exceeded maxJobs");
+                    traversalStack_[stackTop++] = pred;
                 }
             }
         }
