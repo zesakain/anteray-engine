@@ -2,6 +2,7 @@
 /// @brief Unit tests for World, EntityHandle, component operations, and system group phase gating.
 
 #include "world/entity.h"
+#include "world/read_only_world.h"
 #include "world/system_group.h"
 #include "world/world.h"
 
@@ -211,6 +212,65 @@ static int testClearUserEntities() {
     return 0;
 }
 
+template <typename T>
+concept HasCreateEntity = requires(T& w) { w.createEntity(); };
+template <typename T>
+concept HasDestroyEntity = requires(T& w, EntityHandle e) { w.destroyEntity(e); };
+template <typename T>
+concept HasSetComponent = requires(T& w, EntityHandle e, Position p) { w.setComponent(e, p); };
+template <typename T>
+concept HasMutableComponent =
+    requires(T& w, EntityHandle e) { w.template getMutableComponent<Position>(e); };
+template <typename T>
+concept HasGetRawWorld = requires(T& w) { w.getRawWorld(); };
+template <typename T>
+concept HasSetParent = requires(T& w, EntityHandle a, EntityHandle b) { w.setParent(a, b); };
+template <typename T>
+concept HasProgress = requires(T& w) { w.progress(0.016F); };
+template <typename T>
+concept HasSetGroupActive =
+    requires(T& w) { w.setSystemGroupActive(SystemGroup::Continuous, true); };
+
+static_assert(!HasCreateEntity<ReadOnlyWorld>);
+static_assert(!HasDestroyEntity<ReadOnlyWorld>);
+static_assert(!HasSetComponent<ReadOnlyWorld>);
+static_assert(!HasMutableComponent<ReadOnlyWorld>);
+static_assert(!HasGetRawWorld<ReadOnlyWorld>);
+static_assert(!HasSetParent<ReadOnlyWorld>);
+static_assert(!HasProgress<ReadOnlyWorld>);
+static_assert(!HasSetGroupActive<ReadOnlyWorld>);
+
+static int testReadOnlyWorldFacade() {
+    World world;
+    EntityHandle parent = world.createEntity("Parent");
+    EntityHandle child = world.createEntity("Child");
+    world.setComponent(parent, Position{1.0F, 2.0F, 3.0F});
+    TEST_CHECK(world.setParent(child, parent, false));
+
+    const ReadOnlyWorld ro(world);
+    TEST_CHECK(ro.isAlive(parent));
+    TEST_CHECK(ro.getEntityName(parent) == "Parent");
+    TEST_CHECK(ro.hasComponent<Position>(parent));
+    const Position* pos = ro.getComponent<Position>(parent);
+    TEST_CHECK(pos != nullptr && pos->x == 1.0F && pos->y == 2.0F && pos->z == 3.0F);
+    TEST_CHECK(ro.getParent(child) == parent);
+    TEST_CHECK(ro.hasChildren(parent));
+    TEST_CHECK(ro.getInstanceId() == world.getInstanceId());
+    TEST_CHECK(ro.getTransformVersion() == world.getTransformVersion());
+    TEST_CHECK(ro.getSceneGeneration() == world.getSceneGeneration());
+
+    size_t childCount = 0;
+    bool childMatched = false;
+    ro.forEachChild(parent, [&](EntityHandle h) {
+        childMatched = (h == child);
+        ++childCount;
+    });
+    TEST_CHECK(childCount == 1);
+    TEST_CHECK(childMatched);
+
+    return 0;
+}
+
 int main() {
     if (testEntityLifecycle() != 0) {
         return 1;
@@ -225,6 +285,9 @@ int main() {
         return 1;
     }
     if (testClearUserEntities() != 0) {
+        return 1;
+    }
+    if (testReadOnlyWorldFacade() != 0) {
         return 1;
     }
     std::cout << "All World unit tests passed successfully.\n";
