@@ -137,10 +137,10 @@ Result<void> VulkanSwapchain::recreate(uint32_t newWidth, uint32_t newHeight, bo
                 hasImmediate = true;
             }
         }
-        if (hasMailbox) {
-            selectedMode = VK_PRESENT_MODE_MAILBOX_KHR;
-        } else if (hasImmediate) {
+        if (hasImmediate) {
             selectedMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        } else if (hasMailbox) {
+            selectedMode = VK_PRESENT_MODE_MAILBOX_KHR;
         }
     }
 
@@ -154,8 +154,8 @@ Result<void> VulkanSwapchain::recreate(uint32_t newWidth, uint32_t newHeight, bo
                                     capabilities.maxImageExtent.height);
     }
 
-    // 5. Image count (triple buffering if supported)
-    uint32_t imageCount = capabilities.minImageCount + 1;
+    // 5. Image count (4 images when supported to avoid WSI acquire stalls on PRIME/Wayland)
+    uint32_t imageCount = capabilities.minImageCount + 2;
     if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount) {
         imageCount = capabilities.maxImageCount;
     }
@@ -203,6 +203,11 @@ Result<void> VulkanSwapchain::recreate(uint32_t newWidth, uint32_t newHeight, bo
     // 6. Retrieve images and create views
     uint32_t actualImageCount = 0;
     vkGetSwapchainImagesKHR(device_, swapchain_, &actualImageCount, nullptr);
+    ENG_LOG_FORMAT(LogLevel::Info, "Vulkan",
+                   "Swapchain config: %ux%u, vsync=%d, presentMode=%d, minImages=%u, "
+                   "maxImages=%u, actualImages=%u",
+                   extent_.width, extent_.height, vsync_ ? 1 : 0, static_cast<int>(selectedMode),
+                   capabilities.minImageCount, capabilities.maxImageCount, actualImageCount);
     images_.resize(actualImageCount);
     vkGetSwapchainImagesKHR(device_, swapchain_, &actualImageCount, images_.data());
 

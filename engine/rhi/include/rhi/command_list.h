@@ -49,6 +49,12 @@ struct RenderPassBeginInfo {
     /// Whether to clear depth target on pass entry.
     bool clearDepthTarget{true};
 
+    /// Optional custom render area offset X (default 0).
+    uint32_t renderOffsetX{0};
+
+    /// Optional custom render area offset Y (default 0).
+    uint32_t renderOffsetY{0};
+
     /// Optional custom render area width (0 = use target dimensions).
     uint32_t renderWidth{0};
 

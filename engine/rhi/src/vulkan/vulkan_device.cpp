@@ -7,6 +7,7 @@
 
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
+#include <core/time/cpu_profiler.h>
 #include <core/time/timestamp.h>
 
 namespace eng::rhi {
@@ -1588,6 +1589,7 @@ void VulkanDevice::reclaimCompletedResources() noexcept {
 }
 
 void VulkanDevice::waitIdle() {
+    ENG_CPU_PROFILE_SCOPE(VulkanSyncAndWaits);
     if (device_ != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device_);
         completedSubmissionSerial_ = currentSubmissionSerial_;
@@ -1777,7 +1779,11 @@ Result<uint32_t> VulkanDevice::acquireNextImage() {
     auto& sync = frameSync_[currentFrameSlot_];
 
     const Timestamp tFenceStart = Timestamp::now();
-    VkResult fenceRes = vkWaitForFences(device_, 1, &sync.inFlightFence, VK_TRUE, 500000000ULL);
+    VkResult fenceRes = VK_SUCCESS;
+    {
+        ENG_CPU_PROFILE_SCOPE(VulkanSyncAndWaits);
+        fenceRes = vkWaitForFences(device_, 1, &sync.inFlightFence, VK_TRUE, 500000000ULL);
+    }
     const Timestamp tFenceEnd = Timestamp::now();
     queueTimingStats_.fenceWaitTimeMs =
         static_cast<float>((tFenceEnd - tFenceStart).asMilliseconds());

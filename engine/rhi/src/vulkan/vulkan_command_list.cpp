@@ -339,11 +339,14 @@ void VulkanCommandList::beginRenderPass(const RenderPassBeginInfo& info) {
 
         uint32_t baseWidth = hasColor ? colorDesc->width : depthDesc->width;
         uint32_t baseHeight = hasColor ? colorDesc->height : depthDesc->height;
-        uint32_t width =
-            (info.renderWidth > 0 && info.renderWidth <= baseWidth) ? info.renderWidth : baseWidth;
-        uint32_t height = (info.renderHeight > 0 && info.renderHeight <= baseHeight)
+        uint32_t offsetX = (info.renderOffsetX < baseWidth) ? info.renderOffsetX : 0;
+        uint32_t offsetY = (info.renderOffsetY < baseHeight) ? info.renderOffsetY : 0;
+        uint32_t width = (info.renderWidth > 0 && (offsetX + info.renderWidth) <= baseWidth)
+                             ? info.renderWidth
+                             : (baseWidth - offsetX);
+        uint32_t height = (info.renderHeight > 0 && (offsetY + info.renderHeight) <= baseHeight)
                               ? info.renderHeight
-                              : baseHeight;
+                              : (baseHeight - offsetY);
 
         VkImageMemoryBarrier2 barriers[2];
         uint32_t barrierCount = 0;
@@ -424,7 +427,7 @@ void VulkanCommandList::beginRenderPass(const RenderPassBeginInfo& info) {
             .flags = 0,
             .renderArea =
                 {
-                    .offset = {0, 0},
+                    .offset = {static_cast<int32_t>(offsetX), static_cast<int32_t>(offsetY)},
                     .extent = {width, height},
                 },
             .layerCount = 1,
