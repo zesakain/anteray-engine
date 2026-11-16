@@ -291,17 +291,19 @@ public:
     /// @brief Returns true if the load was cancelled.
     [[nodiscard]] bool isCancelled() const noexcept;
 
-    /// @brief Returns live progress accounting data.
+    /// @brief Returns a thread-safe snapshot of live progress accounting data.
     [[nodiscard]] AsyncLoadProgress getProgress() const noexcept;
 
-    /// @brief Returns performance telemetry for the completed or current load.
-    [[nodiscard]] const AsyncLoadTelemetry& getTelemetry() const noexcept;
+    /// @brief Returns a thread-safe snapshot of performance telemetry for the current/completed
+    /// load.
+    [[nodiscard]] AsyncLoadTelemetry getTelemetry() const noexcept;
 
-    /// @brief Returns the error message if the load failed.
-    [[nodiscard]] std::string_view getErrorMessage() const noexcept;
+    /// @brief Returns a thread-safe copy of the error message if the load failed.
+    [[nodiscard]] std::string getErrorMessage() const;
 
-    /// @brief Returns structured asset errors encountered during ingestion.
-    [[nodiscard]] const std::vector<AssetErrorInfo>& getAssetErrors() const noexcept;
+    /// @brief Returns a thread-safe snapshot of structured asset errors encountered during
+    /// ingestion.
+    [[nodiscard]] std::vector<AssetErrorInfo> getAssetErrors() const;
 
     /// @brief Resets the loader to Idle state.
     void reset() noexcept;

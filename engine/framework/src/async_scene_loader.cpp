@@ -171,6 +171,34 @@ struct AsyncSceneLoader::Impl {
 
     std::mutex queueMutex{};
 
+    struct JobTaskContext {
+        Impl* self{nullptr};
+        uint64_t reqId{0};
+        std::atomic<bool> inUse{false};
+    };
+    static constexpr size_t kMaxDiscoveryContexts = 8;
+    std::array<JobTaskContext, kMaxDiscoveryContexts> discoveryContexts_{};
+    std::array<JobTaskContext, JobSystemConfig::kMaxSupportedWorkers> decodeContexts_{};
+    std::atomic<uint32_t> activeJobCount_{0};
+
+    template <size_t N>
+    JobTaskContext* acquireJobContext(std::array<JobTaskContext, N>& pool, uint64_t reqId) {
+        for (auto& slot : pool) {
+            bool expected = false;
+            if (slot.inUse.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+                slot.self = this;
+                slot.reqId = reqId;
+                return &slot;
+            }
+        }
+        return nullptr;
+    }
+
+    template <typename Fn> void updateTelemetry(Fn&& fn) {
+        std::lock_guard<std::mutex> lock(progressMutex);
+        fn(telemetry);
+    }
+
     void updateProgress(const std::function<void(AsyncLoadProgress&)>& fn) {
         std::lock_guard<std::mutex> lock(progressMutex);
         fn(progress);
@@ -188,7 +216,8 @@ struct AsyncSceneLoader::Impl {
 
     ~Impl() {
         cancelLoading();
-        while (discoveryRunning.load(std::memory_order_acquire) ||
+        while (activeJobCount_.load(std::memory_order_acquire) > 0 ||
+               discoveryRunning.load(std::memory_order_acquire) ||
                activeDecodeWorkers.load(std::memory_order_acquire) > 0) {
             std::this_thread::yield();
         }
@@ -254,10 +283,9 @@ struct AsyncSceneLoader::Impl {
             std::stringstream buffer;
             buffer << file.rdbuf();
             std::string content = buffer.str();
-            telemetry.fileIoDuration = Timestamp::now() - fileReadStart;
-            if (telemetry.fileIoDuration.asMicroseconds() == 0) {
-                telemetry.fileIoDuration = Duration::fromMicroseconds(100);
-            }
+            const Duration fileIoDur =
+                std::max(Duration::fromMicroseconds(100), Timestamp::now() - fileReadStart);
+            updateTelemetry([&](AsyncLoadTelemetry& t) { t.fileIoDuration = fileIoDur; });
 
             // Phase 3: Asset Discovery
             state.store(AsyncLoadState::AssetDiscovery, std::memory_order_release);
@@ -296,12 +324,12 @@ struct AsyncSceneLoader::Impl {
                 }
             }
 
-            telemetry.discoveryDuration = Timestamp::now() - discoveryStart;
-            if (telemetry.discoveryDuration.asMicroseconds() == 0) {
-                telemetry.discoveryDuration = Duration::fromMicroseconds(100);
-            }
+            const Duration discDur =
+                std::max(Duration::fromMicroseconds(100), Timestamp::now() - discoveryStart);
+            updateTelemetry([&](AsyncLoadTelemetry& t) { t.discoveryDuration = discDur; });
         } else if (path.ends_with(".gltf") || path.ends_with(".glb")) {
-            telemetry.fileIoDuration = Duration::fromMilliseconds(1);
+            updateTelemetry(
+                [](AsyncLoadTelemetry& t) { t.fileIoDuration = Duration::fromMilliseconds(1); });
             state.store(AsyncLoadState::AssetDiscovery, std::memory_order_release);
             const Timestamp discoveryStart = Timestamp::now();
 
@@ -319,10 +347,9 @@ struct AsyncSceneLoader::Impl {
                 return;
             }
             referencedGltfFiles.insert(path);
-            telemetry.discoveryDuration = Timestamp::now() - discoveryStart;
-            if (telemetry.discoveryDuration.asMicroseconds() == 0) {
-                telemetry.discoveryDuration = Duration::fromMicroseconds(100);
-            }
+            const Duration discDur =
+                std::max(Duration::fromMicroseconds(100), Timestamp::now() - discoveryStart);
+            updateTelemetry([&](AsyncLoadTelemetry& t) { t.discoveryDuration = discDur; });
         } else {
             setFailure("Unsupported scene format: " + path);
             return;
@@ -526,12 +553,12 @@ struct AsyncSceneLoader::Impl {
             }
         }
 
-        telemetry.cpuStagingDuration = Timestamp::now() - stagingStart;
-        telemetry.meshProcessDuration = telemetry.cpuStagingDuration;
-        if (telemetry.cpuStagingDuration.asMicroseconds() == 0) {
-            telemetry.cpuStagingDuration = Duration::fromMicroseconds(100);
-            telemetry.meshProcessDuration = telemetry.cpuStagingDuration;
-        }
+        const Duration stagingDur =
+            std::max(Duration::fromMicroseconds(100), Timestamp::now() - stagingStart);
+        updateTelemetry([&](AsyncLoadTelemetry& t) {
+            t.cpuStagingDuration = stagingDur;
+            t.meshProcessDuration = stagingDur;
+        });
 
         updateProgress([&](AsyncLoadProgress& p) {
             p.entitiesDiscovered = static_cast<uint32_t>(stagedEntities.size());
@@ -559,11 +586,6 @@ struct AsyncSceneLoader::Impl {
     // -------------------------------------------------------------------------
     // Stage 3 & 4: Parallel Texture Decoding on Background Workers
     // -------------------------------------------------------------------------
-    struct DecodeTaskContext {
-        Impl* self{nullptr};
-        uint64_t reqId{0};
-    };
-
     void dispatchTextureDecodeJobs(uint64_t reqId) {
         if (pendingTextureDecodes.empty()) {
             allDecodingFinished.store(true, std::memory_order_release);
@@ -587,24 +609,42 @@ struct AsyncSceneLoader::Impl {
                 pendingCount = pendingTextureDecodes.size();
             }
             uint32_t workersToSpawn = std::min(workerCount, static_cast<uint32_t>(pendingCount));
+            workersToSpawn = std::min(workersToSpawn, JobSystemConfig::kMaxSupportedWorkers);
             workersToSpawn = std::max(1U, workersToSpawn);
             activeDecodeWorkers.store(workersToSpawn, std::memory_order_release);
 
+            uint32_t spawned = 0;
             for (uint32_t w = 0; w < workersToSpawn; ++w) {
-                auto* taskCtx = new DecodeTaskContext{this, reqId};
+                JobTaskContext* taskCtx = acquireJobContext(decodeContexts_, reqId);
+                if (taskCtx == nullptr) {
+                    if (activeDecodeWorkers.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                        allDecodingFinished.store(true, std::memory_order_release);
+                    }
+                    continue;
+                }
+                activeJobCount_.fetch_add(1, std::memory_order_acq_rel);
                 const auto subRes = jobSystem->submit(
                     [](void* ctx) noexcept -> bool {
-                        auto* c = static_cast<DecodeTaskContext*>(ctx);
-                        c->self->runTextureDecodeLoop(c->reqId);
-                        delete c;
+                        auto* c = static_cast<JobTaskContext*>(ctx);
+                        Impl* self = c->self;
+                        const uint64_t jobReqId = c->reqId;
+                        c->inUse.store(false, std::memory_order_release);
+                        self->runTextureDecodeLoop(jobReqId);
+                        self->activeJobCount_.fetch_sub(1, std::memory_order_acq_rel);
                         return true;
                     },
                     taskCtx);
                 if (!subRes.hasValue()) {
-                    delete taskCtx;
-                    if (activeDecodeWorkers.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-                        allDecodingFinished.store(true, std::memory_order_release);
+                    taskCtx->inUse.store(false, std::memory_order_release);
+                    activeJobCount_.fetch_sub(1, std::memory_order_acq_rel);
+                    if (activeDecodeWorkers.fetch_sub(1, std::memory_order_acq_rel) == 1 &&
+                        spawned == 0) {
+                        // Fall back to synchronous decode on caller if no workers could start.
+                        activeDecodeWorkers.store(1, std::memory_order_release);
+                        runTextureDecodeLoop(reqId);
                     }
+                } else {
+                    ++spawned;
                 }
             }
         } else {
@@ -634,14 +674,11 @@ struct AsyncSceneLoader::Impl {
                 pendingTextureDecodes.pop_front();
             }
 
+            const bool fileExists = std::filesystem::exists(item.filePath);
             Result<render::ImageData> decodeRes =
-                Result<render::ImageData>::failure(Error(ErrorCode::EntityNotFound, ""));
-            if (std::filesystem::exists(item.filePath)) {
-                decodeRes = render::ImageDecoder::decodeFromFile(item.filePath, 4, item.srgb);
-            } else {
-                decodeRes = Result<render::ImageData>::failure(Error(
-                    ErrorCode::EntityNotFound, "Texture file not found on disk: " + item.filePath));
-            }
+                fileExists ? render::ImageDecoder::decodeFromFile(item.filePath, 4, item.srgb)
+                           : Result<render::ImageData>::failure(Error(
+                                 ErrorCode::EntityNotFound, "Texture file not found on disk"));
 
             if (decodeRes.hasValue()) {
                 item.decodedImage = std::move(decodeRes.value());
@@ -658,7 +695,9 @@ struct AsyncSceneLoader::Impl {
                     [&](AsyncLoadProgress& p) { p.peakRamBytes = std::max(p.peakRamBytes, ram); });
             } else {
                 item.decodeFailed = true;
-                item.errorMessage = decodeRes.error().message;
+                item.errorMessage = fileExists
+                                        ? std::string(decodeRes.error().message)
+                                        : ("Texture file not found on disk: " + item.filePath);
                 {
                     std::lock_guard<std::mutex> lock(progressMutex);
                     assetErrors.push_back(AssetErrorInfo{.path = item.filePath,
@@ -694,10 +733,9 @@ struct AsyncSceneLoader::Impl {
             }
             if (!remainingDecodes || cancellationRequested.load(std::memory_order_acquire) ||
                 reqId != currentRequestId.load(std::memory_order_acquire)) {
-                telemetry.textureDecodeDuration = Timestamp::now() - decodeStartTime;
-                if (telemetry.textureDecodeDuration.asMicroseconds() == 0) {
-                    telemetry.textureDecodeDuration = Duration::fromMicroseconds(100);
-                }
+                const Duration decDur =
+                    std::max(Duration::fromMicroseconds(100), Timestamp::now() - decodeStartTime);
+                updateTelemetry([&](AsyncLoadTelemetry& t) { t.textureDecodeDuration = decDur; });
                 allDecodingFinished.store(true, std::memory_order_release);
             }
         }
@@ -829,7 +867,8 @@ struct AsyncSceneLoader::Impl {
             std::chrono::duration<double, std::micro>(endTick - startTick).count();
         totalGpuUploadDuration = totalGpuUploadDuration +
                                  Duration::fromMicroseconds(static_cast<uint64_t>(tickDurationUs));
-        telemetry.gpuUploadDuration = totalGpuUploadDuration;
+        updateTelemetry(
+            [&](AsyncLoadTelemetry& t) { t.gpuUploadDuration = totalGpuUploadDuration; });
     }
 
     // -------------------------------------------------------------------------
@@ -846,10 +885,9 @@ struct AsyncSceneLoader::Impl {
             p.overallProgress = 0.94F;
         });
 
-        telemetry.validationDuration = Timestamp::now() - valStart;
-        if (telemetry.validationDuration.asMicroseconds() == 0) {
-            telemetry.validationDuration = Duration::fromMicroseconds(100);
-        }
+        const Duration valDur =
+            std::max(Duration::fromMicroseconds(100), Timestamp::now() - valStart);
+        updateTelemetry([&](AsyncLoadTelemetry& t) { t.validationDuration = valDur; });
 
         state.store(AsyncLoadState::ReadyToActivate, std::memory_order_release);
 
@@ -971,10 +1009,8 @@ struct AsyncSceneLoader::Impl {
             }
         }
 
-        telemetry.ecsCreationDuration = Timestamp::now() - commitStart;
-        if (telemetry.ecsCreationDuration.asMicroseconds() == 0) {
-            telemetry.ecsCreationDuration = Duration::fromMicroseconds(100);
-        }
+        const Duration ecsDur =
+            std::max(Duration::fromMicroseconds(100), Timestamp::now() - commitStart);
 
         // Phase 9: Viewport Preparation
         state.store(AsyncLoadState::ViewportPreparation, std::memory_order_release);
@@ -984,13 +1020,15 @@ struct AsyncSceneLoader::Impl {
         });
         const Timestamp vpStart = Timestamp::now();
         world::updateHierarchyTransforms(world);
-        telemetry.viewportPrepDuration = Timestamp::now() - vpStart;
-        if (telemetry.viewportPrepDuration.asMicroseconds() == 0) {
-            telemetry.viewportPrepDuration = Duration::fromMicroseconds(50);
-        }
+        const Duration vpDur = std::max(Duration::fromMicroseconds(50), Timestamp::now() - vpStart);
 
         // Phase 10: Scene Ready
-        telemetry.totalDuration = Timestamp::now() - loadStartTime;
+        const Duration totalDur = Timestamp::now() - loadStartTime;
+        updateTelemetry([&](AsyncLoadTelemetry& t) {
+            t.ecsCreationDuration = ecsDur;
+            t.viewportPrepDuration = vpDur;
+            t.totalDuration = totalDur;
+        });
         const uint32_t count = static_cast<uint32_t>(stagedEntities.size());
         stagedEntities.clear();
 
@@ -1002,10 +1040,10 @@ struct AsyncSceneLoader::Impl {
             p.currentOperation = "Scene ready";
         });
 
-        ENG_LOG_INFO("AsyncSceneLoader",
-                     "Scene activated successfully with " + std::to_string(count) +
-                         " entities in " +
-                         std::to_string(telemetry.totalDuration.asMicroseconds() / 1000) + " ms");
+        ENG_LOG_INFO("AsyncSceneLoader", "Scene activated successfully with " +
+                                             std::to_string(count) + " entities in " +
+                                             std::to_string(totalDur.asMicroseconds() / 1000) +
+                                             " ms");
 
         return Result<SceneActivationResult, Error>::success(SceneActivationResult{
             .entitiesLoaded = count,
@@ -1088,31 +1126,35 @@ Result<uint64_t, Error> AsyncSceneLoader::startLoad(std::string_view filepath) {
 
     // Phase 1: Scene Request
     impl_->state.store(AsyncLoadState::SceneRequest, std::memory_order_release);
-    impl_->telemetry.sceneRequestDuration = Timestamp::now() - impl_->loadStartTime;
-    if (impl_->telemetry.sceneRequestDuration.asMicroseconds() == 0) {
-        impl_->telemetry.sceneRequestDuration = Duration::fromMicroseconds(50);
-    }
+    const Duration reqDur =
+        std::max(Duration::fromMicroseconds(50), Timestamp::now() - impl_->loadStartTime);
+    impl_->updateTelemetry([&](AsyncLoadTelemetry& t) { t.sceneRequestDuration = reqDur; });
 
     // Phase 2: File Reading initiated
     impl_->state.store(AsyncLoadState::FileReading, std::memory_order_release);
 
     if (impl_->jobSystem != nullptr && impl_->jobSystem->isRunning() &&
         impl_->jobSystem->workerCount() > 0) {
-        struct DiscoveryContext {
-            Impl* self{nullptr};
-            uint64_t reqId{0};
-        };
-        auto* ctx = new DiscoveryContext{impl_.get(), reqId};
-        auto submitRes = impl_->jobSystem->submit(
-            [](void* c) noexcept -> bool {
-                auto* dCtx = static_cast<DiscoveryContext*>(c);
-                dCtx->self->runDiscoveryJob(dCtx->reqId);
-                delete dCtx;
-                return true;
-            },
-            ctx);
-        if (!submitRes.hasValue()) {
-            delete ctx;
+        Impl::JobTaskContext* ctx = impl_->acquireJobContext(impl_->discoveryContexts_, reqId);
+        if (ctx != nullptr) {
+            impl_->activeJobCount_.fetch_add(1, std::memory_order_acq_rel);
+            auto submitRes = impl_->jobSystem->submit(
+                [](void* c) noexcept -> bool {
+                    auto* dCtx = static_cast<Impl::JobTaskContext*>(c);
+                    Impl* self = dCtx->self;
+                    const uint64_t jobReqId = dCtx->reqId;
+                    dCtx->inUse.store(false, std::memory_order_release);
+                    self->runDiscoveryJob(jobReqId);
+                    self->activeJobCount_.fetch_sub(1, std::memory_order_acq_rel);
+                    return true;
+                },
+                ctx);
+            if (!submitRes.hasValue()) {
+                ctx->inUse.store(false, std::memory_order_release);
+                impl_->activeJobCount_.fetch_sub(1, std::memory_order_acq_rel);
+                impl_->runDiscoveryJob(reqId);
+            }
+        } else {
             impl_->runDiscoveryJob(reqId);
         }
     } else {
@@ -1130,9 +1172,11 @@ void AsyncSceneLoader::update(rhi::RhiDevice& device, float budgetMs) {
     const Timestamp tickStart = Timestamp::now();
     impl_->tickGpuUpload(device, budgetMs);
     const Duration tickDuration = Timestamp::now() - tickStart;
-    if (tickDuration > impl_->telemetry.longestFrameStall) {
-        impl_->telemetry.longestFrameStall = tickDuration;
-    }
+    impl_->updateTelemetry([&](AsyncLoadTelemetry& t) {
+        if (tickDuration > t.longestFrameStall) {
+            t.longestFrameStall = tickDuration;
+        }
+    });
 }
 
 Result<SceneActivationResult, Error> AsyncSceneLoader::activate(world::World& world) {
@@ -1170,16 +1214,17 @@ AsyncLoadProgress AsyncSceneLoader::getProgress() const noexcept {
     return impl_->progress;
 }
 
-const AsyncLoadTelemetry& AsyncSceneLoader::getTelemetry() const noexcept {
+AsyncLoadTelemetry AsyncSceneLoader::getTelemetry() const noexcept {
+    std::lock_guard<std::mutex> lock(impl_->progressMutex);
     return impl_->telemetry;
 }
 
-std::string_view AsyncSceneLoader::getErrorMessage() const noexcept {
+std::string AsyncSceneLoader::getErrorMessage() const {
     std::lock_guard<std::mutex> lock(impl_->progressMutex);
     return impl_->errorMessage;
 }
 
-const std::vector<AssetErrorInfo>& AsyncSceneLoader::getAssetErrors() const noexcept {
+std::vector<AssetErrorInfo> AsyncSceneLoader::getAssetErrors() const {
     std::lock_guard<std::mutex> lock(impl_->progressMutex);
     return impl_->assetErrors;
 }

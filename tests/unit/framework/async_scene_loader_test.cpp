@@ -412,7 +412,11 @@ int testBistroBenchmarkSceneLoading() {
     TEST_CHECK(startRes.hasValue());
     TEST_CHECK(loader.isLoading());
 
+#if defined(__SANITIZE_THREAD__)
+    int maxFrames = 120000;
+#else
     int maxFrames = 30000;
+#endif
     while (loader.isLoading() && maxFrames-- > 0) {
         loader.update(*nullDevice, 5.0F);
         std::this_thread::sleep_for(std::chrono::microseconds(500));
@@ -557,6 +561,76 @@ int testRapidCancelRestartWithJobSystem() {
     return 0;
 }
 
+int testConcurrentInquiryThreadSafety() {
+    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+        return 0;
+    }
+
+    JobSystemConfig jobConfig{.workerCount = 2, .maxJobs = 128};
+    size_t bytes = JobSystem::requiredBytes(jobConfig);
+    std::vector<std::byte> storage(bytes);
+    JobSystem jobSystem(storage, jobConfig);
+
+    auto nullDevRes = rhi::createNullDevice();
+    TEST_CHECK(nullDevRes.hasValue());
+    auto nullDevice = std::move(nullDevRes.value());
+
+    render::AssetManager assetManager;
+    AsyncSceneLoader loader;
+    loader.bindJobSystem(&jobSystem);
+    loader.bindAssetManager(&assetManager);
+
+    std::atomic<bool> stopReader{false};
+    std::atomic<uint64_t> snapshotsRead{0};
+
+    std::thread reader([&]() {
+        while (!stopReader.load(std::memory_order_acquire)) {
+            const auto telemetry = loader.getTelemetry();
+            const auto assetErrors = loader.getAssetErrors();
+            const auto errMsg = loader.getErrorMessage();
+            const auto progress = loader.getProgress();
+            const auto st = loader.getState();
+            const bool loading = loader.isLoading();
+            const bool cancelled = loader.isCancelled();
+            (void)telemetry;
+            (void)assetErrors;
+            (void)errMsg;
+            (void)progress;
+            (void)st;
+            (void)loading;
+            (void)cancelled;
+            snapshotsRead.fetch_add(1, std::memory_order_relaxed);
+            std::this_thread::yield();
+        }
+    });
+
+    // Run valid loads, cancellations, and invalid-file failures concurrently with reader inquiries.
+    for (int i = 0; i < 3; ++i) {
+        (void)loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+        int frames = 1000;
+        while (loader.isLoading() && frames-- > 0) {
+            loader.update(*nullDevice, 2.0F);
+            if (i == 1 && frames == 998) {
+                loader.cancel();
+            }
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+        }
+        if (loader.isReadyToActivate()) {
+            World world;
+            TEST_CHECK(loader.activate(world).hasValue());
+        }
+        loader.reset();
+    }
+
+    // Trigger failure message update concurrently with reader
+    (void)loader.startLoad("/nonexistent/path/concurrent_inquiry_test.hikari");
+
+    stopReader.store(true, std::memory_order_release);
+    reader.join();
+    TEST_CHECK(snapshotsRead.load() > 0);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -627,6 +701,12 @@ int main() {
         return 1;
     }
     std::cout << "PASS: testRapidCancelRestartWithJobSystem\n";
+
+    if (testConcurrentInquiryThreadSafety() != 0) {
+        std::cerr << "FAIL: testConcurrentInquiryThreadSafety\n";
+        return 1;
+    }
+    std::cout << "PASS: testConcurrentInquiryThreadSafety\n";
 
     if (testBistroBenchmarkSceneLoading() != 0) {
         std::cerr << "FAIL: testBistroBenchmarkSceneLoading\n";
