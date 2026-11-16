@@ -505,11 +505,12 @@ ShapeCastHit PhysicsWorld::castShape(const ShapeCastQuery& query) const {
         return result;
     }
 
-    const JPH::Mat44 startMat = JPH::Mat44::sRotationTranslation(
+    const JPH::RMat44 startMat = JPH::RMat44::sRotationTranslation(
         toJolt(query.startTransform.rotation), toJolt(query.startTransform.position));
     const JPH::Vec3 castDir = toJolt(query.direction * query.maxDistance);
 
-    JPH::RShapeCast shapeCast(shape, JPH::Vec3::sReplicate(1.0F), startMat, castDir);
+    const JPH::RShapeCast shapeCast =
+        JPH::RShapeCast::sFromWorldTransform(shape, JPH::Vec3::sReplicate(1.0F), startMat, castDir);
     JPH::ShapeCastSettings castSettings{};
     castSettings.mReturnDeepestPoint = true;
     castSettings.mBackFaceModeTriangles = JPH::EBackFaceMode::IgnoreBackFaces;
