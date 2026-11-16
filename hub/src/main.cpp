@@ -17,6 +17,7 @@
 #include <iostream>
 #include <memory>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 int main(int argc, char* argv[]) {
@@ -70,64 +71,66 @@ int main(int argc, char* argv[]) {
             .title = "Hikari Machine Hub",
             .width = windowWidth,
             .height = windowHeight,
+            .resizable = true,
             .vulkan = true,
         };
         auto winRes = platform->createWindow(winDesc);
-        if (winRes.hasValue()) {
-            window = std::move(winRes.value());
+        if (!winRes.hasValue()) {
+            ENG_LOG_CRITICAL("Hub", "Failed to create Hub desktop window");
+            return 1;
+        }
+        window = std::move(winRes.value());
 
-            const std::filesystem::path repoRoot =
-                eng::hub::EngineLauncher::findRepositoryRoot(std::filesystem::current_path());
-            if (!repoRoot.empty()) {
-                const std::filesystem::path logoPath =
-                    repoRoot / "assets/textures/branding/hikari_logo.jpg";
-                if (std::filesystem::exists(logoPath)) {
-                    auto imgRes =
-                        eng::render::ImageDecoder::decodeFromFile(logoPath.string(), 4, true);
-                    if (imgRes.hasValue() && imgRes.value().width > 0 &&
-                        imgRes.value().height > 0) {
-                        const auto& img = imgRes.value();
-                        const uint32_t side = std::max(img.width, img.height);
-                        std::vector<uint8_t> squarePixels(
-                            static_cast<size_t>(side) * static_cast<size_t>(side) * 4ULL, 0U);
-                        const uint8_t bgR = img.pixels[0];
-                        const uint8_t bgG = img.pixels[1];
-                        const uint8_t bgB = img.pixels[2];
-                        for (size_t idx = 0; idx < squarePixels.size(); idx += 4) {
-                            squarePixels[idx] = bgR;
-                            squarePixels[idx + 1] = bgG;
-                            squarePixels[idx + 2] = bgB;
-                            squarePixels[idx + 3] = 255U;
-                        }
-                        const uint32_t offsetX = (side - img.width) / 2U;
-                        const uint32_t offsetY = (side - img.height) / 2U;
-                        for (uint32_t y = 0; y < img.height; ++y) {
-                            const uint8_t* srcRow =
-                                img.pixels.data() + (static_cast<size_t>(y) * img.width * 4ULL);
-                            uint8_t* dstRow =
-                                squarePixels.data() +
-                                ((static_cast<size_t>(y + offsetY) * side + offsetX) * 4ULL);
-                            std::memcpy(dstRow, srcRow, static_cast<size_t>(img.width) * 4ULL);
-                        }
-                        window->setIcon(squarePixels.data(), side, side);
+        const std::filesystem::path repoRoot =
+            eng::hub::EngineLauncher::findRepositoryRoot(std::filesystem::current_path());
+        if (!repoRoot.empty()) {
+            const std::filesystem::path logoPath =
+                repoRoot / "assets/textures/branding/hikari_logo.jpg";
+            if (std::filesystem::exists(logoPath)) {
+                auto imgRes = eng::render::ImageDecoder::decodeFromFile(logoPath.string(), 4, true);
+                if (imgRes.hasValue() && imgRes.value().width > 0 && imgRes.value().height > 0) {
+                    const auto& img = imgRes.value();
+                    const uint32_t side = std::max(img.width, img.height);
+                    std::vector<uint8_t> squarePixels(
+                        static_cast<size_t>(side) * static_cast<size_t>(side) * 4ULL, 0U);
+                    const uint8_t bgR = img.pixels[0];
+                    const uint8_t bgG = img.pixels[1];
+                    const uint8_t bgB = img.pixels[2];
+                    for (size_t idx = 0; idx < squarePixels.size(); idx += 4) {
+                        squarePixels[idx] = bgR;
+                        squarePixels[idx + 1] = bgG;
+                        squarePixels[idx + 2] = bgB;
+                        squarePixels[idx + 3] = 255U;
                     }
+                    const uint32_t offsetX = (side - img.width) / 2U;
+                    const uint32_t offsetY = (side - img.height) / 2U;
+                    for (uint32_t y = 0; y < img.height; ++y) {
+                        const uint8_t* srcRow =
+                            img.pixels.data() + (static_cast<size_t>(y) * img.width * 4ULL);
+                        uint8_t* dstRow =
+                            squarePixels.data() +
+                            ((static_cast<size_t>(y + offsetY) * side + offsetX) * 4ULL);
+                        std::memcpy(dstRow, srcRow, static_cast<size_t>(img.width) * 4ULL);
+                    }
+                    window->setIcon(squarePixels.data(), side, side);
                 }
             }
-
-            eng::rhi::VulkanDeviceDesc vkDesc{
-                .windowHandle = window->getNativeHandle(),
-                .enableValidation = false,
-            };
-            auto devRes = eng::rhi::createVulkanDevice(vkDesc);
-            if (devRes.hasValue()) {
-                rhiDevice = std::move(devRes.value());
-            }
         }
-    }
 
-    if (!rhiDevice) {
+        eng::rhi::VulkanDeviceDesc vkDesc{
+            .windowHandle = window->getNativeHandle(),
+            .enableValidation = false,
+        };
+        auto devRes = eng::rhi::createVulkanDevice(vkDesc);
+        if (!devRes.hasValue()) {
+            ENG_LOG_CRITICAL("Hub", "Failed to initialize Vulkan RHI device for Hub window");
+            return 1;
+        }
+        rhiDevice = std::move(devRes.value());
+    } else {
         auto nullRes = eng::rhi::createNullDevice();
         if (!nullRes.hasValue()) {
+            ENG_LOG_CRITICAL("Hub", "Failed to initialize Null RHI device");
             return 1;
         }
         rhiDevice = std::move(nullRes.value());
@@ -135,6 +138,7 @@ int main(int argc, char* argv[]) {
 
     auto cmdRes = rhiDevice->createCommandList();
     if (!cmdRes.hasValue()) {
+        ENG_LOG_CRITICAL("Hub", "Failed to create Hub command list");
         return 1;
     }
     auto mainCmd = std::move(cmdRes.value());
@@ -147,6 +151,7 @@ int main(int argc, char* argv[]) {
         .customEngineExecutable = customEngine,
     };
     if (!app.initialize(*rhiDevice, cfg)) {
+        ENG_LOG_CRITICAL("Hub", "Failed to initialize Hub application");
         return 1;
     }
 
@@ -171,14 +176,25 @@ int main(int argc, char* argv[]) {
             break;
         }
 
+        bool canRenderSwapchain = true;
         if (window) {
             windowWidth = window->getWidth();
             windowHeight = window->getHeight();
-            if (!window->isMinimized() &&
-                (windowWidth != lastWidth || windowHeight != lastHeight)) {
+            if (window->isMinimized() || windowWidth == 0 || windowHeight == 0) {
+                canRenderSwapchain = false;
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                continue;
+            }
+            if (windowWidth != lastWidth || windowHeight != lastHeight) {
                 (void)rhiDevice->resize(windowWidth, windowHeight);
                 lastWidth = windowWidth;
                 lastHeight = windowHeight;
+            }
+
+            // Acquire swapchain image before recording commands targeting the swapchain.
+            auto acqRes = rhiDevice->acquireNextImage();
+            if (!acqRes.hasValue()) {
+                canRenderSwapchain = false;
             }
         }
 
@@ -186,19 +202,25 @@ int main(int argc, char* argv[]) {
         app.beginFrame(dt, windowWidth, windowHeight);
         app.drawUi();
 
-        mainCmd->begin();
-        eng::rhi::RenderPassBeginInfo passInfo{
-            .clearColor = {0.09F, 0.10F, 0.13F, 1.0F},
-            .clearTarget = true,
-        };
-        mainCmd->beginRenderPass(passInfo);
-        app.endFrame(*mainCmd);
-        mainCmd->endRenderPass();
-        mainCmd->end();
+        if (canRenderSwapchain) {
+            mainCmd->begin();
+            eng::rhi::RenderPassBeginInfo passInfo{
+                .clearColor = {0.09F, 0.10F, 0.13F, 1.0F},
+                .clearTarget = true,
+            };
+            mainCmd->beginRenderPass(passInfo);
+            app.endFrame(*mainCmd);
+            mainCmd->endRenderPass();
+            mainCmd->end();
 
-        (void)rhiDevice->submit(mainCmd.get());
-        if (window) {
-            (void)rhiDevice->present();
+            (void)rhiDevice->submit(mainCmd.get());
+            if (window) {
+                (void)rhiDevice->present();
+            }
+        } else {
+            // Still render ImGui draw data off-GPU when swapchain image could not be acquired
+            // so ImGui frame state remains balanced.
+            app.endFrame(*mainCmd);
         }
 
         ++frameCount;
