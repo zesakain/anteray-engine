@@ -6,6 +6,7 @@
 
 #include "core/json.h"
 #include "core/log.h"
+#include "framework/character_components.h"
 #include "physics/physics_components.h"
 #include "render/camera_component.h"
 #include "render/graphics_settings_serializer.h"
@@ -90,6 +91,16 @@ struct StagedIrradianceProbe {
     bool present{false};
 };
 
+struct StagedCharacterConfig {
+    CharacterConfigComponent config{};
+    bool present{false};
+};
+
+struct StagedCharacterState {
+    CharacterStateComponent state{};
+    bool present{false};
+};
+
 struct StagedEntity {
     uint64_t stableId{0};
     uint64_t parentStableId{0};
@@ -105,6 +116,9 @@ struct StagedEntity {
     StagedCamera camera{};
     StagedPostProcess postProcess{};
     StagedIrradianceProbe irradianceProbe{};
+    bool hasCharacterTag{false};
+    StagedCharacterConfig characterConfig{};
+    StagedCharacterState characterState{};
 };
 
 const char* motionTypeToString(physics::MotionType type) noexcept {
@@ -515,6 +529,33 @@ Result<std::string> SceneSerializer::serializeToString(
             compsObj.set("IrradianceProbe", std::move(ipObj));
         }
 
+        // 12. CharacterTag
+        if (world.hasComponent<CharacterTag>(h)) {
+            compsObj.set("CharacterTag", JsonValue::makeObject());
+        }
+
+        // 13. CharacterConfigComponent
+        if (const auto* cc = world.getComponent<CharacterConfigComponent>(h)) {
+            JsonValue ccObj = JsonValue::makeObject();
+            ccObj.set("capsuleRadiusMeters", cc->capsuleRadiusMeters);
+            ccObj.set("capsuleHalfHeightMeters", cc->capsuleHalfHeightMeters);
+            ccObj.set("eyeHeightMeters", cc->eyeHeightMeters);
+            ccObj.set("maxMoveSpeedMetersPerSec", cc->maxMoveSpeedMetersPerSec);
+            ccObj.set("maxSlopeDegrees", cc->maxSlopeDegrees);
+            ccObj.set("stepOffsetMeters", cc->stepOffsetMeters);
+            ccObj.set("massKilograms", cc->massKilograms);
+            compsObj.set("CharacterConfig", std::move(ccObj));
+        }
+
+        // 14. CharacterStateComponent
+        if (const auto* cs = world.getComponent<CharacterStateComponent>(h)) {
+            JsonValue csObj = JsonValue::makeObject();
+            csObj.set("velocityMetersPerSec", vec3ToJson(cs->velocityMetersPerSec));
+            csObj.set("facingYawRadians", cs->facingYawRadians);
+            csObj.set("isGrounded", cs->isGrounded);
+            compsObj.set("CharacterState", std::move(csObj));
+        }
+
         entObj.set("components", std::move(compsObj));
         entityArray.pushBack(std::move(entObj));
     }
@@ -888,6 +929,39 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                             }
                         }
                     }
+                } else if (compName == "CharacterTag") {
+                    staged.hasCharacterTag = true;
+                } else if (compName == "CharacterConfig") {
+                    staged.characterConfig.present = true;
+                    auto& cfg = staged.characterConfig.config;
+                    cfg.capsuleRadiusMeters =
+                        compData.getFloat("capsuleRadiusMeters", cfg.capsuleRadiusMeters);
+                    cfg.capsuleHalfHeightMeters =
+                        compData.getFloat("capsuleHalfHeightMeters", cfg.capsuleHalfHeightMeters);
+                    cfg.eyeHeightMeters = compData.getFloat("eyeHeightMeters", cfg.eyeHeightMeters);
+                    cfg.maxMoveSpeedMetersPerSec =
+                        compData.getFloat("maxMoveSpeedMetersPerSec", cfg.maxMoveSpeedMetersPerSec);
+                    cfg.maxSlopeDegrees = compData.getFloat("maxSlopeDegrees", cfg.maxSlopeDegrees);
+                    cfg.stepOffsetMeters =
+                        compData.getFloat("stepOffsetMeters", cfg.stepOffsetMeters);
+                    cfg.massKilograms = compData.getFloat("massKilograms", cfg.massKilograms);
+                    if (!cfg.isValid()) {
+                        return Result<DeserializationResult>::failure(
+                            Error(ErrorCode::InvalidArgument,
+                                  "Invalid CharacterConfig values on entity " +
+                                      std::to_string(stableId)));
+                    }
+                } else if (compName == "CharacterState") {
+                    staged.characterState.present = true;
+                    auto& st = staged.characterState.state;
+                    if (const auto* vNode = compData.find("velocityMetersPerSec")) {
+                        if (auto vel = jsonToVec3(*vNode)) {
+                            st.velocityMetersPerSec = *vel;
+                        }
+                    }
+                    st.facingYawRadians =
+                        compData.getFloat("facingYawRadians", st.facingYawRadians);
+                    st.isGrounded = compData.getBool("isGrounded", st.isGrounded);
                 } else {
                     warnings.push_back("Unknown component '" + compName + "' skipped on entity " +
                                        std::to_string(stableId));
@@ -988,6 +1062,18 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
 
         if (staged.irradianceProbe.present) {
             world.setComponent(h, staged.irradianceProbe.probe);
+        }
+
+        if (staged.hasCharacterTag) {
+            world.addTag<CharacterTag>(h);
+        }
+
+        if (staged.characterConfig.present) {
+            world.setComponent(h, staged.characterConfig.config);
+        }
+
+        if (staged.characterState.present) {
+            world.setComponent(h, staged.characterState.state);
         }
     }
 
