@@ -474,11 +474,13 @@ void ImGuiRhiBackend::renderDrawData(ImDrawData* drawData, rhi::RhiCommandList& 
     cmdList.setViewport(0.0F, 0.0F, static_cast<float>(fbWidth), static_cast<float>(fbHeight), 0.0F,
                         1.0F);
 
+    // VulkanCommandList::setViewport uses negative height (Y-up NDC), so invert Y in the
+    // orthographic projection so ImGui's top-left origin maps to the top of the framebuffer.
     ImGuiPushConstants pc{};
     pc.scale[0] = 2.0F / drawData->DisplaySize.x;
-    pc.scale[1] = 2.0F / drawData->DisplaySize.y;
+    pc.scale[1] = -2.0F / drawData->DisplaySize.y;
     pc.translate[0] = -1.0F - drawData->DisplayPos.x * pc.scale[0];
-    pc.translate[1] = -1.0F - drawData->DisplayPos.y * pc.scale[1];
+    pc.translate[1] = 1.0F - drawData->DisplayPos.y * pc.scale[1];
     cmdList.pushConstants(pipelineLayout_, rhi::ShaderStageFlags::Vertex, 0, sizeof(pc), &pc);
 
     cmdList.bindVertexBuffer(0, fb.vertexBuffer, 0);
