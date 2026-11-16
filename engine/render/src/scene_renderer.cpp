@@ -6,6 +6,7 @@
 #include "core/assert.h"
 #include "core/log.h"
 #include "core/time.h"
+#include "core/time/cpu_profiler.h"
 #include "physics/physics_components.h"
 #include "render/gpu_material.h"
 #include "render/image.h"
@@ -2320,20 +2321,45 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
 
     if (staticShadowTarget_.isValid()) {
         if (staticShadowDirty_) {
-            rhi::RenderPassBeginInfo staticPassInfo{
-                .colorTarget = {},
-                .depthTarget = staticShadowTarget_,
-                .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
-                .clearDepth = 1.0F,
-                .clearTarget = false,
-                .clearDepthTarget = true,
-                .renderWidth = shadowResolution_,
-                .renderHeight = shadowResolution_,
-            };
-            cmdList.beginRenderPass(staticPassInfo);
-            cmdList.bindPipeline(shadowPipeline_);
-            renderCasters(cmdList, staticShadowCasters_);
-            cmdList.endRenderPass();
+            if (activeCascadeUpdate_ >= 0 &&
+                static_cast<size_t>(activeCascadeUpdate_) < shadowCascades_.size()) {
+                const auto& tile = shadowCascades_[static_cast<size_t>(activeCascadeUpdate_)];
+                rhi::RenderPassBeginInfo staticPassInfo{
+                    .colorTarget = {},
+                    .depthTarget = staticShadowTarget_,
+                    .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
+                    .clearDepth = 1.0F,
+                    .clearTarget = false,
+                    .clearDepthTarget = true,
+                    .renderOffsetX = tile.viewportX,
+                    .renderOffsetY = tile.viewportY,
+                    .renderWidth = tile.viewportWidth,
+                    .renderHeight = tile.viewportHeight,
+                };
+                cmdList.beginRenderPass(staticPassInfo);
+                cmdList.bindPipeline(shadowPipeline_);
+                renderCasters(cmdList, staticShadowCasters_, activeCascadeUpdate_);
+                cmdList.endRenderPass();
+                cascadeStaticDirty_[static_cast<size_t>(activeCascadeUpdate_)] = false;
+                activeCascadeUpdate_ = -1;
+            } else {
+                rhi::RenderPassBeginInfo staticPassInfo{
+                    .colorTarget = {},
+                    .depthTarget = staticShadowTarget_,
+                    .clearColor = {0.0F, 0.0F, 0.0F, 1.0F},
+                    .clearDepth = 1.0F,
+                    .clearTarget = false,
+                    .clearDepthTarget = true,
+                    .renderWidth = shadowResolution_,
+                    .renderHeight = shadowResolution_,
+                };
+                cmdList.beginRenderPass(staticPassInfo);
+                cmdList.bindPipeline(shadowPipeline_);
+                renderCasters(cmdList, staticShadowCasters_, -1);
+                cmdList.endRenderPass();
+                cascadeStaticDirty_.fill(false);
+                activeCascadeUpdate_ = -1;
+            }
             staticShadowDirty_ = false;
         }
 
@@ -2386,7 +2412,8 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
 }
 
 void SceneRenderer::renderCasters(rhi::RhiCommandList& cmdList,
-                                  const std::vector<ShadowCasterItem>& casters) {
+                                  const std::vector<ShadowCasterItem>& casters,
+                                  int32_t singleCascadeIndex) {
     if (casters.empty() || !shadowPipeline_.isValid()) {
         return;
     }
@@ -2394,6 +2421,9 @@ void SceneRenderer::renderCasters(rhi::RhiCommandList& cmdList,
     const size_t numCascades = shadowCascades_.empty() ? 1 : shadowCascades_.size();
 
     for (size_t cIdx = 0; cIdx < numCascades; ++cIdx) {
+        if (singleCascadeIndex >= 0 && static_cast<size_t>(singleCascadeIndex) != cIdx) {
+            continue;
+        }
         float vpX = 0.0F;
         float vpY = 0.0F;
         float vpW = static_cast<float>(shadowResolution_);
@@ -2648,6 +2678,7 @@ void SceneRenderer::collectVisibleMeshes() {
         currentDevice_ == nullptr) {
         return;
     }
+    ENG_CPU_PROFILE_SCOPE(VisibilityAndCulling);
     visibleItemsCollected_ = true;
 
     const bool applyCameraCulling =
@@ -3075,6 +3106,7 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
 RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetManager,
                                        rhi::RhiDevice& device, rhi::RhiCommandList& cmdList,
                                        const Mat4& viewProjection) {
+    ENG_CPU_PROFILE_SCOPE(SceneRendererPrepare);
     const Timestamp tRenderSceneStart = Timestamp::now();
     cpuPassTimings_ = CpuPassTimings{};
     visibleItemsCollected_ = false;
@@ -3240,18 +3272,83 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     }
 
     if (settings_.shadows.enabled) {
+        const bool cameraMoved =
+            (&world == lastWorld_ && !viewProjection.isNearlyEqual(unjitteredViewProj_));
         CascadeConfig cascadeConfig{
             .cascadeCount = std::clamp(settings_.shadows.cascadeCount, 1U, 4U),
             .maxDistance = settings_.shadows.distance,
             .splitLambda = settings_.shadows.splitLambda,
             .stabilizeCascades = settings_.shadows.stabilizeCascades,
             .atlasResolution = shadowResolution_,
+            .marginScale = (settings_.shadows.shadowCaching && cameraMoved) ? 1.20F : 1.0F,
         };
         const Timestamp tCascadeStart = Timestamp::now();
         computeShadowCascades(Mat4::identity(), viewProjection, 0.1F, settings_.shadows.distance,
                               dir, cascadeConfig, shadowCascades_);
         cpuPassTimings_.shadowCascadeCalcMs =
             static_cast<float>((Timestamp::now() - tCascadeStart).asMicroseconds()) * 0.001F;
+
+        if (settings_.shadows.shadowCaching && !staticShadowDirty_ && &world == lastWorld_ &&
+            dir.isNearlyEqual(lastLightDir_) && cachedCascadeCount_ == shadowCascades_.size() &&
+            !shadowCascades_.empty()) {
+            auto cascadeCovers = [](const ShadowCascade& cached,
+                                    const ShadowCascade& target) -> bool {
+                auto invTarget = target.viewProjMatrix.inverse();
+                if (!invTarget.has_value()) {
+                    return false;
+                }
+                constexpr float kUnpad = 0.833F;
+                for (int cx = 0; cx < 2; ++cx) {
+                    const float nx = cx == 0 ? -kUnpad : kUnpad;
+                    for (int cy = 0; cy < 2; ++cy) {
+                        const float ny = cy == 0 ? -kUnpad : kUnpad;
+                        for (int cz = 0; cz < 2; ++cz) {
+                            const float nz = cz == 0 ? 0.05F : 0.95F;
+                            const Vec3 wp = invTarget->transformPoint(Vec3(nx, ny, nz));
+                            const Vec3 cp = cached.viewProjMatrix.transformPoint(wp);
+                            if (std::abs(cp.x) > 0.99F || std::abs(cp.y) > 0.99F || cp.z < 0.0F ||
+                                cp.z > 1.0F) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+                return true;
+            };
+
+            int32_t firstDirty = -1;
+            for (size_t i = 0; i < shadowCascades_.size() && i < 4; ++i) {
+                if (!cascadeStaticDirty_[i] &&
+                    cascadeCovers(cachedStaticCascades_[i], shadowCascades_[i])) {
+                    shadowCascades_[i] = cachedStaticCascades_[i];
+                } else {
+                    cascadeStaticDirty_[i] = true;
+                    if (firstDirty < 0) {
+                        firstDirty = static_cast<int32_t>(i);
+                    }
+                }
+            }
+            if (firstDirty >= 0) {
+                activeCascadeUpdate_ = firstDirty;
+                const size_t idx = static_cast<size_t>(firstDirty);
+                cachedStaticCascades_[idx] = shadowCascades_[idx];
+                for (size_t i = 0; i < shadowCascades_.size() && i < 4; ++i) {
+                    if (i != idx && cascadeStaticDirty_[i]) {
+                        shadowCascades_[i] = cachedStaticCascades_[i];
+                    }
+                }
+            } else {
+                activeCascadeUpdate_ = -1;
+            }
+        } else {
+            activeCascadeUpdate_ = -1;
+            cachedCascadeCount_ = shadowCascades_.size();
+            for (size_t i = 0; i < shadowCascades_.size() && i < 4; ++i) {
+                cachedStaticCascades_[i] = shadowCascades_[i];
+            }
+            cascadeStaticDirty_.fill(true);
+        }
+
         for (size_t i = 0; i < shadowCascades_.size() && i < 4; ++i) {
             lightingData.cascadeLightSpaceMatrices[i] = shadowCascades_[i].atlasMatrix;
         }
@@ -3491,6 +3588,7 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
          currentMeshCount != lastMeshComponentCount_ || !dir.isNearlyEqual(lastLightDir_) ||
          lastDynamicCasterCount_ > 0);
     if (needChecksumQuery) {
+        ENG_CPU_PROFILE_SCOPE(ShadowPreparation);
         currentStaticChecksum = 0;
         currentDynamicChecksum = 0;
         staticCasterCount = 0;
@@ -3557,6 +3655,8 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
         staticCastersListDirty_ = true;
         staticShadowDirty_ = true;
         shadowDirty_ = true;
+        activeCascadeUpdate_ = -1;
+        cascadeStaticDirty_.fill(true);
     } else if (cascadesChanged) {
         staticShadowDirty_ = true;
         shadowDirty_ = true;
@@ -3581,6 +3681,7 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     lastRenderStats_ = RenderStats{};
 
     if (!renderGraph_.isCompiled()) {
+        ENG_CPU_PROFILE_SCOPE(RenderGraphCompileExec);
         buildRenderGraph();
     }
     updateGiDescriptors();
@@ -3620,6 +3721,7 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
     updatePostProcessDescriptors();
 
     if (renderGraph_.isCompiled()) {
+        ENG_CPU_PROFILE_SCOPE(RenderGraphCompileExec);
         const Timestamp tRgStart = Timestamp::now();
         auto execRes = renderGraph_.execute(device, cmdList);
         cpuPassTimings_.renderGraphExecMs =
@@ -6450,6 +6552,7 @@ void SceneRenderer::renderPostProcess(rhi::RhiCommandList& cmdList) {
         !colorTarget_.isValid()) {
         return;
     }
+    ENG_CPU_PROFILE_SCOPE(PostProcess);
 
     currentHasTimestamps_ = device_->getCaps().features.timestampQueries;
     currentBaseQuery_ = (frameSlotIndex_ % 2) * 32;

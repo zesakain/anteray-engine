@@ -35,6 +35,7 @@ struct CascadeConfig {
     float splitLambda{0.80F};       ///< Logarithmic (1.0) vs Uniform (0.0) split blending
     bool stabilizeCascades{true};   ///< Quantize light-space bounds to texel boundaries
     uint32_t atlasResolution{2048}; ///< Total dimension of the shadow map atlas
+    float marginScale{1.0F};        ///< Optional conservative margin multiplier for caching
 };
 
 /// @struct ShadowCascade
@@ -246,7 +247,7 @@ inline void computeShadowCascades(const Mat4& cameraView, const Mat4& cameraProj
             sphereRadius = std::max(sphereRadius, (pt - center).length());
         }
         // Round sphere radius up to 0.1m to eliminate floating point oscillation
-        sphereRadius = std::ceil(sphereRadius * 10.0F) * 0.1F;
+        sphereRadius = std::ceil(sphereRadius * config.marginScale * 10.0F) * 0.1F;
 
         // 4. Stabilize cascade center by snapping to whole shadow texel increments in light space
         const float cascadeResolution = static_cast<float>(cascade.viewportWidth);

@@ -512,7 +512,8 @@ private:
     void buildRenderGraph();
     void buildPostProcessGraph();
     void recordShadowPass(rhi::RhiCommandList& cmdList);
-    void renderCasters(rhi::RhiCommandList& cmdList, const std::vector<ShadowCasterItem>& casters);
+    void renderCasters(rhi::RhiCommandList& cmdList, const std::vector<ShadowCasterItem>& casters,
+                       int32_t singleCascadeIndex = -1);
     void recordDepthPrepass(rhi::RhiCommandList& cmdList);
     void recordGtaoPass(rhi::RhiCommandList& cmdList);
     void recordGtaoBlurPass(rhi::RhiCommandList& cmdList);
@@ -751,6 +752,10 @@ private:
     std::vector<ShadowCasterItem> dynamicShadowCasters_{};
     std::vector<ShadowCascade> shadowCascades_{};
     std::array<Mat4, 4> lastCascadeViewProj_{};
+    std::array<ShadowCascade, 4> cachedStaticCascades_{};
+    std::array<bool, 4> cascadeStaticDirty_{true, true, true, true};
+    size_t cachedCascadeCount_{0};
+    int32_t activeCascadeUpdate_{-1}; // -1 = all dirty cascades, 0..3 = single cascade tile
     bool shadowDirty_{true};
     bool staticShadowDirty_{true};
     bool staticCastersListDirty_{true};
