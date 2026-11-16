@@ -159,15 +159,16 @@ int main(int argc, char* argv[]) {
     uint32_t lastWidth = window ? window->getWidth() : windowWidth;
     uint32_t lastHeight = window ? window->getHeight() : windowHeight;
     auto lastTime = std::chrono::steady_clock::now();
+    bool renderedUnfocusedOnce = false;
 
     while (true) {
         if (targetFrames > 0 && frameCount >= targetFrames) {
             break;
         }
 
-        const auto now = std::chrono::steady_clock::now();
-        const float dt = std::chrono::duration<float>(now - lastTime).count();
-        lastTime = now;
+        const auto frameStart = std::chrono::steady_clock::now();
+        const float dt = std::chrono::duration<float>(frameStart - lastTime).count();
+        lastTime = frameStart;
 
         platform->pollEvents();
         const auto& input = platform->getCurrentInput();
@@ -176,15 +177,28 @@ int main(int argc, char* argv[]) {
             break;
         }
 
-        bool canRenderSwapchain = true;
         if (window) {
             windowWidth = window->getWidth();
             windowHeight = window->getHeight();
             if (window->isMinimized() || windowWidth == 0 || windowHeight == 0) {
-                canRenderSwapchain = false;
-                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
             }
+            if (!input.isWindowFocused && targetFrames == 0) {
+                if (renderedUnfocusedOnce && !input.focusChanged) {
+                    // Hub is in the background (e.g., Editor is active): avoid competing for
+                    // Vulkan swapchain/GPU/compositor resources.
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    continue;
+                }
+                renderedUnfocusedOnce = true;
+            } else {
+                renderedUnfocusedOnce = false;
+            }
+        }
+
+        bool canRenderSwapchain = true;
+        if (window) {
             if (windowWidth != lastWidth || windowHeight != lastHeight) {
                 (void)rhiDevice->resize(windowWidth, windowHeight);
                 lastWidth = windowWidth;
@@ -224,6 +238,15 @@ int main(int argc, char* argv[]) {
         }
 
         ++frameCount;
+
+        // Pace interactive Hub rendering to ~60 Hz so it never saturates the GPU/WSI.
+        if (window && targetFrames == 0) {
+            constexpr auto kTargetFrameTime = std::chrono::microseconds(16667);
+            const auto elapsed = std::chrono::steady_clock::now() - frameStart;
+            if (elapsed < kTargetFrameTime) {
+                std::this_thread::sleep_for(kTargetFrameTime - elapsed);
+            }
+        }
     }
 
     app.shutdown();

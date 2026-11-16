@@ -38,6 +38,10 @@ bool isExecutableFile(const std::filesystem::path& p) {
 
 std::string inferBuildFlavor(const std::filesystem::path& exePath) {
     const std::string s = exePath.generic_string();
+    if (s.find("/release-editor/") != std::string::npos ||
+        s.find("/editor-release/") != std::string::npos) {
+        return "release-editor";
+    }
     if (s.find("/editor/") != std::string::npos) {
         return "editor";
     }
@@ -105,17 +109,28 @@ EngineInstallation EngineLauncher::discover(const std::filesystem::path& hubExec
     if (!overrideExecutable.empty()) {
         candidates.push_back(overrideExecutable);
     }
+    // Prefer optimized Release Editor builds over Debug builds when discovering from repo root,
+    // even if hikari_hub itself was launched from build/editor/bin (Debug).
+    if (!info.repositoryRoot.empty()) {
+        static constexpr std::array<const char*, 4> kOptimizedBins{
+            "build/release-editor/bin",
+            "build/editor-release/bin",
+            "build/profile/bin",
+            "build/release/bin",
+        };
+        for (const char* relBin : kOptimizedBins) {
+            candidates.push_back(info.repositoryRoot / relBin / kExeName);
+        }
+    }
     if (!hubExecutablePath.empty()) {
         candidates.push_back(hubExecutablePath.parent_path() / kExeName);
     }
     if (!info.repositoryRoot.empty()) {
-        static constexpr std::array<const char*, 4> kPresetBins{
+        static constexpr std::array<const char*, 2> kDebugBins{
             "build/editor/bin",
-            "build/release/bin",
             "build/debug/bin",
-            "build/profile/bin",
         };
-        for (const char* relBin : kPresetBins) {
+        for (const char* relBin : kDebugBins) {
             candidates.push_back(info.repositoryRoot / relBin / kExeName);
         }
     }
