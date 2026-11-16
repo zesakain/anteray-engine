@@ -246,6 +246,22 @@ Result<PrefabDescriptor> PrefabLoader::parseFromString(std::string_view jsonText
                     cfg.eyeHeightMeters = compData.getFloat("eyeHeightMeters", cfg.eyeHeightMeters);
                     cfg.maxMoveSpeedMetersPerSec =
                         compData.getFloat("maxMoveSpeedMetersPerSec", cfg.maxMoveSpeedMetersPerSec);
+                    cfg.groundAccelerationMetersPerSecSq = compData.getFloat(
+                        "groundAccelerationMetersPerSecSq", cfg.groundAccelerationMetersPerSecSq);
+                    cfg.groundDecelerationMetersPerSecSq = compData.getFloat(
+                        "groundDecelerationMetersPerSecSq", cfg.groundDecelerationMetersPerSecSq);
+                    cfg.airAccelerationMetersPerSecSq = compData.getFloat(
+                        "airAccelerationMetersPerSecSq", cfg.airAccelerationMetersPerSecSq);
+                    cfg.rotationSpeedRadiansPerSec = compData.getFloat(
+                        "rotationSpeedRadiansPerSec", cfg.rotationSpeedRadiansPerSec);
+                    cfg.jumpSpeedMetersPerSec =
+                        compData.getFloat("jumpSpeedMetersPerSec", cfg.jumpSpeedMetersPerSec);
+                    cfg.gravityMetersPerSecSq =
+                        compData.getFloat("gravityMetersPerSecSq", cfg.gravityMetersPerSecSq);
+                    cfg.groundCheckDistanceMeters = compData.getFloat(
+                        "groundCheckDistanceMeters", cfg.groundCheckDistanceMeters);
+                    cfg.pushImpulseNewtonSeconds =
+                        compData.getFloat("pushImpulseNewtonSeconds", cfg.pushImpulseNewtonSeconds);
                     cfg.maxSlopeDegrees = compData.getFloat("maxSlopeDegrees", cfg.maxSlopeDegrees);
                     cfg.stepOffsetMeters =
                         compData.getFloat("stepOffsetMeters", cfg.stepOffsetMeters);

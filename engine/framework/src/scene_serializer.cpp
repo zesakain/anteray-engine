@@ -541,6 +541,14 @@ Result<std::string> SceneSerializer::serializeToString(
             ccObj.set("capsuleHalfHeightMeters", cc->capsuleHalfHeightMeters);
             ccObj.set("eyeHeightMeters", cc->eyeHeightMeters);
             ccObj.set("maxMoveSpeedMetersPerSec", cc->maxMoveSpeedMetersPerSec);
+            ccObj.set("groundAccelerationMetersPerSecSq", cc->groundAccelerationMetersPerSecSq);
+            ccObj.set("groundDecelerationMetersPerSecSq", cc->groundDecelerationMetersPerSecSq);
+            ccObj.set("airAccelerationMetersPerSecSq", cc->airAccelerationMetersPerSecSq);
+            ccObj.set("rotationSpeedRadiansPerSec", cc->rotationSpeedRadiansPerSec);
+            ccObj.set("jumpSpeedMetersPerSec", cc->jumpSpeedMetersPerSec);
+            ccObj.set("gravityMetersPerSecSq", cc->gravityMetersPerSecSq);
+            ccObj.set("groundCheckDistanceMeters", cc->groundCheckDistanceMeters);
+            ccObj.set("pushImpulseNewtonSeconds", cc->pushImpulseNewtonSeconds);
             ccObj.set("maxSlopeDegrees", cc->maxSlopeDegrees);
             ccObj.set("stepOffsetMeters", cc->stepOffsetMeters);
             ccObj.set("massKilograms", cc->massKilograms);
@@ -551,6 +559,7 @@ Result<std::string> SceneSerializer::serializeToString(
         if (const auto* cs = world.getComponent<CharacterStateComponent>(h)) {
             JsonValue csObj = JsonValue::makeObject();
             csObj.set("velocityMetersPerSec", vec3ToJson(cs->velocityMetersPerSec));
+            csObj.set("groundNormal", vec3ToJson(cs->groundNormal));
             csObj.set("facingYawRadians", cs->facingYawRadians);
             csObj.set("isGrounded", cs->isGrounded);
             compsObj.set("CharacterState", std::move(csObj));
@@ -941,6 +950,22 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                     cfg.eyeHeightMeters = compData.getFloat("eyeHeightMeters", cfg.eyeHeightMeters);
                     cfg.maxMoveSpeedMetersPerSec =
                         compData.getFloat("maxMoveSpeedMetersPerSec", cfg.maxMoveSpeedMetersPerSec);
+                    cfg.groundAccelerationMetersPerSecSq = compData.getFloat(
+                        "groundAccelerationMetersPerSecSq", cfg.groundAccelerationMetersPerSecSq);
+                    cfg.groundDecelerationMetersPerSecSq = compData.getFloat(
+                        "groundDecelerationMetersPerSecSq", cfg.groundDecelerationMetersPerSecSq);
+                    cfg.airAccelerationMetersPerSecSq = compData.getFloat(
+                        "airAccelerationMetersPerSecSq", cfg.airAccelerationMetersPerSecSq);
+                    cfg.rotationSpeedRadiansPerSec = compData.getFloat(
+                        "rotationSpeedRadiansPerSec", cfg.rotationSpeedRadiansPerSec);
+                    cfg.jumpSpeedMetersPerSec =
+                        compData.getFloat("jumpSpeedMetersPerSec", cfg.jumpSpeedMetersPerSec);
+                    cfg.gravityMetersPerSecSq =
+                        compData.getFloat("gravityMetersPerSecSq", cfg.gravityMetersPerSecSq);
+                    cfg.groundCheckDistanceMeters = compData.getFloat(
+                        "groundCheckDistanceMeters", cfg.groundCheckDistanceMeters);
+                    cfg.pushImpulseNewtonSeconds =
+                        compData.getFloat("pushImpulseNewtonSeconds", cfg.pushImpulseNewtonSeconds);
                     cfg.maxSlopeDegrees = compData.getFloat("maxSlopeDegrees", cfg.maxSlopeDegrees);
                     cfg.stepOffsetMeters =
                         compData.getFloat("stepOffsetMeters", cfg.stepOffsetMeters);
@@ -957,6 +982,11 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                     if (const auto* vNode = compData.find("velocityMetersPerSec")) {
                         if (auto vel = jsonToVec3(*vNode)) {
                             st.velocityMetersPerSec = *vel;
+                        }
+                    }
+                    if (const auto* gNode = compData.find("groundNormal")) {
+                        if (auto gn = jsonToVec3(*gNode)) {
+                            st.groundNormal = *gn;
                         }
                     }
                     st.facingYawRadians =

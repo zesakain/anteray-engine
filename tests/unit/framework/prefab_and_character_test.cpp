@@ -112,12 +112,16 @@ int testCharacterComponentsAndReflection() {
     TEST_CHECK(!badSlope.isValid());
 
     const auto cfgFields = getCharacterConfigReflectionFields();
-    TEST_CHECK(cfgFields.size() == 7);
+    TEST_CHECK(cfgFields.size() == 15);
     TEST_CHECK(cfgFields[0].name == "capsuleRadiusMeters");
 
     const auto stateFields = getCharacterStateReflectionFields();
-    TEST_CHECK(stateFields.size() == 3);
+    TEST_CHECK(stateFields.size() == 8);
     TEST_CHECK(stateFields[0].name == "velocityMetersPerSec");
+
+    const auto intentFields = getCharacterMovementIntentReflectionFields();
+    TEST_CHECK(intentFields.size() == 4);
+    TEST_CHECK(intentFields[0].name == "moveAxis");
 
     EntityHandle ch = world.createEntity("TestChar");
     world.addTag<CharacterTag>(ch);
