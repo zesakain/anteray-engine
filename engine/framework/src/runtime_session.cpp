@@ -6,6 +6,7 @@
 #include "anim/animation_components.h"
 #include "core/log.h"
 #include "framework/character_components.h"
+#include "framework/character_controller.h"
 #include "framework/conductor.h"
 #include "framework/scene_serializer.h"
 #include "physics/physics_components.h"
@@ -136,6 +137,7 @@ struct RuntimeSession::Impl {
         // 6. Initialize runtime render and character components
         render::registerRenderComponents(*runtimeWorld);
         registerCharacterComponents(*runtimeWorld);
+        registerCharacterControllerSystems(*runtimeWorld, *runtimePhysicsWorld);
 
         // 7. Initialize runtime script engine
         runtimeScriptEngine = std::make_unique<script::ScriptEngine>();

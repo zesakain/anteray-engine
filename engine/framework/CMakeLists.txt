@@ -5,6 +5,7 @@
 add_library(engine_framework STATIC
     src/async_scene_loader.cpp
     src/character_components.cpp
+    src/character_controller.cpp
     src/conductor.cpp
     src/prefab.cpp
     src/runtime_session.cpp
