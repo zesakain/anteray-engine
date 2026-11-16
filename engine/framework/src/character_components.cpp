@@ -3,6 +3,8 @@
 
 #include "framework/character_components.h"
 
+#include "framework/third_person_camera.h"
+
 #include <array>
 #include <cstddef>
 
@@ -73,6 +75,7 @@ void registerCharacterComponents(world::World& world) {
     ecs.component<CharacterConfigComponent>("CharacterConfigComponent");
     ecs.component<CharacterStateComponent>("CharacterStateComponent");
     ecs.component<CharacterMovementIntentComponent>("CharacterMovementIntentComponent");
+    ecs.component<ThirdPersonCameraComponent>("ThirdPersonCameraComponent");
 }
 
 } // namespace eng::framework

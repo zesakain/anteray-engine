@@ -7,6 +7,7 @@
 #include "core/json.h"
 #include "core/log.h"
 #include "framework/character_components.h"
+#include "framework/third_person_camera.h"
 #include "physics/physics_components.h"
 #include "render/camera_component.h"
 #include "render/graphics_settings_serializer.h"
@@ -101,6 +102,11 @@ struct StagedCharacterState {
     bool present{false};
 };
 
+struct StagedThirdPersonCamera {
+    ThirdPersonCameraComponent cam{};
+    bool present{false};
+};
+
 struct StagedEntity {
     uint64_t stableId{0};
     uint64_t parentStableId{0};
@@ -119,6 +125,7 @@ struct StagedEntity {
     bool hasCharacterTag{false};
     StagedCharacterConfig characterConfig{};
     StagedCharacterState characterState{};
+    StagedThirdPersonCamera thirdPersonCamera{};
 };
 
 const char* motionTypeToString(physics::MotionType type) noexcept {
@@ -565,6 +572,22 @@ Result<std::string> SceneSerializer::serializeToString(
             compsObj.set("CharacterState", std::move(csObj));
         }
 
+        // 15. ThirdPersonCameraComponent
+        if (const auto* tpc = world.getComponent<ThirdPersonCameraComponent>(h)) {
+            JsonValue tpcObj = JsonValue::makeObject();
+            tpcObj.set("targetEntityId", static_cast<int64_t>(tpc->targetEntityId));
+            tpcObj.set("yawRadians", tpc->yawRadians);
+            tpcObj.set("pitchRadians", tpc->pitchRadians);
+            tpcObj.set("minPitchRadians", tpc->minPitchRadians);
+            tpcObj.set("maxPitchRadians", tpc->maxPitchRadians);
+            tpcObj.set("distanceMeters", tpc->distanceMeters);
+            tpcObj.set("minDistanceMeters", tpc->minDistanceMeters);
+            tpcObj.set("heightOffsetMeters", tpc->heightOffsetMeters);
+            tpcObj.set("collisionRadiusMeters", tpc->collisionRadiusMeters);
+            tpcObj.set("followSmoothSpeed", tpc->followSmoothSpeed);
+            compsObj.set("ThirdPersonCamera", std::move(tpcObj));
+        }
+
         entObj.set("components", std::move(compsObj));
         entityArray.pushBack(std::move(entObj));
     }
@@ -992,6 +1015,24 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                     st.facingYawRadians =
                         compData.getFloat("facingYawRadians", st.facingYawRadians);
                     st.isGrounded = compData.getBool("isGrounded", st.isGrounded);
+                } else if (compName == "ThirdPersonCamera") {
+                    staged.thirdPersonCamera.present = true;
+                    auto& tpc = staged.thirdPersonCamera.cam;
+                    tpc.targetEntityId = static_cast<uint64_t>(compData.getInt64(
+                        "targetEntityId", static_cast<int64_t>(tpc.targetEntityId)));
+                    tpc.yawRadians = compData.getFloat("yawRadians", tpc.yawRadians);
+                    tpc.pitchRadians = compData.getFloat("pitchRadians", tpc.pitchRadians);
+                    tpc.minPitchRadians = compData.getFloat("minPitchRadians", tpc.minPitchRadians);
+                    tpc.maxPitchRadians = compData.getFloat("maxPitchRadians", tpc.maxPitchRadians);
+                    tpc.distanceMeters = compData.getFloat("distanceMeters", tpc.distanceMeters);
+                    tpc.minDistanceMeters =
+                        compData.getFloat("minDistanceMeters", tpc.minDistanceMeters);
+                    tpc.heightOffsetMeters =
+                        compData.getFloat("heightOffsetMeters", tpc.heightOffsetMeters);
+                    tpc.collisionRadiusMeters =
+                        compData.getFloat("collisionRadiusMeters", tpc.collisionRadiusMeters);
+                    tpc.followSmoothSpeed =
+                        compData.getFloat("followSmoothSpeed", tpc.followSmoothSpeed);
                 } else {
                     warnings.push_back("Unknown component '" + compName + "' skipped on entity " +
                                        std::to_string(stableId));
@@ -1104,6 +1145,10 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
 
         if (staged.characterState.present) {
             world.setComponent(h, staged.characterState.state);
+        }
+
+        if (staged.thirdPersonCamera.present) {
+            world.setComponent(h, staged.thirdPersonCamera.cam);
         }
     }
 

@@ -9,6 +9,7 @@
 #include "framework/character_controller.h"
 #include "framework/conductor.h"
 #include "framework/scene_serializer.h"
+#include "framework/third_person_camera.h"
 #include "physics/physics_components.h"
 #include "render/mesh_component.h"
 #include "script/script_components.h"
@@ -138,6 +139,7 @@ struct RuntimeSession::Impl {
         render::registerRenderComponents(*runtimeWorld);
         registerCharacterComponents(*runtimeWorld);
         registerCharacterControllerSystems(*runtimeWorld, *runtimePhysicsWorld);
+        registerThirdPersonCameraSystems(*runtimeWorld, *runtimePhysicsWorld);
 
         // 7. Initialize runtime script engine
         runtimeScriptEngine = std::make_unique<script::ScriptEngine>();
