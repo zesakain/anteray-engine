@@ -6,8 +6,10 @@
 #include "core/log.h"
 #include "core/time.h"
 #include "core/time/cpu_profiler.h"
+#include "framework/character_components.h"
 #include "framework/conductor.h"
 #include "framework/mode.h"
+#include "framework/third_person_camera.h"
 #include "physics/physics_components.h"
 #include "physics/physics_world.h"
 #include "platform/platform.h"
@@ -124,6 +126,63 @@ public:
         return framework::ModeState::Active;
     }
 };
+
+#if defined(HIKARI_BUILD_EDITOR)
+// TODO(12C): Replace temporary InputSnapshot adapter with Milestone 12C Gameplay Input API.
+void applyTemporaryCharacterInputAdapter(world::World& world, const platform::InputSnapshot& input,
+                                         float dtSeconds) noexcept {
+    auto& ecs = world.getRawWorld();
+
+    float moveRight = 0.0F;
+    float moveForward = 0.0F;
+    if (input.isKeyDown(platform::KeyCode::D)) {
+        moveRight += 1.0F;
+    }
+    if (input.isKeyDown(platform::KeyCode::A)) {
+        moveRight -= 1.0F;
+    }
+    if (input.isKeyDown(platform::KeyCode::W)) {
+        moveForward += 1.0F;
+    }
+    if (input.isKeyDown(platform::KeyCode::S)) {
+        moveForward -= 1.0F;
+    }
+    const bool jump = input.isKeyDown(platform::KeyCode::Space);
+
+    float yawDelta = 0.0F;
+    float pitchDelta = 0.0F;
+    if (input.isKeyDown(platform::KeyCode::Q)) {
+        yawDelta += 1.8F * dtSeconds;
+    }
+    if (input.isKeyDown(platform::KeyCode::E)) {
+        yawDelta -= 1.8F * dtSeconds;
+    }
+    if (input.mouseButtons.test(static_cast<size_t>(platform::MouseButton::Right))) {
+        yawDelta -= input.mouseDeltaX * 0.004F;
+        pitchDelta += input.mouseDeltaY * 0.004F;
+    }
+
+    ecs.each<framework::ThirdPersonCameraComponent>(
+        [yawDelta, pitchDelta](flecs::entity /*e*/, framework::ThirdPersonCameraComponent& cam) {
+            cam.yawRadians += yawDelta;
+            cam.pitchRadians += pitchDelta;
+        });
+
+    ecs.each<const framework::CharacterTag>(
+        [moveRight, moveForward, jump](flecs::entity e, const framework::CharacterTag& /*tag*/) {
+            if (auto* intent = e.get_mut<framework::CharacterMovementIntentComponent>()) {
+                intent->moveAxis = Vec2{moveRight, moveForward};
+                intent->jumpRequested = jump;
+            } else {
+                e.set<framework::CharacterMovementIntentComponent>(
+                    framework::CharacterMovementIntentComponent{
+                        .moveAxis = Vec2{moveRight, moveForward},
+                        .jumpRequested = jump,
+                    });
+            }
+        });
+}
+#endif
 
 } // namespace
 
@@ -518,6 +577,14 @@ body {
                     ENG_CPU_PROFILE_SCOPE(EcsSystemsAndQueries);
 #if defined(HIKARI_BUILD_EDITOR)
                     if (editorEngine.isInitialized()) {
+                        if (editorEngine.getRuntimeSession().isSimulating() &&
+                            !editorEngine.wantTextInput()) {
+                            if (auto* activeWorld =
+                                    editorEngine.getRuntimeSession().getActiveWorld()) {
+                                applyTemporaryCharacterInputAdapter(
+                                    *activeWorld, input, static_cast<float>(fixedStep.toSeconds()));
+                            }
+                        }
                         editorEngine.getRuntimeSession().update(fixedStep);
                         if (!editorEngine.getRuntimeSession().isSimulating() &&
                             (conductor.getState() == framework::ConductorState::Preparing ||
