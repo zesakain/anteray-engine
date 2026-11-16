@@ -1,4 +1,4 @@
-# ADR-0019: Lua Binding Strategy Reconciliation (Lua 5.4 C API vs. sol2)
+# ADR-0019: Lua Binding Strategy — Encapsulated Lua 5.4 C API (Superseding sol2 in ADR-0014)
 
 - **Status**: Proposed
 - **Date**: 2026-11-16
@@ -6,38 +6,42 @@
 
 ## Context
 
-`AGENTS.md` §1 and `ADR-0014` (`Accepted`, 2026-11-07) specify **Lua 5.4 + sol2 v3.3.1** (`SOL_NO_EXCEPTIONS=1`, `SOL_ALL_SAFETIES_ON=1`). However, inspection of `engine/script/` reveals that only vendored **Lua 5.4** (`engine/script/src/lua/onelua.c`) is present in the repository; `sol2` is not vendored or fetched in `engine/script/CMakeLists.txt`, and `engine/script/src/script_engine.cpp` currently implements `Vec3`, `Entity`, and `print` bindings directly via the Lua 5.4 C API.
+`AGENTS.md` §1 lists `Scripting: Lua 5.4 + sol2` and `ADR-0014` (`Accepted`, 2026-11-07) selected `sol2 v3.3.1`. However, `AGENTS.md` §2.6 and §4 strictly enforce `-fno-exceptions`, `-fno-rtti`, no `dynamic_cast`, and `-Wall -Wextra -Wconversion -Wshadow -Werror` across all engine targets.
+
+Because `sol2` relies on RTTI/type-info machinery and exception-oriented dispatch paths that conflict with Hikari's `-fno-exceptions -fno-rtti -Werror` build contract, `sol2` was intentionally omitted from `engine/script/`, and `eng::script::ScriptEngine` (`engine/script/src/script_engine.cpp`) was implemented directly on top of the vendored **Lua 5.4 C API** (`engine/script/src/lua/onelua.c`).
 
 Milestone 12D/12E requires expanding Lua bindings to transforms, `CharacterController`, `GameplayInput`, `PhysicsWorld` spatial queries, and `Conductor` (active-state vs. read-only standby preparation).
 
 ## Decision
 
-*Proposed (pending explicit approval of one of the two paths below):*
+*Proposed (pending explicit approval; supersedes the `sol2` clause of `ADR-0014` and recommends updating `AGENTS.md` §1 from `Lua 5.4 + sol2` to `Lua 5.4`):*
 
-**Recommended Path — Option B (Complete `ADR-0014` by vendoring/pinning `sol2 v3.3.1` inside `engine/script/src/sol2/`):**
-1. Vendor `sol2 v3.3.1` single-header (`sol/sol.hpp`, MIT License) privately inside `engine/script/src/sol2/` (never exposed in `engine/script/include/script/`), compiled with `-fno-exceptions -fno-rtti`, `SOL_NO_EXCEPTIONS=1`, and `SOL_ALL_SAFETIES_ON=1`.
-2. Preserve all existing `ScriptEngine` guarantees:
+1. **Official Binding Layer — Encapsulated Lua 5.4 C API with Thin C++20 Binding Helpers:**
+   - Continue using the vendored Lua 5.4 C core (`engine/script/src/lua/onelua.c`, MIT License) behind the opaque `eng::script::ScriptEngine` PIMPL (`engine/script/include/script/script_engine.h`).
+   - Do **not** add `sol2` to `/engine`.
+   - Build lightweight, zero-exception, zero-RTTI C++20 helper templates/macros *privately* inside `engine/script/src/` (typed metatable registration, `EntityHandle` generational validation, `Result<T, E>` -> Lua error propagation, and reflection-driven component field wrappers per `AGENTS.md` §8).
+2. **Preserve All Existing `ScriptEngine` Guarantees:**
    - Custom `scriptAlloc` allocator enforcing `ScriptConfig::memoryBudgetBytes`.
    - `lua_sethook` instruction watchdog (`LUA_MASKCOUNT`).
-   - Stripped libraries (`os`, `io`, `package`, `debug`, `dofile`, `loadfile`, `load`, `collectgarbage`).
+   - Stripped standard libraries (`os`, `io`, `package`, `debug`, `dofile`, `loadfile`, `load`, `collectgarbage`).
    - Incremental GC via `stepGarbageCollector(stepBudget)`.
-3. Enforce **active-state vs. standby-state Lua permissions** via two distinct capability tables/environments:
-   - **Active environment:** read/write access to active-mode entity components, `CharacterController` movement inputs, `GameplayInput` action queries, and `conductor.request_transition(...)` (validated).
+3. **Active-State vs. Standby-State Lua Permissions:**
+   - **Active environment:** read/write access to active-mode entity components, `CharacterController` movement inputs, `GameplayInput` action queries, and validated `conductor.request_transition(...)`.
    - **Standby preparation environment:** read-only `ReadOnlyWorld` queries and write access **only** to staged `SpeculativePreparationCache` / `TargetSelectionContext` handles; mutating ECS/physics/hierarchy functions are omitted from the standby Lua environment.
 
 ## Alternatives Considered
 
-**Option A — Continue with raw Lua 5.4 C API only (superseding `ADR-0014`):**
-- *Pros:* Zero new third-party headers; minimal binary/compile-time overhead; full manual control over stack and userdata lifetimes.
-- *Cons:* Contradicts `AGENTS.md` §1 ("Scripting: Lua 5.4 + sol2") and `ADR-0014`; hand-writing stack-manipulation boilerplate for dozens of gameplay/physics/input/Conductor types increases maintenance burden and stack-imbalance bug risk.
+**Option B — Adopt `sol2 v3.3.1` (`SOL_NO_EXCEPTIONS=1`, `SOL_ALL_SAFETIES_ON=1`):**
+- *Pros:* Higher-level C++ usertype syntax.
+- *Cons:* Conflicts with `-fno-exceptions -fno-rtti` and `-Werror` (`-Wshadow`, `-Wconversion`) in `AGENTS.md` §2.6 / §4; adds a ~250 KB header dependency and significant compile-time overhead to `engine_script`. Rejected to preserve Hard Rule §2.6 without workarounds.
 
 ## Consequences
 
-### Positive (if Option B approved)
-- Aligns implementation with `AGENTS.md` §1 and `ADR-0014` without violating header encapsulation (`engine/script/include/script/` remains free of `<lua.h>` and `<sol/sol.hpp>`).
-- Type-safe usertype bindings and argument validation (`SOL_ALL_SAFETIES_ON=1`) with zero C++ exceptions (`SOL_NO_EXCEPTIONS=1`).
+### Positive
+- 100% compliant with `-fno-exceptions`, `-fno-rtti`, `-Werror`, and zero new third-party dependencies (`AGENTS.md` §2.6, §2.7).
+- Zero `<lua.h>` or third-party headers in `engine/script/include/script/`.
+- Deterministic memory budget (`scriptAlloc`), instruction watchdog, and incremental GC remain intact.
 
 ### Negative / Migration
-- Adds ~250 KB single-header `sol.hpp` to `engine/script/src/` (requires explicit third-party dependency approval per `AGENTS.md` §2.7, even though `ADR-0014` previously selected `sol2 v3.3.1`).
-- Existing `Vec3` / `Entity` C-API bindings in `script_engine.cpp` should be migrated or interoperate cleanly via `sol::usertype` with identical Lua metamethod names.
-- Increase in `script_engine.cpp` compile time; mitigated by keeping all `sol2` usage inside `engine/script/src/`.
+- Requires maintaining small internal C-API binding helpers in `engine/script/src/` for Milestone 12D/12E types.
+- Requires updating `AGENTS.md` §1 (`Lua 5.4 + sol2` -> `Lua 5.4`) and marking `ADR-0014` as superseded by `ADR-0019` upon approval.
