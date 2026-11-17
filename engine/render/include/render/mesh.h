@@ -13,11 +13,15 @@
 
 #pragma once
 
+#include "anim/animation_clip.h"
+#include "anim/skeleton.h"
 #include "core/math.h"
 #include "core/result.h"
 #include "render/material.h"
 
 #include <cstdint>
+#include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -31,6 +35,8 @@ struct Vertex {
     Vec2 uv{Vec2::zero()};
     Vec4 color{1.0F, 1.0F, 1.0F, 1.0F};
     Vec4 tangent{1.0F, 0.0F, 0.0F, 1.0F};
+    uint32_t joints[4]{0, 0, 0, 0};
+    Vec4 weights{0.0F, 0.0F, 0.0F, 0.0F};
 
     constexpr Vertex() noexcept = default;
     constexpr Vertex(const Vec3& pos, const Vec3& norm, const Vec2& texCoord,
@@ -41,7 +47,9 @@ struct Vertex {
     [[nodiscard]] bool operator==(const Vertex& rhs) const noexcept {
         return position.isNearlyEqual(rhs.position) && normal.isNearlyEqual(rhs.normal) &&
                uv.isNearlyEqual(rhs.uv) && color.isNearlyEqual(rhs.color) &&
-               tangent.isNearlyEqual(rhs.tangent);
+               tangent.isNearlyEqual(rhs.tangent) && joints[0] == rhs.joints[0] &&
+               joints[1] == rhs.joints[1] && joints[2] == rhs.joints[2] &&
+               joints[3] == rhs.joints[3] && weights.isNearlyEqual(rhs.weights);
     }
 };
 
@@ -64,6 +72,8 @@ struct MeshData {
     std::vector<uint32_t> indices{};
     std::vector<Submesh> submeshes{};
     std::vector<Material> materials{};
+    std::optional<anim::Skeleton> skeleton{};
+    std::vector<anim::AnimationClip> animations{};
     AABB bounds{};
 
     MeshData() = default;
@@ -133,12 +143,18 @@ struct MeshData {
     void generateTangentsForRange(uint32_t firstIndex, uint32_t indexCount, uint32_t vertexBase,
                                   uint32_t vertexCount) noexcept;
 
-    /// Clears all vertices, indices, submeshes, and materials.
+    /// Computes CPU reference skinning on vertices using the provided skinning matrix palette.
+    void applyCpuSkinning(std::span<const Mat4> skinningMatrices,
+                          std::vector<Vertex>& outVertices) const;
+
+    /// Clears all vertices, indices, submeshes, materials, skeleton, and animations.
     void clear() noexcept {
         vertices.clear();
         indices.clear();
         submeshes.clear();
         materials.clear();
+        skeleton.reset();
+        animations.clear();
         bounds = AABB{};
     }
 };

@@ -41,4 +41,5 @@ target_link_libraries(engine_render
         hikari::engine_rhi
         hikari::engine_world
         hikari::engine_physics
+        hikari::engine_anim
 )

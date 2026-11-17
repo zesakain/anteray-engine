@@ -29,6 +29,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace eng::render {
@@ -80,6 +81,248 @@ struct Mat3 {
                     (m[2] * v.x) + (m[5] * v.y) + (m[8] * v.z)};
     }
 };
+
+[[nodiscard]] Transform extractNodeLocalTransform(const cgltf_node* node) noexcept {
+    if (node == nullptr) {
+        return Transform::identity();
+    }
+    if (node->has_matrix) {
+        Mat4 mat{};
+        std::memcpy(mat.m, node->matrix, sizeof(float) * 16);
+        const Vec3 pos{mat.at(3, 0), mat.at(3, 1), mat.at(3, 2)};
+        const Vec3 col0{mat.at(0, 0), mat.at(0, 1), mat.at(0, 2)};
+        const Vec3 col1{mat.at(1, 0), mat.at(1, 1), mat.at(1, 2)};
+        const Vec3 col2{mat.at(2, 0), mat.at(2, 1), mat.at(2, 2)};
+        const Vec3 scale{col0.length(), col1.length(), col2.length()};
+        return Transform{pos, Quat::identity(), scale};
+    }
+
+    Transform tr = Transform::identity();
+    if (node->has_translation) {
+        tr.position = Vec3{node->translation[0], node->translation[1], node->translation[2]};
+    }
+    if (node->has_rotation) {
+        tr.rotation =
+            Quat{node->rotation[0], node->rotation[1], node->rotation[2], node->rotation[3]}
+                .normalized();
+    }
+    if (node->has_scale) {
+        tr.scale = Vec3{node->scale[0], node->scale[1], node->scale[2]};
+    }
+    return tr;
+}
+
+[[nodiscard]] Result<anim::Skeleton>
+importSkeletonFromSkin(const cgltf_skin* skin, std::vector<uint16_t>& outSkinJointToBone) {
+    if (skin == nullptr || skin->joints_count == 0) {
+        return Error(ErrorCode::InvalidArgument, "glTF skin has no joints");
+    }
+    if (skin->joints_count > anim::kMaxSkinningBones) {
+        return Error(ErrorCode::InvalidArgument,
+                     "glTF skin exceeds kMaxSkinningBones (128) joint limit");
+    }
+    if (skin->inverse_bind_matrices != nullptr &&
+        skin->inverse_bind_matrices->count < skin->joints_count) {
+        return Error(ErrorCode::InvalidArgument,
+                     "glTF skin inverseBindMatrices count is smaller than joints count");
+    }
+
+    const size_t jointCount = skin->joints_count;
+    std::unordered_map<const cgltf_node*, size_t> nodeToSkinIdx;
+    nodeToSkinIdx.reserve(jointCount);
+    for (size_t i = 0; i < jointCount; ++i) {
+        if (skin->joints[i] == nullptr) {
+            return Error(ErrorCode::InvalidArgument, "glTF skin contains null joint node");
+        }
+        nodeToSkinIdx[skin->joints[i]] = i;
+    }
+
+    std::vector<size_t> topoOrder;
+    topoOrder.reserve(jointCount);
+    std::vector<bool> visited(jointCount, false);
+
+    auto visitJoint = [&](auto& self, size_t skinIdx) -> void {
+        if (visited[skinIdx]) {
+            return;
+        }
+        const cgltf_node* parentNode = skin->joints[skinIdx]->parent;
+        if (parentNode != nullptr) {
+            auto it = nodeToSkinIdx.find(parentNode);
+            if (it != nodeToSkinIdx.end()) {
+                self(self, it->second);
+            }
+        }
+        visited[skinIdx] = true;
+        topoOrder.push_back(skinIdx);
+    };
+
+    for (size_t i = 0; i < jointCount; ++i) {
+        visitJoint(visitJoint, i);
+    }
+
+    outSkinJointToBone.assign(jointCount, anim::kInvalidBoneIndex);
+    anim::Skeleton skeleton;
+
+    for (size_t boneIdx = 0; boneIdx < topoOrder.size(); ++boneIdx) {
+        const size_t skinIdx = topoOrder[boneIdx];
+        const cgltf_node* jointNode = skin->joints[skinIdx];
+        outSkinJointToBone[skinIdx] = static_cast<uint16_t>(boneIdx);
+
+        uint16_t parentBoneIdx = anim::kInvalidBoneIndex;
+        if (jointNode->parent != nullptr) {
+            auto it = nodeToSkinIdx.find(jointNode->parent);
+            if (it != nodeToSkinIdx.end()) {
+                parentBoneIdx = outSkinJointToBone[it->second];
+            }
+        }
+
+        const std::string_view boneName =
+            (jointNode->name != nullptr) ? std::string_view{jointNode->name} : "Bone";
+        const Transform localBind = extractNodeLocalTransform(jointNode);
+        auto addRes = skeleton.addBone(boneName, parentBoneIdx, localBind);
+        if (!addRes.hasValue()) {
+            return addRes.error();
+        }
+    }
+
+    if (skin->inverse_bind_matrices != nullptr) {
+        for (size_t boneIdx = 0; boneIdx < topoOrder.size(); ++boneIdx) {
+            const size_t skinIdx = topoOrder[boneIdx];
+            float rawIbm[16]{};
+            cgltf_accessor_read_float(skin->inverse_bind_matrices, skinIdx, rawIbm, 16);
+            Mat4 ibm{};
+            std::memcpy(ibm.m, rawIbm, sizeof(rawIbm));
+            auto setRes = skeleton.setInverseBindMatrix(static_cast<uint16_t>(boneIdx), ibm);
+            if (!setRes.hasValue()) {
+                return setRes.error();
+            }
+        }
+        skeleton.markFinalized();
+    } else {
+        auto finRes = skeleton.finalize();
+        if (!finRes.hasValue()) {
+            return finRes.error();
+        }
+    }
+
+    return Result<anim::Skeleton>::success(std::move(skeleton));
+}
+
+[[nodiscard]] anim::InterpolationMode mapInterpolation(cgltf_interpolation_type type) noexcept {
+    return (type == cgltf_interpolation_type_step) ? anim::InterpolationMode::Step
+                                                   : anim::InterpolationMode::Linear;
+}
+
+[[nodiscard]] Result<std::vector<anim::AnimationClip>>
+importAnimationsFromData(const cgltf_data* data, const anim::Skeleton& skeleton) {
+    std::vector<anim::AnimationClip> clips;
+    clips.reserve(data->animations_count);
+
+    for (size_t a = 0; a < data->animations_count; ++a) {
+        const auto& srcAnim = data->animations[a];
+        const std::string_view clipName =
+            (srcAnim.name != nullptr) ? std::string_view{srcAnim.name} : "Clip";
+
+        std::unordered_map<uint16_t, anim::BoneTrack> trackMap;
+        float maxDuration = 0.0F;
+
+        for (size_t c = 0; c < srcAnim.channels_count; ++c) {
+            const auto& chan = srcAnim.channels[c];
+            if (chan.target_node == nullptr || chan.sampler == nullptr ||
+                chan.sampler->input == nullptr || chan.sampler->output == nullptr) {
+                continue;
+            }
+            if (chan.target_node->name == nullptr) {
+                continue;
+            }
+            const int32_t boneIdxSigned = skeleton.findBoneIndex(chan.target_node->name);
+            if (boneIdxSigned < 0 ||
+                boneIdxSigned >= static_cast<int32_t>(skeleton.getBoneCount())) {
+                continue;
+            }
+            const uint16_t boneIdx = static_cast<uint16_t>(boneIdxSigned);
+
+            const auto* inputAcc = chan.sampler->input;
+            const auto* outputAcc = chan.sampler->output;
+            const size_t keyCount = inputAcc->count;
+            if (keyCount == 0) {
+                continue;
+            }
+            const bool isCubic =
+                (chan.sampler->interpolation == cgltf_interpolation_type_cubic_spline);
+            const size_t expectedOut = isCubic ? (keyCount * 3) : keyCount;
+            if (outputAcc->count < expectedOut) {
+                return Error(
+                    ErrorCode::InvalidArgument,
+                    "glTF animation sampler output count smaller than input keyframe count");
+            }
+
+            auto& track = trackMap[boneIdx];
+            track.boneIndex = boneIdx;
+            const anim::InterpolationMode interp = mapInterpolation(chan.sampler->interpolation);
+
+            if (chan.target_path == cgltf_animation_path_type_translation) {
+                track.translationInterpolation = interp;
+                track.translationKeys.reserve(keyCount);
+                for (size_t k = 0; k < keyCount; ++k) {
+                    float t = 0.0F;
+                    cgltf_accessor_read_float(inputAcc, k, &t, 1);
+                    if (!std::isfinite(t) || t < 0.0F) {
+                        return Error(ErrorCode::InvalidArgument,
+                                     "glTF animation keyframe timestamp is invalid");
+                    }
+                    float v[3]{0.0F, 0.0F, 0.0F};
+                    const size_t outIdx = isCubic ? (k * 3 + 1) : k;
+                    cgltf_accessor_read_float(outputAcc, outIdx, v, 3);
+                    track.translationKeys.push_back(
+                        anim::Keyframe<Vec3>{t, Vec3{v[0], v[1], v[2]}});
+                    maxDuration = std::max(maxDuration, t);
+                }
+            } else if (chan.target_path == cgltf_animation_path_type_rotation) {
+                track.rotationInterpolation = interp;
+                track.rotationKeys.reserve(keyCount);
+                for (size_t k = 0; k < keyCount; ++k) {
+                    float t = 0.0F;
+                    cgltf_accessor_read_float(inputAcc, k, &t, 1);
+                    if (!std::isfinite(t) || t < 0.0F) {
+                        return Error(ErrorCode::InvalidArgument,
+                                     "glTF animation keyframe timestamp is invalid");
+                    }
+                    float q[4]{0.0F, 0.0F, 0.0F, 1.0F};
+                    const size_t outIdx = isCubic ? (k * 3 + 1) : k;
+                    cgltf_accessor_read_float(outputAcc, outIdx, q, 4);
+                    track.rotationKeys.push_back(
+                        anim::Keyframe<Quat>{t, Quat{q[0], q[1], q[2], q[3]}.normalized()});
+                    maxDuration = std::max(maxDuration, t);
+                }
+            } else if (chan.target_path == cgltf_animation_path_type_scale) {
+                track.scaleInterpolation = interp;
+                track.scaleKeys.reserve(keyCount);
+                for (size_t k = 0; k < keyCount; ++k) {
+                    float t = 0.0F;
+                    cgltf_accessor_read_float(inputAcc, k, &t, 1);
+                    if (!std::isfinite(t) || t < 0.0F) {
+                        return Error(ErrorCode::InvalidArgument,
+                                     "glTF animation keyframe timestamp is invalid");
+                    }
+                    float s[3]{1.0F, 1.0F, 1.0F};
+                    const size_t outIdx = isCubic ? (k * 3 + 1) : k;
+                    cgltf_accessor_read_float(outputAcc, outIdx, s, 3);
+                    track.scaleKeys.push_back(anim::Keyframe<Vec3>{t, Vec3{s[0], s[1], s[2]}});
+                    maxDuration = std::max(maxDuration, t);
+                }
+            }
+        }
+
+        anim::AnimationClip clip(clipName, maxDuration);
+        for (auto& [boneIdx, track] : trackMap) {
+            clip.addTrack(std::move(track));
+        }
+        clips.push_back(std::move(clip));
+    }
+
+    return Result<std::vector<anim::AnimationClip>>::success(std::move(clips));
+}
 
 [[nodiscard]] Mat3 extractMat3(const Mat4& mat) noexcept {
     Mat3 res;
@@ -136,9 +379,11 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
     // 2. Discover Mesh Nodes and Transforms
     struct NodeMeshPair {
         const cgltf_mesh* mesh{nullptr};
+        const cgltf_skin* skin{nullptr};
         Mat4 worldTransform{Mat4::identity()};
     };
     std::vector<NodeMeshPair> meshInstances;
+    const cgltf_skin* primarySkin = (data->skins_count > 0) ? &data->skins[0] : nullptr;
 
     if (data->nodes_count > 0) {
         for (size_t n = 0; n < data->nodes_count; ++n) {
@@ -148,8 +393,13 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
                 cgltf_node_transform_world(node, rawMat);
                 Mat4 worldMat{};
                 std::memcpy(worldMat.m, rawMat, sizeof(rawMat));
-                meshInstances.push_back(
-                    NodeMeshPair{.mesh = node->mesh, .worldTransform = worldMat});
+                if (node->skin != nullptr && primarySkin == nullptr) {
+                    primarySkin = node->skin;
+                }
+                meshInstances.push_back(NodeMeshPair{
+                    .mesh = node->mesh,
+                    .skin = node->skin,
+                    .worldTransform = (node->skin != nullptr) ? Mat4::identity() : worldMat});
             }
         }
     }
@@ -157,13 +407,22 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
     // Fallback: If no node references any mesh, use all meshes with identity transform
     if (meshInstances.empty()) {
         for (size_t m = 0; m < data->meshes_count; ++m) {
-            meshInstances.push_back(
-                NodeMeshPair{.mesh = &data->meshes[m], .worldTransform = Mat4::identity()});
+            meshInstances.push_back(NodeMeshPair{
+                .mesh = &data->meshes[m], .skin = nullptr, .worldTransform = Mat4::identity()});
         }
     }
 
     if (meshInstances.empty()) {
         return Error(ErrorCode::InvalidArgument, "glTF asset contains no meshes or geometry");
+    }
+
+    std::vector<uint16_t> skinJointToBone;
+    if (primarySkin != nullptr) {
+        auto skelRes = importSkeletonFromSkin(primarySkin, skinJointToBone);
+        if (!skelRes.hasValue()) {
+            return skelRes.error();
+        }
+        meshData.skeleton = std::move(skelRes.value());
     }
 
     // 3. Process Primitives and Geometry
@@ -190,6 +449,8 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
             const cgltf_attribute* uvAttr = nullptr;
             const cgltf_attribute* colAttr = nullptr;
             const cgltf_attribute* tanAttr = nullptr;
+            const cgltf_attribute* jointsAttr = nullptr;
+            const cgltf_attribute* weightsAttr = nullptr;
 
             for (size_t a = 0; a < prim.attributes_count; ++a) {
                 const auto& attr = prim.attributes[a];
@@ -203,6 +464,10 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
                     colAttr = &attr;
                 } else if (attr.type == cgltf_attribute_type_tangent && attr.index == 0) {
                     tanAttr = &attr;
+                } else if (attr.type == cgltf_attribute_type_joints && attr.index == 0) {
+                    jointsAttr = &attr;
+                } else if (attr.type == cgltf_attribute_type_weights && attr.index == 0) {
+                    weightsAttr = &attr;
                 }
             }
 
@@ -265,7 +530,36 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
                     tangent = Vec4{worldTan.x, worldTan.y, worldTan.z, t[3]};
                 }
 
-                meshData.vertices.emplace_back(worldPos, worldNorm, uv, col, tangent);
+                Vertex vert{worldPos, worldNorm, uv, col, tangent};
+                if (jointsAttr != nullptr && jointsAttr->data != nullptr &&
+                    weightsAttr != nullptr && weightsAttr->data != nullptr) {
+                    cgltf_uint j[4]{0, 0, 0, 0};
+                    float w[4]{0.0F, 0.0F, 0.0F, 0.0F};
+                    cgltf_accessor_read_uint(jointsAttr->data, v, j, 4);
+                    cgltf_accessor_read_float(weightsAttr->data, v, w, 4);
+
+                    float wSum = 0.0F;
+                    for (int k = 0; k < 4; ++k) {
+                        uint32_t mappedJoint = 0;
+                        if (!skinJointToBone.empty()) {
+                            if (j[k] >= skinJointToBone.size()) {
+                                return Error(ErrorCode::InvalidArgument,
+                                             "glTF JOINTS_0 index out of skin joints range");
+                            }
+                            mappedJoint = skinJointToBone[j[k]];
+                        } else {
+                            mappedJoint = static_cast<uint32_t>(j[k]);
+                        }
+                        vert.joints[k] = mappedJoint;
+                        w[k] = std::max(0.0F, w[k]);
+                        wSum += w[k];
+                    }
+                    if (wSum > 1e-5F) {
+                        const float invW = 1.0F / wSum;
+                        vert.weights = Vec4{w[0] * invW, w[1] * invW, w[2] * invW, w[3] * invW};
+                    }
+                }
+                meshData.vertices.push_back(vert);
             }
 
             Submesh submesh{};
@@ -367,6 +661,14 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
         return valRes.error();
     }
 
+    if (meshData.skeleton.has_value() && data->animations_count > 0) {
+        auto animRes = importAnimationsFromData(data, *meshData.skeleton);
+        if (!animRes.hasValue()) {
+            return animRes.error();
+        }
+        meshData.animations = std::move(animRes.value());
+    }
+
     return Result<MeshData>::success(std::move(meshData));
 }
 
@@ -436,6 +738,38 @@ Result<MeshData> GltfImporter::importFromMemory(const void* data, size_t size,
     }
 
     return processGltfData(parsedData, baseDir, name);
+}
+
+Result<std::vector<anim::AnimationClip>>
+GltfImporter::importAnimationsFromFile(std::string_view filePath,
+                                       const anim::Skeleton& targetSkeleton) {
+    if (filePath.empty()) {
+        return Error(ErrorCode::InvalidArgument, "Empty glTF animation file path");
+    }
+
+    cgltf_options options{};
+    cgltf_data* parsedData = nullptr;
+    const std::string pathStr(filePath);
+
+    const cgltf_result parseRes = cgltf_parse_file(&options, pathStr.c_str(), &parsedData);
+    if (parseRes != cgltf_result_success) {
+        return mapCgltfResult(parseRes);
+    }
+
+    CgltfGuard guard{parsedData};
+
+    const cgltf_result loadRes = cgltf_load_buffers(&options, parsedData, pathStr.c_str());
+    if (loadRes != cgltf_result_success) {
+        return mapCgltfResult(loadRes);
+    }
+
+    const cgltf_result valRes = cgltf_validate(parsedData);
+    if (valRes != cgltf_result_success) {
+        return Error(ErrorCode::InvalidArgument,
+                     "glTF animation validation failed: invalid accessor ranges");
+    }
+
+    return importAnimationsFromData(parsedData, targetSkeleton);
 }
 
 } // namespace eng::render

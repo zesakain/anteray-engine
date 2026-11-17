@@ -44,6 +44,15 @@ public:
     [[nodiscard]] static Result<MeshData> importFromMemory(const void* data, size_t size,
                                                            std::string_view baseDir = "",
                                                            std::string_view name = "GltfMesh");
+
+    /// @brief Loads skeletal animation clips from a glTF/GLB file, mapped onto targetSkeleton.
+    ///
+    /// Matches animation channel target node names to bone names in targetSkeleton.
+    /// @param filePath Filesystem path to the .gltf or .glb animation library.
+    /// @param targetSkeleton Target skeleton whose bone names/indices receive the tracks.
+    /// @return Vector of imported AnimationClips on success, or Error on failure.
+    [[nodiscard]] static Result<std::vector<anim::AnimationClip>>
+    importAnimationsFromFile(std::string_view filePath, const anim::Skeleton& targetSkeleton);
 };
 
 } // namespace eng::render

@@ -204,4 +204,50 @@ void MeshData::generateTangentsForRange(uint32_t firstIndex, uint32_t indexCount
     }
 }
 
+void MeshData::applyCpuSkinning(std::span<const Mat4> skinningMatrices,
+                                std::vector<Vertex>& outVertices) const {
+    outVertices.resize(vertices.size());
+    if (skinningMatrices.empty()) {
+        outVertices = vertices;
+        return;
+    }
+
+    const size_t boneCount = skinningMatrices.size();
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        const Vertex& src = vertices[i];
+        Vertex& dst = outVertices[i];
+        dst = src;
+
+        const float wSum = src.weights.x + src.weights.y + src.weights.z + src.weights.w;
+        if (wSum <= 1e-4F) {
+            continue;
+        }
+
+        const float invSum = 1.0F / wSum;
+        const float w[4] = {src.weights.x * invSum, src.weights.y * invSum, src.weights.z * invSum,
+                            src.weights.w * invSum};
+
+        Mat4 skin{};
+        for (float& v : skin.m) {
+            v = 0.0F;
+        }
+        for (int k = 0; k < 4; ++k) {
+            if (w[k] > 0.0F) {
+                const uint32_t j = (src.joints[k] < boneCount) ? src.joints[k] : 0U;
+                const Mat4& bm = skinningMatrices[j];
+                for (size_t idx = 0; idx < 16; ++idx) {
+                    skin.m[idx] += bm.m[idx] * w[k];
+                }
+            }
+        }
+
+        dst.position = skin.transformPoint(src.position);
+        const Vec3 n = skin.transformVector(src.normal);
+        dst.normal = (n.lengthSq() > 1e-8F) ? n.normalized() : Vec3::unitY();
+        const Vec3 t = skin.transformVector(Vec3{src.tangent.x, src.tangent.y, src.tangent.z});
+        const Vec3 tn = (t.lengthSq() > 1e-8F) ? t.normalized() : Vec3::unitX();
+        dst.tangent = Vec4{tn.x, tn.y, tn.z, src.tangent.w};
+    }
+}
+
 } // namespace eng::render
