@@ -17,7 +17,9 @@ extern "C" {
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <new>
+#include <sstream>
 
 namespace eng::script {
 
@@ -387,6 +389,7 @@ Result<void, ScriptError> ScriptEngine::initialize(const ScriptConfig& config) {
     setupSandbox();
     registerMathBindings();
     registerWorldBindings();
+    registerEventBindings();
     registerLoggingBindings();
 
     // Configure instruction watchdog
@@ -524,6 +527,43 @@ void ScriptEngine::registerWorldBindings() {
         lua_pushcfunction(luaState_, entityIsAlive);
         lua_rawset(luaState_, -3);
 
+        auto entityGetPos = [](lua_State* L) -> int {
+            auto* h = static_cast<world::EntityHandle*>(luaL_checkudata(L, 1, kEntityMeta));
+            ScriptEngine* engine = getEngineFromLua(L);
+            if (engine == nullptr || engine->boundWorld() == nullptr || !h->isValid() ||
+                !engine->boundWorld()->isAlive(*h)) {
+                pushScriptValue(L, Vec3::zero());
+                return 1;
+            }
+            if (const auto* tc =
+                    engine->boundWorld()->getComponent<world::TransformComponent>(*h)) {
+                pushScriptValue(L, tc->transform.position);
+            } else {
+                pushScriptValue(L, Vec3::zero());
+            }
+            return 1;
+        };
+
+        auto entityGetName = [](lua_State* L) -> int {
+            auto* h = static_cast<world::EntityHandle*>(luaL_checkudata(L, 1, kEntityMeta));
+            ScriptEngine* engine = getEngineFromLua(L);
+            if (engine == nullptr || engine->boundWorld() == nullptr || !h->isValid()) {
+                lua_pushstring(L, "");
+                return 1;
+            }
+            const std::string_view name = engine->boundWorld()->getEntityName(*h);
+            lua_pushlstring(L, name.data(), name.size());
+            return 1;
+        };
+
+        lua_pushstring(luaState_, "get_position");
+        lua_pushcfunction(luaState_, entityGetPos);
+        lua_rawset(luaState_, -3);
+
+        lua_pushstring(luaState_, "get_name");
+        lua_pushcfunction(luaState_, entityGetName);
+        lua_rawset(luaState_, -3);
+
         lua_rawset(luaState_, -3); // set __index table
 
         lua_pushstring(luaState_, "__tostring");
@@ -531,6 +571,105 @@ void ScriptEngine::registerWorldBindings() {
         lua_rawset(luaState_, -3);
     }
     lua_pop(luaState_, 1);
+
+    // Also expose `entity` helper table for functional calls
+    lua_newtable(luaState_);
+    lua_pushstring(luaState_, "find_by_name");
+    lua_pushcfunction(luaState_, [](lua_State* L) -> int {
+        const char* name = luaL_checkstring(L, 1);
+        ScriptEngine* engine = getEngineFromLua(L);
+        if (engine == nullptr || engine->boundWorld() == nullptr || name == nullptr) {
+            lua_pushnil(L);
+            return 1;
+        }
+        flecs::entity found = engine->boundWorld()->getRawWorld().lookup(name);
+        if (!found.is_valid() || !found.is_alive()) {
+            lua_pushnil(L);
+            return 1;
+        }
+        pushScriptValue(L, world::EntityHandle{found.id()});
+        return 1;
+    });
+    lua_rawset(luaState_, -3);
+
+    lua_pushstring(luaState_, "is_valid");
+    lua_pushcfunction(luaState_, entityIsValid);
+    lua_rawset(luaState_, -3);
+
+    lua_pushstring(luaState_, "get_position");
+    lua_pushcfunction(luaState_, [](lua_State* L) -> int {
+        auto* h = static_cast<world::EntityHandle*>(luaL_checkudata(L, 1, kEntityMeta));
+        ScriptEngine* engine = getEngineFromLua(L);
+        if (engine == nullptr || engine->boundWorld() == nullptr || !h->isValid()) {
+            pushScriptValue(L, Vec3::zero());
+            return 1;
+        }
+        if (const auto* tc = engine->boundWorld()->getComponent<world::TransformComponent>(*h)) {
+            pushScriptValue(L, tc->transform.position);
+        } else {
+            pushScriptValue(L, Vec3::zero());
+        }
+        return 1;
+    });
+    lua_rawset(luaState_, -3);
+
+    lua_pushstring(luaState_, "get_name");
+    lua_pushcfunction(luaState_, [](lua_State* L) -> int {
+        auto* h = static_cast<world::EntityHandle*>(luaL_checkudata(L, 1, kEntityMeta));
+        ScriptEngine* engine = getEngineFromLua(L);
+        if (engine == nullptr || engine->boundWorld() == nullptr || !h->isValid()) {
+            lua_pushstring(L, "");
+            return 1;
+        }
+        const std::string_view name = engine->boundWorld()->getEntityName(*h);
+        lua_pushlstring(L, name.data(), name.size());
+        return 1;
+    });
+    lua_rawset(luaState_, -3);
+
+    lua_setglobal(luaState_, "entity");
+}
+
+void ScriptEngine::registerEventBindings() {
+    ENG_ASSERT(luaState_ != nullptr, "Lua state must be valid");
+    lua_newtable(luaState_);
+
+    lua_pushstring(luaState_, "emit");
+    lua_pushcfunction(luaState_, [](lua_State* L) -> int {
+        ScriptEngine* engine = getEngineFromLua(L);
+        if (engine == nullptr) {
+            return 0;
+        }
+        if (engine->isStandbyMode()) {
+            return luaL_error(L, "events.emit is forbidden in Standby mode");
+        }
+        size_t nameLen = 0;
+        const char* namePtr = luaL_checklstring(L, 1, &nameLen);
+        std::string payload;
+        if (lua_gettop(L) >= 2 && !lua_isnil(L, 2)) {
+            size_t payLen = 0;
+            const char* payPtr = luaL_tolstring(L, 2, &payLen);
+            if (payPtr != nullptr) {
+                payload.assign(payPtr, payLen);
+            }
+            lua_pop(L, 1);
+        }
+        engine->eventQueue_.push_back(
+            ScriptEvent{.name = std::string(namePtr, nameLen), .payload = std::move(payload)});
+        return 0;
+    });
+    lua_rawset(luaState_, -3);
+
+    lua_pushstring(luaState_, "count");
+    lua_pushcfunction(luaState_, [](lua_State* L) -> int {
+        ScriptEngine* engine = getEngineFromLua(L);
+        lua_pushinteger(L, engine != nullptr ? static_cast<lua_Integer>(engine->eventQueue_.size())
+                                             : 0);
+        return 1;
+    });
+    lua_rawset(luaState_, -3);
+
+    lua_setglobal(luaState_, "events");
 }
 
 Result<ScriptValue, ScriptError> ScriptEngine::executeString(std::string_view script,
@@ -662,6 +801,201 @@ void ScriptEngine::bindWorld(world::World* world) {
 
 void ScriptEngine::unbindWorld() {
     boundWorld_ = nullptr;
+}
+
+int32_t ScriptCallContext::getArgCount() const noexcept {
+    auto* L = static_cast<lua_State*>(state_);
+    return (L != nullptr) ? static_cast<int32_t>(lua_gettop(L)) : 0;
+}
+
+bool ScriptCallContext::getBool(int32_t argIndex, bool defaultVal) const noexcept {
+    auto* L = static_cast<lua_State*>(state_);
+    if (L == nullptr || argIndex > lua_gettop(L) || lua_isnil(L, argIndex)) {
+        return defaultVal;
+    }
+    return lua_toboolean(L, argIndex) != 0;
+}
+
+double ScriptCallContext::getNumber(int32_t argIndex, double defaultVal) const noexcept {
+    auto* L = static_cast<lua_State*>(state_);
+    if (L == nullptr || argIndex > lua_gettop(L) || !lua_isnumber(L, argIndex)) {
+        return defaultVal;
+    }
+    return static_cast<double>(lua_tonumber(L, argIndex));
+}
+
+std::string_view ScriptCallContext::getString(int32_t argIndex) const noexcept {
+    auto* L = static_cast<lua_State*>(state_);
+    if (L == nullptr || argIndex > lua_gettop(L) || !lua_isstring(L, argIndex)) {
+        return {};
+    }
+    size_t len = 0;
+    const char* ptr = lua_tolstring(L, argIndex, &len);
+    return (ptr != nullptr) ? std::string_view(ptr, len) : std::string_view{};
+}
+
+world::EntityHandle ScriptCallContext::getEntity(int32_t argIndex) const noexcept {
+    auto* L = static_cast<lua_State*>(state_);
+    if (L == nullptr || argIndex > lua_gettop(L)) {
+        return {};
+    }
+    auto* ud = static_cast<world::EntityHandle*>(luaL_testudata(L, argIndex, kEntityMeta));
+    return (ud != nullptr) ? *ud : world::EntityHandle{};
+}
+
+Vec3 ScriptCallContext::getVec3(int32_t argIndex) const noexcept {
+    auto* L = static_cast<lua_State*>(state_);
+    if (L == nullptr || argIndex > lua_gettop(L)) {
+        return Vec3::zero();
+    }
+    auto* ud = static_cast<Vec3*>(luaL_testudata(L, argIndex, kVec3Meta));
+    return (ud != nullptr) ? *ud : Vec3::zero();
+}
+
+void ScriptCallContext::pushNil() noexcept {
+    if (auto* L = static_cast<lua_State*>(state_)) {
+        lua_pushnil(L);
+    }
+}
+
+void ScriptCallContext::pushBool(bool v) noexcept {
+    if (auto* L = static_cast<lua_State*>(state_)) {
+        lua_pushboolean(L, v ? 1 : 0);
+    }
+}
+
+void ScriptCallContext::pushNumber(double v) noexcept {
+    if (auto* L = static_cast<lua_State*>(state_)) {
+        lua_pushnumber(L, v);
+    }
+}
+
+void ScriptCallContext::pushString(std::string_view s) noexcept {
+    if (auto* L = static_cast<lua_State*>(state_)) {
+        lua_pushlstring(L, s.data(), s.size());
+    }
+}
+
+void ScriptCallContext::pushEntity(world::EntityHandle e) noexcept {
+    if (auto* L = static_cast<lua_State*>(state_)) {
+        pushScriptValue(L, e);
+    }
+}
+
+void ScriptCallContext::pushVec3(const Vec3& v) noexcept {
+    if (auto* L = static_cast<lua_State*>(state_)) {
+        pushScriptValue(L, v);
+    }
+}
+
+void ScriptCallContext::setError(std::string_view message) noexcept {
+    errorMessage_.assign(message);
+    hasError_ = true;
+}
+
+Result<void, ScriptError> ScriptEngine::loadScriptFile(std::string_view filePath) {
+    if (luaState_ == nullptr) {
+        return ScriptError::InvalidState;
+    }
+    if (filePath.empty()) {
+        lastErrorMessage_ = "Empty Lua script file path";
+        return ScriptError::InvalidState;
+    }
+    const std::string pathStr(filePath);
+    std::ifstream file(pathStr, std::ios::in | std::ios::binary);
+    if (!file.is_open()) {
+        lastErrorMessage_ = "Failed to open Lua script file: " + pathStr;
+        return ScriptError::NotFound;
+    }
+    std::ostringstream ss;
+    ss << file.rdbuf();
+    return loadScript(filePath, ss.str());
+}
+
+Result<void, ScriptError> ScriptEngine::reloadScriptFile(std::string_view filePath) {
+    return loadScriptFile(filePath);
+}
+
+Result<void, ScriptError> ScriptEngine::callEntityHook(std::string_view hookName,
+                                                       world::EntityHandle entity) {
+    if (luaState_ == nullptr) {
+        return ScriptError::InvalidState;
+    }
+    instructionsExecuted_ = 0;
+    budgetExceeded_ = false;
+
+    std::string funcStr(hookName);
+    lua_getglobal(luaState_, funcStr.c_str());
+    if (!lua_isfunction(luaState_, -1)) {
+        lua_pop(luaState_, 1);
+        return ScriptError::NotFound;
+    }
+
+    pushScriptValue(luaState_, entity);
+    const int pcallResult = lua_pcall(luaState_, 1, 0, 0);
+    if (pcallResult != LUA_OK) {
+        lastErrorMessage_ = lua_tostring(luaState_, -1);
+        lua_pop(luaState_, 1);
+        if (budgetExceeded_) {
+            return ScriptError::BudgetExceeded;
+        }
+        return ScriptError::RuntimeError;
+    }
+    return Result<void, ScriptError>::success();
+}
+
+Result<void, ScriptError>
+ScriptEngine::registerModule(std::string_view moduleName,
+                             std::span<const ScriptHostFunction> functions) {
+    if (luaState_ == nullptr) {
+        return ScriptError::InvalidState;
+    }
+
+    lua_newtable(luaState_);
+    for (const auto& fn : functions) {
+        if (fn.name.empty() || fn.callback == nullptr) {
+            continue;
+        }
+        lua_pushlstring(luaState_, fn.name.data(), fn.name.size());
+        lua_pushlightuserdata(luaState_, reinterpret_cast<void*>(fn.callback));
+        lua_pushlightuserdata(luaState_, fn.userData);
+        lua_pushboolean(luaState_, fn.mutatesWorld ? 1 : 0);
+
+        auto trampoline = [](lua_State* L) -> int {
+            ScriptEngine* engine = getEngineFromLua(L);
+            auto cb = reinterpret_cast<ScriptHostCallback>(lua_touserdata(L, lua_upvalueindex(1)));
+            void* ud = lua_touserdata(L, lua_upvalueindex(2));
+            const bool mutates = (lua_toboolean(L, lua_upvalueindex(3)) != 0);
+
+            if (mutates && engine != nullptr && engine->isStandbyMode()) {
+                return luaL_error(L, "Cannot mutate authoritative World while in Standby mode");
+            }
+            if (cb == nullptr) {
+                return 0;
+            }
+            ScriptCallContext ctx(L);
+            const int32_t retCount = cb(ctx, ud);
+            if (ctx.hasError() || retCount < 0) {
+                return luaL_error(L, "%s",
+                                  ctx.errorMessage().empty() ? "Host call failed"
+                                                             : ctx.errorMessage().data());
+            }
+            return retCount;
+        };
+
+        lua_pushcclosure(luaState_, trampoline, 3);
+        lua_rawset(luaState_, -3);
+    }
+
+    const std::string modStr(moduleName);
+    lua_setglobal(luaState_, modStr.c_str());
+    return Result<void, ScriptError>::success();
+}
+
+std::vector<ScriptEvent> ScriptEngine::drainEvents() {
+    std::vector<ScriptEvent> out = std::move(eventQueue_);
+    eventQueue_.clear();
+    return out;
 }
 
 } // namespace eng::script

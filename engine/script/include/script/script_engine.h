@@ -29,6 +29,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 // Forward declaration of internal Lua VM state
 struct lua_State;
@@ -79,6 +80,12 @@ public:
     [[nodiscard]] Result<void, ScriptError> loadScript(std::string_view scriptName,
                                                        std::string_view scriptCode);
 
+    /// Reads, validates, compiles, and executes a .lua script file from disk (non-hot path).
+    [[nodiscard]] Result<void, ScriptError> loadScriptFile(std::string_view filePath);
+
+    /// Safely reloads a .lua script file from disk (non-hot path).
+    [[nodiscard]] Result<void, ScriptError> reloadScriptFile(std::string_view filePath);
+
     /// Calls a global Lua function by name with typed arguments.
     ///
     /// @param funcName Name of the global function to invoke.
@@ -90,6 +97,31 @@ public:
     /// Calls an entity-specific script hook (e.g., `on_update(entity, dt)` or `scriptName_update`).
     [[nodiscard]] Result<void, ScriptError>
     callEntityUpdate(std::string_view funcName, world::EntityHandle entity, float deltaTime);
+
+    /// Calls an entity lifecycle hook (e.g., `on_init(entity)` or `on_shutdown(entity)`).
+    [[nodiscard]] Result<void, ScriptError> callEntityHook(std::string_view funcName,
+                                                           world::EntityHandle entity);
+
+    /// Registers a module table of C++ host functions (with optional standby mutation guard).
+    [[nodiscard]] Result<void, ScriptError>
+    registerModule(std::string_view moduleName, std::span<const ScriptHostFunction> functions);
+
+    /// Sets the active vs. standby execution mode (standby rejects mutatesWorld host calls).
+    void setExecutionMode(ScriptExecutionMode mode) noexcept { executionMode_ = mode; }
+
+    /// Returns the current script execution mode.
+    [[nodiscard]] ScriptExecutionMode getExecutionMode() const noexcept { return executionMode_; }
+
+    /// Returns true when the script engine is in Standby read-only preparation mode.
+    [[nodiscard]] bool isStandbyMode() const noexcept {
+        return executionMode_ == ScriptExecutionMode::Standby;
+    }
+
+    /// Drains all gameplay events emitted by Lua scripts via `events.emit(name, payload)`.
+    [[nodiscard]] std::vector<ScriptEvent> drainEvents();
+
+    /// Returns the number of queued gameplay events emitted by scripts.
+    [[nodiscard]] size_t queuedEventCount() const noexcept { return eventQueue_.size(); }
 
     /// Sets a global variable in the Lua environment.
     [[nodiscard]] Result<void, ScriptError> setGlobal(std::string_view name,
@@ -121,12 +153,15 @@ private:
     world::World* boundWorld_{nullptr};
     ScriptConfig config_{};
     std::string lastErrorMessage_{};
+    std::vector<ScriptEvent> eventQueue_{};
+    ScriptExecutionMode executionMode_{ScriptExecutionMode::Active};
     uint32_t instructionsExecuted_{0};
     bool budgetExceeded_{false};
 
     void setupSandbox();
     void registerMathBindings();
     void registerWorldBindings();
+    void registerEventBindings();
     void registerLoggingBindings();
 
     static void instructionHook(lua_State* L, void* ar);

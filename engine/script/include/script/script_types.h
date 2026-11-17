@@ -23,6 +23,7 @@
 #include "world/entity.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -104,6 +105,64 @@ struct ScriptConfig {
 
     /// Garbage collector step multiplier (higher values perform more aggressive GC).
     int32_t gcStepMultiplier{200};
+};
+
+/// @enum ScriptExecutionMode
+/// @brief Governs whether Lua scripts have active-mode write access or standby read-only access.
+enum class ScriptExecutionMode : uint8_t {
+    Active = 0,
+    Standby = 1,
+};
+
+/// @struct ScriptEvent
+/// @brief Lightweight event emitted from or delivered to Lua gameplay scripts.
+struct ScriptEvent {
+    std::string name;
+    std::string payload;
+};
+
+/// @class ScriptCallContext
+/// @brief Opaque argument/return-value bridge for C++ host functions exposed to Lua.
+///
+/// Header self-containment: wraps an opaque Lua state pointer without including <lua.h>.
+class ScriptCallContext {
+public:
+    explicit ScriptCallContext(void* opaqueState) noexcept : state_(opaqueState) {}
+
+    [[nodiscard]] int32_t getArgCount() const noexcept;
+    [[nodiscard]] bool getBool(int32_t argIndex, bool defaultVal = false) const noexcept;
+    [[nodiscard]] double getNumber(int32_t argIndex, double defaultVal = 0.0) const noexcept;
+    [[nodiscard]] std::string_view getString(int32_t argIndex) const noexcept;
+    [[nodiscard]] world::EntityHandle getEntity(int32_t argIndex) const noexcept;
+    [[nodiscard]] Vec3 getVec3(int32_t argIndex) const noexcept;
+
+    void pushNil() noexcept;
+    void pushBool(bool v) noexcept;
+    void pushNumber(double v) noexcept;
+    void pushString(std::string_view s) noexcept;
+    void pushEntity(world::EntityHandle e) noexcept;
+    void pushVec3(const Vec3& v) noexcept;
+
+    void setError(std::string_view message) noexcept;
+    [[nodiscard]] std::string_view errorMessage() const noexcept { return errorMessage_; }
+    [[nodiscard]] bool hasError() const noexcept { return hasError_; }
+
+private:
+    void* state_{nullptr};
+    std::string errorMessage_{};
+    bool hasError_{false};
+};
+
+/// Host callback signature: returns number of Lua return values pushed, or < 0 on error.
+using ScriptHostCallback = int32_t (*)(ScriptCallContext& ctx, void* userData);
+
+/// @struct ScriptHostFunction
+/// @brief Descriptor for registering a C++ host function into a Lua module table.
+struct ScriptHostFunction {
+    std::string_view name;
+    ScriptHostCallback callback{nullptr};
+    void* userData{nullptr};
+    bool mutatesWorld{false};
 };
 
 } // namespace eng::script
