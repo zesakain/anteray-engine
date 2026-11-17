@@ -3,16 +3,22 @@
 /// and World Isolation.
 
 #include "core/log.h"
+#include "framework/character_components.h"
 #include "framework/conductor.h"
 #include "framework/runtime_session.h"
 #include "framework/scene.h"
+#include "framework/scene_serializer.h"
+#include "framework/third_person_camera.h"
 #include "physics/physics_components.h"
+#include "platform/input_snapshot.h"
+#include "render/mesh_component.h"
 #include "script/script_components.h"
 #include "world/components.h"
 #include "world/hierarchy_systems.h"
 #include "world/world.h"
 
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 
 namespace {
@@ -567,6 +573,98 @@ static int testSingleWorldProgressionPerUpdateAndStep() {
     return 0;
 }
 
+int testTppScenePlayableInputAndCameraFollow() {
+    std::filesystem::path tppPath = "assets/scenes/CharacterController_TPP_Test.hikari";
+    for (int d = 0; d < 4 && !std::filesystem::exists(tppPath); ++d) {
+        tppPath = std::filesystem::path("..") / tppPath;
+    }
+    TEST_CHECK(std::filesystem::exists(tppPath));
+
+    World editWorld;
+    registerHierarchySystems(editWorld);
+    physics::registerPhysicsComponents(editWorld);
+    render::registerRenderComponents(editWorld);
+    registerCharacterComponents(editWorld);
+
+    TEST_CHECK(SceneSerializer::deserializeFromFile(editWorld, tppPath).hasValue());
+
+    RuntimeSession session;
+    session.setEditWorld(&editWorld);
+    TEST_CHECK(session.play().hasValue());
+
+    World* rtWorld = session.getRuntimeWorld();
+    TEST_CHECK(rtWorld != nullptr);
+
+    EntityHandle player{rtWorld->getRawWorld().lookup("PlayerCharacter").id()};
+    EntityHandle camEnt{rtWorld->getRawWorld().lookup("ThirdPersonCamera").id()};
+    TEST_CHECK(player.isValid());
+    TEST_CHECK(camEnt.isValid());
+
+    // Settle onto ground for 10 frames with neutral input
+    platform::InputSnapshot snap{};
+    session.setInputSnapshot(snap);
+    for (int i = 0; i < 10; ++i) {
+        session.update(Duration::fromMilliseconds(16));
+    }
+
+    const auto* playerState0 = rtWorld->getComponent<CharacterStateComponent>(player);
+    const auto* playerTr0 = rtWorld->getComponent<TransformComponent>(player);
+    const auto* tpc0 = rtWorld->getComponent<ThirdPersonCameraComponent>(camEnt);
+    TEST_CHECK(playerState0 != nullptr);
+    TEST_CHECK(playerTr0 != nullptr);
+    TEST_CHECK(tpc0 != nullptr);
+    TEST_CHECK(playerState0->isGrounded);
+    // Verify targetEntityId was remapped to the actual runtime player entity
+    TEST_CHECK(tpc0->targetEntityId == player.id);
+
+    const Vec3 startPos = playerTr0->transform.position;
+    const float startCamYaw = tpc0->yawRadians;
+
+    // 1. Rotate camera with mouse delta and move forward with W
+    snap.keys.set(static_cast<size_t>(platform::KeyCode::W));
+    snap.mouseDeltaX = -100.0F; // rotates yaw positive
+    session.setInputSnapshot(snap);
+    session.update(Duration::fromMilliseconds(16));
+    snap.mouseDeltaX = 0.0F;
+    session.setInputSnapshot(snap);
+    for (int i = 0; i < 20; ++i) {
+        session.update(Duration::fromMilliseconds(16));
+    }
+
+    const auto* playerTr1 = rtWorld->getComponent<TransformComponent>(player);
+    const auto* playerState1 = rtWorld->getComponent<CharacterStateComponent>(player);
+    const auto* tpc1 = rtWorld->getComponent<ThirdPersonCameraComponent>(camEnt);
+    TEST_CHECK(tpc1->yawRadians > startCamYaw + 0.1F);
+    const Vec3 movedDelta = playerTr1->transform.position - startPos;
+    const float horizDist = std::sqrt(movedDelta.x * movedDelta.x + movedDelta.z * movedDelta.z);
+    TEST_CHECK(horizDist > 0.5F);
+    TEST_CHECK(playerState1->velocityMetersPerSec.length() > 1.0F);
+
+    // 2. Jump with Space
+    snap.keys.set(static_cast<size_t>(platform::KeyCode::Space));
+    session.setInputSnapshot(snap);
+    session.update(Duration::fromMilliseconds(16));
+    const auto* playerStateJump = rtWorld->getComponent<CharacterStateComponent>(player);
+    TEST_CHECK(!playerStateJump->isGrounded);
+    TEST_CHECK(playerStateJump->velocityMetersPerSec.y > 1.0F);
+
+    // 3. Stop and Play again: verify zero stale input or leftover velocity
+    TEST_CHECK(session.stop().hasValue());
+    TEST_CHECK(session.play().hasValue());
+    rtWorld = session.getRuntimeWorld();
+    player = EntityHandle{rtWorld->getRawWorld().lookup("PlayerCharacter").id()};
+    const auto* playerReset = rtWorld->getComponent<TransformComponent>(player);
+    const auto* stateReset = rtWorld->getComponent<CharacterStateComponent>(player);
+    TEST_CHECK(playerReset != nullptr);
+    TEST_CHECK(stateReset != nullptr);
+    TEST_CHECK((playerReset->transform.position - Vec3(0.0F, 0.05F, 0.0F)).length() < 0.01F);
+    TEST_CHECK(stateReset->velocityMetersPerSec.length() < 0.01F);
+
+    TEST_CHECK(session.stop().hasValue());
+    std::cout << "[PASS] testTppScenePlayableInputAndCameraFollow\n";
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -586,6 +684,8 @@ int main() {
     if (testRepeatedPlayStopCyclesWithHierarchy() != 0)
         return 1;
     if (testSingleWorldProgressionPerUpdateAndStep() != 0)
+        return 1;
+    if (testTppScenePlayableInputAndCameraFollow() != 0)
         return 1;
     std::cout << "All RuntimeSession tests PASSED!\n";
     return 0;
