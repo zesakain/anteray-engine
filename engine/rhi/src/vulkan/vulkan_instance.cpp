@@ -128,9 +128,9 @@ Result<std::unique_ptr<VulkanInstance>> VulkanInstance::create(bool enableValida
     VkApplicationInfo appInfo{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pNext = nullptr,
-        .pApplicationName = "Hikari Machine",
+        .pApplicationName = "ANTERAY ENGINE",
         .applicationVersion = VK_MAKE_VERSION(0, 1, 0),
-        .pEngineName = "Hikari",
+        .pEngineName = "ANTERAY",
         .engineVersion = VK_MAKE_VERSION(0, 1, 0),
         .apiVersion = VK_API_VERSION_1_3,
     };

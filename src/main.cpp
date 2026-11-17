@@ -167,11 +167,11 @@ int main(int argc, char* argv[]) {
                 scenePath = benchName;
             }
         } else if (arg == "--version") {
-            std::cout << "hikari version 0.1.0 (Phase 6 Architecture Complete)\n";
+            std::cout << "ANTERAY ENGINE 0.1.0 (Phase 6 Architecture Complete)\n";
             std::cout << "Architecture: Two-State Conductor over Shared World (C++20)\n";
             return 0;
         } else if (arg == "--help") {
-            std::cout << "Hikari Machine 3D Engine\n";
+            std::cout << "ANTERAY ENGINE\n";
             std::cout << "Usage: hikari [options]\n\n";
             std::cout << "Options:\n";
             std::cout << "  --headless         Run continuous headless simulation without window\n";
@@ -191,7 +191,7 @@ int main(int argc, char* argv[]) {
         targetFrames = 60; // Default headless run limit for CI / automated runs
     }
 
-    ENG_LOG_INFO("Core", "=== Hikari Machine 0.1.0 Initializing ===");
+    ENG_LOG_INFO("Core", "=== ANTERAY ENGINE 0.1.0 Initializing ===");
 
     // 1. Core Job System
     JobSystemConfig jobConfig{.workerCount = 4, .maxJobs = 1024, .maxDependencies = 2048};
@@ -217,7 +217,7 @@ int main(int argc, char* argv[]) {
         ENG_ASSERT(devRes.hasValue(), "Failed to create Null RHI device in headless mode");
         rhiDevice = std::move(devRes.value());
     } else {
-        auto winRes = platform->createWindow(platform::WindowDesc{.title = "Hikari Machine",
+        auto winRes = platform->createWindow(platform::WindowDesc{.title = "ANTERAY ENGINE",
                                                                   .width = windowWidth,
                                                                   .height = windowHeight,
                                                                   .vulkan = true});
@@ -312,7 +312,7 @@ end
         const std::string_view kMainHudRml = R"(
 <rml>
 <head>
-<title>Hikari Diagnostics HUD</title>
+<title>ANTERAY Diagnostics HUD</title>
 <style>
 body {
     font-family: Arial;
@@ -760,6 +760,6 @@ body {
     platform->shutdown();
 
     Logger::defaultLogger().flush(stdout);
-    std::cout << "Hikari simulation completed cleanly (" << frameCount << " frames).\n";
+    std::cout << "ANTERAY simulation completed cleanly (" << frameCount << " frames).\n";
     return 0;
 }

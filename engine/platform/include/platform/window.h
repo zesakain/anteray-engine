@@ -30,7 +30,7 @@ namespace eng::platform {
 /// @brief Configuration descriptor used to instantiate a platform window.
 struct WindowDesc {
     /// Window title shown in OS window frame.
-    std::string_view title{"Hikari"};
+    std::string_view title{"ANTERAY"};
 
     /// Initial client area width in physical/screen pixels.
     uint32_t width{1280};
