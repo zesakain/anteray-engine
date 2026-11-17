@@ -22,6 +22,7 @@
 #include "core/result.h"
 #include "framework/character_animation.h"
 #include "framework/character_components.h"
+#include "framework/third_person_camera.h"
 #include "physics/physics_types.h"
 #include "render/camera_component.h"
 #include "world/entity.h"
@@ -73,8 +74,14 @@ struct PrefabEntityNode {
     CharacterConfigComponent characterConfig{};
     bool hasCharacterState{false};
     CharacterStateComponent characterState{};
+    bool hasCharacterMovementIntent{false};
+    CharacterMovementIntentComponent characterMovementIntent{};
     bool hasCharacterAnimation{false};
     CharacterAnimationComponent characterAnimation{};
+
+    bool hasThirdPersonCamera{false};
+    ThirdPersonCameraComponent thirdPersonCamera{};
+    uint64_t thirdPersonCameraTargetLocalId{0};
 };
 
 /// @struct PrefabDescriptor
@@ -87,6 +94,23 @@ struct PrefabDescriptor {
     std::vector<PrefabEntityNode> entities{};
 };
 
+/// @struct CharacterAppearanceOverride
+/// @brief Optional modular appearance and animation asset overrides for character prefabs.
+///
+/// Allows replacing the skeletal mesh and/or animation library on instantiation without
+/// modifying CharacterController, Physics, Input, or ThirdPersonCamera configuration.
+struct CharacterAppearanceOverride {
+    std::optional<std::string> meshAssetPath{};
+    std::optional<std::string> skeletonMeshPath{};
+    std::optional<std::string> animationLibraryPath{};
+    std::optional<std::string> idleClip{};
+    std::optional<std::string> walkClip{};
+    std::optional<std::string> runClip{};
+    std::optional<std::string> jumpClip{};
+    std::optional<std::string> inAirClip{};
+    std::optional<std::string> landClip{};
+};
+
 /// @struct PrefabInstantiateOptions
 /// @brief Optional instance-level overrides applied when instantiating a PrefabDescriptor.
 struct PrefabInstantiateOptions {
@@ -94,7 +118,9 @@ struct PrefabInstantiateOptions {
     std::optional<std::string> rootNameOverride{};
     std::optional<Transform> rootTransformOverride{};
     std::optional<CharacterConfigComponent> characterConfigOverride{};
+    std::optional<CharacterAppearanceOverride> appearanceOverride{};
     std::optional<std::string> scriptNameOverride{};
+    bool validateAppearanceAssets{false};
 };
 
 /// @class PrefabLoader

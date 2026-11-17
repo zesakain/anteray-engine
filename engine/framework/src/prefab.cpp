@@ -74,6 +74,24 @@ std::optional<physics::ColliderType> parseColliderType(std::string_view s) noexc
     return std::nullopt;
 }
 
+bool resolveAppearanceFileExists(std::string_view assetPath) {
+    if (assetPath.empty()) {
+        return false;
+    }
+    std::filesystem::path probe(assetPath);
+    std::error_code ec;
+    if (std::filesystem::exists(probe, ec)) {
+        return true;
+    }
+    for (int d = 0; d < 4; ++d) {
+        probe = std::filesystem::path("..") / probe;
+        if (std::filesystem::exists(probe, ec)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 Result<PrefabDescriptor> PrefabLoader::parseFromString(std::string_view jsonText) {
@@ -304,6 +322,43 @@ Result<PrefabDescriptor> PrefabLoader::parseFromString(std::string_view jsonText
                         compData.getFloat("blendDurationSeconds", ca.blendDurationSeconds);
                     ca.landingDurationSeconds =
                         compData.getFloat("landingDurationSeconds", ca.landingDurationSeconds);
+                } else if (compName == "CharacterMovementIntent") {
+                    node.hasCharacterMovementIntent = true;
+                    auto& intent = node.characterMovementIntent;
+                    if (const auto* axisVal = compData.find("moveAxis")) {
+                        if (axisVal->isArray() && axisVal->size() == 2) {
+                            intent.moveAxis =
+                                Vec2{(*axisVal)[0].asFloat(0.0F), (*axisVal)[1].asFloat(0.0F)};
+                        }
+                    }
+                    intent.jumpRequested = compData.getBool("jumpRequested", intent.jumpRequested);
+                    intent.cameraYawRadians =
+                        compData.getFloat("cameraYawRadians", intent.cameraYawRadians);
+                    intent.hasCameraYaw = compData.getBool("hasCameraYaw", intent.hasCameraYaw);
+                } else if (compName == "ThirdPersonCamera") {
+                    node.hasThirdPersonCamera = true;
+                    auto& tpc = node.thirdPersonCamera;
+                    node.thirdPersonCameraTargetLocalId = compData.getUInt64("targetEntityId", 0);
+                    tpc.yawRadians = compData.getFloat("yawRadians", tpc.yawRadians);
+                    tpc.pitchRadians = compData.getFloat("pitchRadians", tpc.pitchRadians);
+                    tpc.minPitchRadians = compData.getFloat("minPitchRadians", tpc.minPitchRadians);
+                    tpc.maxPitchRadians = compData.getFloat("maxPitchRadians", tpc.maxPitchRadians);
+                    tpc.distanceMeters = compData.getFloat("distanceMeters", tpc.distanceMeters);
+                    tpc.minDistanceMeters =
+                        compData.getFloat("minDistanceMeters", tpc.minDistanceMeters);
+                    tpc.heightOffsetMeters =
+                        compData.getFloat("heightOffsetMeters", tpc.heightOffsetMeters);
+                    tpc.collisionRadiusMeters =
+                        compData.getFloat("collisionRadiusMeters", tpc.collisionRadiusMeters);
+                    tpc.followSmoothSpeed =
+                        compData.getFloat("followSmoothSpeed", tpc.followSmoothSpeed);
+                    if (tpc.distanceMeters <= 0.0F || tpc.minDistanceMeters <= 0.0F ||
+                        tpc.minDistanceMeters > tpc.distanceMeters ||
+                        tpc.minPitchRadians > tpc.maxPitchRadians ||
+                        tpc.collisionRadiusMeters < 0.0F || tpc.followSmoothSpeed < 0.0F) {
+                        return Error{.code = ErrorCode::InvalidArgument,
+                                     .message = "Invalid ThirdPersonCamera parameters in prefab"};
+                    }
                 } else {
                     return Error{.code = ErrorCode::InvalidArgument,
                                  .message = "Unknown component '" + compName + "' in prefab"};
@@ -377,7 +432,70 @@ Result<world::EntityHandle> PrefabLoader::instantiate(world::World& world,
                      .message = "Prefab instantiation target parent entity is not alive"};
     }
 
+    if (options.characterConfigOverride.has_value() &&
+        !options.characterConfigOverride->isValid()) {
+        return Error{.code = ErrorCode::InvalidArgument,
+                     .message = "Invalid CharacterConfig override in PrefabInstantiateOptions"};
+    }
+
+    if (options.validateAppearanceAssets) {
+        if (options.appearanceOverride.has_value()) {
+            const auto& app = *options.appearanceOverride;
+            if (app.meshAssetPath.has_value() && !resolveAppearanceFileExists(*app.meshAssetPath)) {
+                return Error{.code = ErrorCode::InvalidArgument,
+                             .message = "Missing appearance meshAssetPath: " + *app.meshAssetPath};
+            }
+            if (app.skeletonMeshPath.has_value() &&
+                !resolveAppearanceFileExists(*app.skeletonMeshPath)) {
+                return Error{.code = ErrorCode::InvalidArgument,
+                             .message =
+                                 "Missing appearance skeletonMeshPath: " + *app.skeletonMeshPath};
+            }
+            if (app.animationLibraryPath.has_value() &&
+                !resolveAppearanceFileExists(*app.animationLibraryPath)) {
+                return Error{.code = ErrorCode::InvalidArgument,
+                             .message = "Missing appearance animationLibraryPath: " +
+                                        *app.animationLibraryPath};
+            }
+        }
+        for (const auto& node : prefab.entities) {
+            if (node.hasMesh) {
+                const std::string& meshPath =
+                    (options.appearanceOverride.has_value() &&
+                     options.appearanceOverride->meshAssetPath.has_value())
+                        ? *options.appearanceOverride->meshAssetPath
+                        : node.meshAssetPath;
+                if (!resolveAppearanceFileExists(meshPath)) {
+                    return Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "Missing prefab meshAssetPath: " + meshPath};
+                }
+            }
+            if (node.hasCharacterAnimation) {
+                const std::string& skelPath =
+                    (options.appearanceOverride.has_value() &&
+                     options.appearanceOverride->skeletonMeshPath.has_value())
+                        ? *options.appearanceOverride->skeletonMeshPath
+                        : node.characterAnimation.skeletonMeshPath;
+                if (!resolveAppearanceFileExists(skelPath)) {
+                    return Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "Missing prefab skeletonMeshPath: " + skelPath};
+                }
+                const std::string& animPath =
+                    (options.appearanceOverride.has_value() &&
+                     options.appearanceOverride->animationLibraryPath.has_value())
+                        ? *options.appearanceOverride->animationLibraryPath
+                        : node.characterAnimation.animationLibraryPath;
+                if (!animPath.empty() && !resolveAppearanceFileExists(animPath)) {
+                    return Error{.code = ErrorCode::InvalidArgument,
+                                 .message = "Missing prefab animationLibraryPath: " + animPath};
+                }
+            }
+        }
+    }
+
     registerCharacterComponents(world);
+    registerCharacterAnimationComponents(world);
+    world.getRawWorld().component<ThirdPersonCameraComponent>("ThirdPersonCameraComponent");
 
     std::vector<world::EntityHandle> created;
     created.reserve(prefab.entities.size());
@@ -445,7 +563,10 @@ Result<world::EntityHandle> PrefabLoader::instantiate(world::World& world,
 
         if (node.hasMesh) {
             render::MeshComponent mc{};
-            mc.assetPath = node.meshAssetPath;
+            mc.assetPath = (options.appearanceOverride.has_value() &&
+                            options.appearanceOverride->meshAssetPath.has_value())
+                               ? *options.appearanceOverride->meshAssetPath
+                               : node.meshAssetPath;
             mc.meshAsset = render::makeAssetIdFromPath(mc.assetPath);
             mc.submeshIndex = node.submeshIndex;
             mc.visible = node.meshVisible;
@@ -455,6 +576,12 @@ Result<world::EntityHandle> PrefabLoader::instantiate(world::World& world,
 
         if (node.hasCamera) {
             world.setComponent(h, node.camera);
+        }
+
+        if (node.hasThirdPersonCamera) {
+            ThirdPersonCameraComponent tpc = node.thirdPersonCamera;
+            tpc.targetEntityId = 0;
+            world.setComponent(h, tpc);
         }
 
         if (node.hasCharacterTag) {
@@ -473,8 +600,39 @@ Result<world::EntityHandle> PrefabLoader::instantiate(world::World& world,
         if (node.hasCharacterState) {
             world.setComponent(h, node.characterState);
         }
+        if (node.hasCharacterMovementIntent) {
+            world.setComponent(h, node.characterMovementIntent);
+        }
         if (node.hasCharacterAnimation) {
-            world.setComponent(h, node.characterAnimation);
+            CharacterAnimationComponent ca = node.characterAnimation;
+            if (options.appearanceOverride.has_value()) {
+                const auto& app = *options.appearanceOverride;
+                if (app.skeletonMeshPath.has_value()) {
+                    ca.skeletonMeshPath = *app.skeletonMeshPath;
+                }
+                if (app.animationLibraryPath.has_value()) {
+                    ca.animationLibraryPath = *app.animationLibraryPath;
+                }
+                if (app.idleClip.has_value()) {
+                    ca.idleClip = *app.idleClip;
+                }
+                if (app.walkClip.has_value()) {
+                    ca.walkClip = *app.walkClip;
+                }
+                if (app.runClip.has_value()) {
+                    ca.runClip = *app.runClip;
+                }
+                if (app.jumpClip.has_value()) {
+                    ca.jumpClip = *app.jumpClip;
+                }
+                if (app.inAirClip.has_value()) {
+                    ca.inAirClip = *app.inAirClip;
+                }
+                if (app.landClip.has_value()) {
+                    ca.landClip = *app.landClip;
+                }
+            }
+            world.setComponent(h, ca);
         }
     }
 
@@ -495,6 +653,19 @@ Result<world::EntityHandle> PrefabLoader::instantiate(world::World& world,
                 rollback();
                 return Error{.code = ErrorCode::InvalidState,
                              .message = "Failed to establish prefab child hierarchy"};
+            }
+        }
+        if (node.hasThirdPersonCamera && node.thirdPersonCameraTargetLocalId != 0) {
+            auto camIt = idToHandle.find(node.localId);
+            auto targetIt = idToHandle.find(node.thirdPersonCameraTargetLocalId);
+            if (camIt == idToHandle.end() || targetIt == idToHandle.end()) {
+                rollback();
+                return Error{.code = ErrorCode::InvalidArgument,
+                             .message = "ThirdPersonCamera targetEntityId references unknown "
+                                        "prefab entity"};
+            }
+            if (auto* tpc = world.getMutableComponent<ThirdPersonCameraComponent>(camIt->second)) {
+                tpc->targetEntityId = targetIt->second.id;
             }
         }
     }
