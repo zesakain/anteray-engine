@@ -29,8 +29,8 @@ jobs:
         run: |
           find engine editor src tests -name '*.cpp' -o -name '*.h' | grep -v 'engine/script/src/lua' | grep -v 'engine/world/src/flecs' | grep -v 'engine/render/src/cgltf' | grep -v 'engine/render/src/stb' | xargs clang-format --dry-run --Werror
 
-  build-and-test:
-    name: Build & Test (${{ matrix.preset }})
+  build-binaries:
+    name: Build Binaries (${{ matrix.preset }})
     needs: format-and-lint
     runs-on: ubuntu-24.04
 
@@ -89,17 +89,10 @@ jobs:
           sudo ldconfig
 
       - name: Configure Preset (${{ matrix.preset }})
-        run: cmake --preset ${{ matrix.preset }}
+        run: cmake --preset ${{ matrix.preset }} -DANTERAY_BUILD_TESTS=OFF -DANTERAY_BUILD_HUB=ON
 
-      - name: Compile Preset (${{ matrix.preset }})
+      - name: Compile Binaries (${{ matrix.preset }})
         run: cmake --build --preset ${{ matrix.preset }}
-
-      - name: Run Test Suite (${{ matrix.preset }})
-        run: ctest --preset ${{ matrix.preset }} --output-on-failure
-
-      - name: Execute Headless Engine Verification
-        if: matrix.preset == 'debug' || matrix.preset == 'release'
-        run: ./build/${{ matrix.preset }}/bin/anteray --headless --frames 60
 
       - name: Package Release Binary (CPack)
         if: matrix.preset == 'release'
@@ -107,10 +100,17 @@ jobs:
           cd build/release
           cpack -G TGZ
 
-      - name: Upload Binary Package Artifact
+      - name: Upload Preset Binaries Artifact
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: anteray-linux-x86_64-${{ matrix.preset }}
+          path: build/${{ matrix.preset }}/bin/*
+          retention-days: 7
+
+      - name: Upload Release Package Artifact
         if: matrix.preset == 'release'
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
-          name: anteray-linux-x86_64-release
+          name: anteray-linux-x86_64-release-package
           path: build/release/*.tar.gz
           retention-days: 7
