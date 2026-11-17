@@ -19,6 +19,7 @@
 #include "world/world.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <string>
 
 namespace eng::framework {
@@ -65,6 +66,9 @@ void registerCharacterAnimationComponents(world::World& world);
 
 /// Registers continuous locomotion animation resolution and state-machine systems.
 void registerCharacterAnimationSystems(world::World& world);
+
+/// Configures an optional project root directory for resolving project-relative animation paths.
+void setCharacterAnimationProjectRoot(std::filesystem::path root);
 
 /// Preloads and binds SkeletonComponent, AnimationComponent, and SkinningPaletteComponent
 /// for all entities with CharacterAnimationComponent in the given World.

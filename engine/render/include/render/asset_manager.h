@@ -30,6 +30,7 @@
 #include "render/texture_residency.h"
 #include "rhi/rhi_device.h"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -205,6 +206,15 @@ public:
         return budgetConfig_;
     }
 
+    /// @brief Configures an optional project root directory for resolving project-relative asset
+    /// paths.
+    void setProjectRoot(std::filesystem::path root) noexcept { projectRoot_ = std::move(root); }
+
+    /// @brief Returns the configured project root directory, if any.
+    [[nodiscard]] const std::filesystem::path& getProjectRoot() const noexcept {
+        return projectRoot_;
+    }
+
     /// @brief Retrieves the real-time texture residency and memory telemetry metrics.
     [[nodiscard]] const TextureMemoryMetrics& getTextureMemoryMetrics() const noexcept {
         return metrics_;
@@ -292,6 +302,9 @@ private:
         AssetId id{0};
     };
 
+    [[nodiscard]] std::string resolveReadablePath(std::string_view path) const;
+
+    std::filesystem::path projectRoot_{};
     std::unordered_map<AssetId, MeshEntry> meshEntries_{};
     std::unordered_map<AssetId, TextureEntry> textureEntries_{};
     std::unordered_map<std::string, AssetId> pathToId_{};

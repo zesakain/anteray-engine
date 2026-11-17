@@ -376,6 +376,16 @@ body {
                          "EditorEngine successfully initialized and bound to World & Conductor");
 
             if (!scenePath.empty()) {
+                std::error_code ec;
+                const std::filesystem::path sceneFs =
+                    std::filesystem::weakly_canonical(scenePath, ec);
+                const std::filesystem::path candidateRoot =
+                    (ec ? std::filesystem::path(scenePath) : sceneFs).parent_path().parent_path();
+                if (!candidateRoot.empty() &&
+                    std::filesystem::is_directory(candidateRoot / "Assets", ec)) {
+                    editorEngine.getAssetManager().setProjectRoot(candidateRoot);
+                    framework::setCharacterAnimationProjectRoot(candidateRoot);
+                }
                 bool ok = editorEngine.getWorkspaceManager().loadSceneAsync(
                     world, scenePath.c_str(), &editorEngine.getSelectionModel(), nullptr,
                     &editorEngine.getSceneRenderer(), &editorEngine.getAssetManager(), &jobSystem);

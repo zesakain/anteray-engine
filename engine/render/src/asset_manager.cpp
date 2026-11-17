@@ -34,6 +34,24 @@ AssetManager::~AssetManager() noexcept {
     unloadAll();
 }
 
+std::string AssetManager::resolveReadablePath(std::string_view path) const {
+    if (path.empty()) {
+        return {};
+    }
+    std::error_code ec;
+    const std::filesystem::path direct(path);
+    if (direct.is_absolute() || std::filesystem::exists(direct, ec)) {
+        return std::string(path);
+    }
+    if (!projectRoot_.empty()) {
+        const std::filesystem::path inProject = projectRoot_ / direct;
+        if (std::filesystem::exists(inProject, ec)) {
+            return inProject.string();
+        }
+    }
+    return std::string(path);
+}
+
 Result<AssetId> AssetManager::loadMesh(std::string_view path) {
     const std::string normPath = normalizePath(path);
 
@@ -77,15 +95,17 @@ Result<AssetId> AssetManager::loadMesh(std::string_view path) {
     Result<MeshData> importRes = Result<MeshData>::failure(
         Error(ErrorCode::InvalidArgument, "Unsupported 3D asset file extension"));
 
+    const std::string resolvedMeshPath = resolveReadablePath(normPath);
+
     if (ext == ".gltf" || ext == ".glb") {
-        importRes = GltfImporter::importFromFile(normPath);
+        importRes = GltfImporter::importFromFile(resolvedMeshPath);
     } else if (ext == ".obj") {
-        importRes = ObjImporter::importFromFile(normPath);
+        importRes = ObjImporter::importFromFile(resolvedMeshPath);
     } else {
         // Fallback: try glTF then OBJ
-        importRes = GltfImporter::importFromFile(normPath);
+        importRes = GltfImporter::importFromFile(resolvedMeshPath);
         if (!importRes.hasValue()) {
-            importRes = ObjImporter::importFromFile(normPath);
+            importRes = ObjImporter::importFromFile(resolvedMeshPath);
         }
     }
 
@@ -308,7 +328,8 @@ Result<AssetId> AssetManager::loadTexture(std::string_view path, bool srgb) {
         std::string sub = normPath.substr(hashImg + 7);
         size_t endNum = sub.find('#');
         size_t imgIdx = std::stoul(sub.substr(0, endNum));
-        decodeRes = detail::extractEmbeddedImageFromFile(baseFile, imgIdx, srgb);
+        const std::string resolvedBase = resolveReadablePath(baseFile);
+        decodeRes = detail::extractEmbeddedImageFromFile(resolvedBase, imgIdx, srgb);
     } else {
         std::string filePath = normPath;
         if (filePath.ends_with("#srgb")) {
@@ -316,7 +337,8 @@ Result<AssetId> AssetManager::loadTexture(std::string_view path, bool srgb) {
         } else if (filePath.ends_with("#linear")) {
             filePath = filePath.substr(0, filePath.size() - 7);
         }
-        if (!std::filesystem::exists(filePath)) {
+        const std::string resolvedTexPath = resolveReadablePath(filePath);
+        if (!std::filesystem::exists(resolvedTexPath)) {
             const std::string errMsg = "Texture file not found on disk: " + filePath;
             ENG_LOG_WARN("AssetManager", errMsg);
             const AssetId id = makeAssetIdFromPath(cacheKey);
@@ -325,7 +347,7 @@ Result<AssetId> AssetManager::loadTexture(std::string_view path, bool srgb) {
             failedPaths_[normPath] = errMsg;
             return Result<AssetId>::failure(Error(ErrorCode::EntityNotFound, errMsg));
         }
-        decodeRes = ImageDecoder::decodeFromFile(filePath, 4, srgb);
+        decodeRes = ImageDecoder::decodeFromFile(resolvedTexPath, 4, srgb);
     }
 
     if (!decodeRes.hasValue()) {

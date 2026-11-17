@@ -50,11 +50,19 @@ findClipByName(const std::vector<anim::AnimationClip>& clips, std::string_view n
     return nullptr;
 }
 
+std::filesystem::path gAnimProjectRoot{};
+
 [[nodiscard]] std::string resolveAssetPath(std::string_view path) {
     std::filesystem::path p(path);
     std::error_code ec;
-    if (std::filesystem::exists(p, ec)) {
+    if (p.is_absolute() || std::filesystem::exists(p, ec)) {
         return p.string();
+    }
+    if (!gAnimProjectRoot.empty()) {
+        const std::filesystem::path inProj = gAnimProjectRoot / p;
+        if (std::filesystem::exists(inProj, ec)) {
+            return inProj.string();
+        }
     }
     for (int d = 0; d < 4; ++d) {
         p = std::filesystem::path("..") / p;
@@ -165,6 +173,10 @@ void bindEntityAnimation(flecs::entity e, const LoadedAnimationBundle& bundle) {
 void registerCharacterAnimationComponents(world::World& world) {
     auto& ecs = world.getRawWorld();
     ecs.component<CharacterAnimationComponent>("CharacterAnimationComponent");
+}
+
+void setCharacterAnimationProjectRoot(std::filesystem::path root) {
+    gAnimProjectRoot = std::move(root);
 }
 
 void resolveCharacterAnimationAssets(world::World& world) {
