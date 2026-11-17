@@ -14,6 +14,7 @@
 #include "render/mesh_component.h"
 #include "script/script_components.h"
 #include "script/script_engine.h"
+#include "world/hierarchy_systems.h"
 #include "world/world.h"
 
 namespace eng::framework {
@@ -130,6 +131,7 @@ struct RuntimeSession::Impl {
 
         // 3. Allocate fresh isolated Runtime World
         runtimeWorld = std::make_unique<world::World>();
+        world::registerHierarchySystems(*runtimeWorld);
 
         // 4. Initialize runtime physics
         runtimePhysicsWorld = std::make_unique<physics::PhysicsWorld>(config.physicsSettings);
