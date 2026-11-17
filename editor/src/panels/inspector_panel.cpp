@@ -8,7 +8,9 @@
 #include "editor/editor_theme.h"
 #include "editor/selection_model.h"
 #include "editor/ui_helpers.h"
+#include "framework/character_animation.h"
 #include "framework/character_components.h"
+#include "framework/third_person_camera.h"
 #include "imgui_utils.h"
 #include "physics/physics_components.h"
 #include "render/asset_manager.h"
@@ -1511,6 +1513,24 @@ void InspectorPanel::draw(EditorContext& ctx) {
                                   5.0F, "%.2f m");
                         drawFloat("Max Move Speed", "##CharSpd", cfg->maxMoveSpeedMetersPerSec,
                                   0.1F, 0.0F, 50.0F, "%.2f m/s");
+                        drawFloat("Ground Accel", "##CharGAcc",
+                                  cfg->groundAccelerationMetersPerSecSq, 0.5F, 0.0F, 200.0F,
+                                  "%.1f m/s^2");
+                        drawFloat("Ground Decel", "##CharGDec",
+                                  cfg->groundDecelerationMetersPerSecSq, 0.5F, 0.0F, 200.0F,
+                                  "%.1f m/s^2");
+                        drawFloat("Air Accel", "##CharAAcc", cfg->airAccelerationMetersPerSecSq,
+                                  0.25F, 0.0F, 100.0F, "%.1f m/s^2");
+                        drawFloat("Rotation Speed", "##CharRot", cfg->rotationSpeedRadiansPerSec,
+                                  0.25F, 0.0F, 50.0F, "%.2f rad/s");
+                        drawFloat("Jump Speed", "##CharJump", cfg->jumpSpeedMetersPerSec, 0.1F,
+                                  0.0F, 50.0F, "%.2f m/s");
+                        drawFloat("Gravity", "##CharGrav", cfg->gravityMetersPerSecSq, 0.25F, 0.0F,
+                                  100.0F, "%.2f m/s^2");
+                        drawFloat("Ground Check Dist", "##CharGChk", cfg->groundCheckDistanceMeters,
+                                  0.01F, 0.01F, 1.0F, "%.2f m");
+                        drawFloat("Push Impulse", "##CharPush", cfg->pushImpulseNewtonSeconds, 1.0F,
+                                  0.0F, 500.0F, "%.1f N*s");
                         drawFloat("Max Slope", "##CharSlope", cfg->maxSlopeDegrees, 0.5F, 0.0F,
                                   89.0F, "%.1f deg");
                         drawFloat("Step Offset", "##CharStep", cfg->stepOffsetMeters, 0.01F, 0.0F,
@@ -1536,6 +1556,109 @@ void InspectorPanel::draw(EditorContext& ctx) {
                         ImGui::Text("Facing Yaw: %.2f rad | Grounded: %s",
                                     static_cast<double>(cs->facingYawRadians),
                                     cs->isGrounded ? "Yes" : "No");
+                    }
+                    ImGui::PopID();
+                }
+
+                // 11. Character Animation Component
+                if (e.has<framework::CharacterAnimationComponent>()) {
+                    ImGui::PushID("CharacterAnimationComp");
+                    if (ImGui::CollapsingHeader("Character Animation",
+                                                ImGuiTreeNodeFlags_DefaultOpen)) {
+                        auto* ca = e.get_mut<framework::CharacterAnimationComponent>();
+                        ImGui::Columns(2, "CharAnimProps", false);
+                        ImGui::SetColumnWidth(0, ThemeMetrics::kPropertyLabelWidth);
+
+                        auto drawPathField = [&](const char* label, const char* id,
+                                                 std::string& value) {
+                            ImGui::TextUnformatted(label);
+                            ImGui::NextColumn();
+                            char buf[256]{};
+                            const size_t copyLen = std::min(value.size(), sizeof(buf) - 1);
+                            std::memcpy(buf, value.data(), copyLen);
+                            buf[copyLen] = '\0';
+                            if (ImGui::InputText(id, buf, sizeof(buf))) {
+                                value = buf;
+                                ca->initialized = false;
+                                ca->cachedBundle = nullptr;
+                                e.modified<framework::CharacterAnimationComponent>();
+                                ctx.markDirty();
+                            }
+                            ImGui::NextColumn();
+                        };
+
+                        auto drawAnimFloat = [&](const char* label, const char* id, float& val,
+                                                 float step, float minV, float maxV,
+                                                 const char* fmt) {
+                            ImGui::TextUnformatted(label);
+                            ImGui::NextColumn();
+                            if (ImGui::DragFloat(id, &val, step, minV, maxV, fmt)) {
+                                e.modified<framework::CharacterAnimationComponent>();
+                                ctx.markDirty();
+                            }
+                            ImGui::NextColumn();
+                        };
+
+                        drawPathField("Skeleton Mesh", "##CharSkelPath", ca->skeletonMeshPath);
+                        drawPathField("Animation Library", "##CharAnimLib",
+                                      ca->animationLibraryPath);
+                        drawPathField("Idle Clip", "##CharIdleClip", ca->idleClip);
+                        drawPathField("Walk Clip", "##CharWalkClip", ca->walkClip);
+                        drawPathField("Run Clip", "##CharRunClip", ca->runClip);
+                        drawPathField("Jump Clip", "##CharJumpClip", ca->jumpClip);
+                        drawPathField("In-Air Clip", "##CharAirClip", ca->inAirClip);
+                        drawPathField("Land Clip", "##CharLandClip", ca->landClip);
+                        drawAnimFloat("Walk Threshold", "##CharWalkThr", ca->walkSpeedThreshold,
+                                      0.05F, 0.01F, 10.0F, "%.2f m/s");
+                        drawAnimFloat("Run Threshold", "##CharRunThr", ca->runSpeedThreshold, 0.05F,
+                                      0.1F, 20.0F, "%.2f m/s");
+                        drawAnimFloat("Blend Duration", "##CharBlend", ca->blendDurationSeconds,
+                                      0.01F, 0.01F, 1.0F, "%.2f s");
+                        drawAnimFloat("Land Duration", "##CharLand", ca->landingDurationSeconds,
+                                      0.01F, 0.01F, 1.0F, "%.2f s");
+
+                        ImGui::Columns(1);
+                    }
+                    ImGui::PopID();
+                }
+
+                // 12. Third-Person Camera Component
+                if (e.has<framework::ThirdPersonCameraComponent>()) {
+                    ImGui::PushID("ThirdPersonCameraComp");
+                    if (ImGui::CollapsingHeader("Third-Person Camera",
+                                                ImGuiTreeNodeFlags_DefaultOpen)) {
+                        auto* tpc = e.get_mut<framework::ThirdPersonCameraComponent>();
+                        ImGui::Columns(2, "TpcProps", false);
+                        ImGui::SetColumnWidth(0, ThemeMetrics::kPropertyLabelWidth);
+
+                        auto drawTpcFloat = [&](const char* label, const char* id, float& val,
+                                                float step, float minV, float maxV,
+                                                const char* fmt) {
+                            ImGui::TextUnformatted(label);
+                            ImGui::NextColumn();
+                            if (ImGui::DragFloat(id, &val, step, minV, maxV, fmt)) {
+                                e.modified<framework::ThirdPersonCameraComponent>();
+                                ctx.markDirty();
+                            }
+                            ImGui::NextColumn();
+                        };
+
+                        drawTpcFloat("Distance", "##TpcDist", tpc->distanceMeters, 0.1F, 0.5F,
+                                     25.0F, "%.2f m");
+                        drawTpcFloat("Min Distance", "##TpcMinDist", tpc->minDistanceMeters, 0.05F,
+                                     0.2F, tpc->distanceMeters, "%.2f m");
+                        drawTpcFloat("Height Offset", "##TpcHeight", tpc->heightOffsetMeters, 0.05F,
+                                     0.0F, 5.0F, "%.2f m");
+                        drawTpcFloat("Min Pitch", "##TpcMinPitch", tpc->minPitchRadians, 0.02F,
+                                     -1.45F, tpc->maxPitchRadians, "%.2f rad");
+                        drawTpcFloat("Max Pitch", "##TpcMaxPitch", tpc->maxPitchRadians, 0.02F,
+                                     tpc->minPitchRadians, 1.45F, "%.2f rad");
+                        drawTpcFloat("Collision Radius", "##TpcColRad", tpc->collisionRadiusMeters,
+                                     0.01F, 0.0F, 1.0F, "%.2f m");
+                        drawTpcFloat("Follow Smooth Speed", "##TpcSmooth", tpc->followSmoothSpeed,
+                                     0.5F, 0.0F, 60.0F, "%.1f 1/s");
+
+                        ImGui::Columns(1);
                     }
                     ImGui::PopID();
                 }
