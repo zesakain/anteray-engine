@@ -243,6 +243,8 @@ toVkShaderStageFlagBits(ShaderStageFlags stage) noexcept {
         return VK_FORMAT_R32_SINT;
     case VertexFormat::UInt:
         return VK_FORMAT_R32_UINT;
+    case VertexFormat::UInt4:
+        return VK_FORMAT_R32G32B32A32_UINT;
     }
     return VK_FORMAT_UNDEFINED;
 }

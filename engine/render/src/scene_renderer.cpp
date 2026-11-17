@@ -3,6 +3,7 @@
 
 #include "render/scene_renderer.h"
 
+#include "anim/animation_components.h"
 #include "core/assert.h"
 #include "core/log.h"
 #include "core/time.h"
@@ -106,6 +107,11 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
       sceneDescriptorPool_(other.sceneDescriptorPool_),
       sceneDescriptorSet_(other.sceneDescriptorSet_),
       lightingUniformBuffer_(other.lightingUniformBuffer_),
+      skinningDescriptorSetLayout_(other.skinningDescriptorSetLayout_),
+      skinningDescriptorPool_(other.skinningDescriptorPool_),
+      identitySkinningBuffer_(other.identitySkinningBuffer_),
+      identitySkinningSet_(other.identitySkinningSet_), skinningBuffers_(other.skinningBuffers_),
+      skinningSets_(other.skinningSets_), entitySkinningSets_(std::move(other.entitySkinningSets_)),
       shadowDepthTarget_(other.shadowDepthTarget_), staticShadowTarget_(other.staticShadowTarget_),
       shadowSampler_(other.shadowSampler_), shadowVertexShader_(other.shadowVertexShader_),
       shadowPipelineLayout_(other.shadowPipelineLayout_), shadowPipeline_(other.shadowPipeline_),
@@ -263,6 +269,12 @@ SceneRenderer::SceneRenderer(SceneRenderer&& other) noexcept
     other.sceneDescriptorPool_ = {};
     other.sceneDescriptorSet_ = {};
     other.lightingUniformBuffer_ = {};
+    other.skinningDescriptorSetLayout_ = {};
+    other.skinningDescriptorPool_ = {};
+    other.identitySkinningBuffer_ = {};
+    other.identitySkinningSet_ = {};
+    other.skinningBuffers_ = {};
+    other.skinningSets_ = {};
     other.shadowDepthTarget_ = {};
     other.staticShadowTarget_ = {};
     other.shadowSampler_ = {};
@@ -391,6 +403,13 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         sceneDescriptorPool_ = other.sceneDescriptorPool_;
         sceneDescriptorSet_ = other.sceneDescriptorSet_;
         lightingUniformBuffer_ = other.lightingUniformBuffer_;
+        skinningDescriptorSetLayout_ = other.skinningDescriptorSetLayout_;
+        skinningDescriptorPool_ = other.skinningDescriptorPool_;
+        identitySkinningBuffer_ = other.identitySkinningBuffer_;
+        identitySkinningSet_ = other.identitySkinningSet_;
+        skinningBuffers_ = other.skinningBuffers_;
+        skinningSets_ = other.skinningSets_;
+        entitySkinningSets_ = std::move(other.entitySkinningSets_);
         shadowDepthTarget_ = other.shadowDepthTarget_;
         staticShadowTarget_ = other.staticShadowTarget_;
         staticShadowDirty_ = other.staticShadowDirty_;
@@ -569,6 +588,12 @@ SceneRenderer& SceneRenderer::operator=(SceneRenderer&& other) noexcept {
         other.sceneDescriptorPool_ = {};
         other.sceneDescriptorSet_ = {};
         other.lightingUniformBuffer_ = {};
+        other.skinningDescriptorSetLayout_ = {};
+        other.skinningDescriptorPool_ = {};
+        other.identitySkinningBuffer_ = {};
+        other.identitySkinningSet_ = {};
+        other.skinningBuffers_ = {};
+        other.skinningSets_ = {};
         other.shadowDepthTarget_ = {};
         other.staticShadowTarget_ = {};
         other.shadowSampler_ = {};
@@ -848,6 +873,87 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
     }
     sceneDescriptorSet_ = setRes.value();
 
+    // 3d. Create Skinning Palette descriptor set layout, pool, and UBOs (Set 2 / Shadow Set 0)
+    rhi::DescriptorSetLayoutDesc skinLayoutDesc{
+        .bindings =
+            {
+                {
+                    .binding = 0,
+                    .descriptorType = rhi::DescriptorType::UniformBuffer,
+                    .descriptorCount = 1,
+                    .stageFlags = rhi::ShaderStageFlags::Vertex,
+                },
+            },
+        .debugName = "SkinningDescriptorSetLayout",
+    };
+    auto skinLayoutRes = device_->createDescriptorSetLayout(skinLayoutDesc);
+    if (!skinLayoutRes.hasValue()) {
+        shutdown();
+        return skinLayoutRes.error();
+    }
+    skinningDescriptorSetLayout_ = skinLayoutRes.value();
+
+    const uint32_t totalSkinSets = 1U + static_cast<uint32_t>(2 * kMaxSkinnedSlotsPerFrame);
+    rhi::DescriptorPoolDesc skinPoolDesc{
+        .maxSets = totalSkinSets,
+        .poolSizes = {{.type = rhi::DescriptorType::UniformBuffer, .count = totalSkinSets}},
+        .debugName = "SkinningDescriptorPool",
+    };
+    auto skinPoolRes = device_->createDescriptorPool(skinPoolDesc);
+    if (!skinPoolRes.hasValue()) {
+        shutdown();
+        return skinPoolRes.error();
+    }
+    skinningDescriptorPool_ = skinPoolRes.value();
+
+    auto createSkinningUboSet = [&](rhi::BufferHandle& outBuf, rhi::DescriptorSetHandle& outSet,
+                                    const char* debugName) -> Result<void> {
+        rhi::BufferDesc bufDesc{
+            .sizeInBytes = sizeof(SkinningUbo),
+            .usage = rhi::BufferUsageFlags::Uniform,
+            .memoryUsage = rhi::MemoryUsage::CpuToGpu,
+            .debugName = debugName,
+        };
+        auto bufRes = device_->createBuffer(bufDesc);
+        if (!bufRes.hasValue()) {
+            return bufRes.error();
+        }
+        outBuf = bufRes.value();
+
+        SkinningUbo initData{};
+        initData.boneCount = 0;
+        (void)device_->writeBuffer(outBuf, 0, &initData, sizeof(SkinningUbo));
+
+        auto allocRes =
+            device_->allocateDescriptorSet(skinningDescriptorPool_, skinningDescriptorSetLayout_);
+        if (!allocRes.hasValue()) {
+            return allocRes.error();
+        }
+        outSet = allocRes.value();
+
+        std::array<rhi::DescriptorWrite, 1> writes{rhi::DescriptorWrite::makeBuffer(
+            0, rhi::DescriptorType::UniformBuffer, outBuf, 0, sizeof(SkinningUbo))};
+        (void)device_->updateDescriptorSet(outSet, writes);
+        return Result<void>::success();
+    };
+
+    if (auto idRes = createSkinningUboSet(identitySkinningBuffer_, identitySkinningSet_,
+                                          "IdentitySkinningUbo");
+        !idRes.hasValue()) {
+        shutdown();
+        return idRes.error();
+    }
+    for (size_t f = 0; f < 2; ++f) {
+        for (size_t s = 0; s < kMaxSkinnedSlotsPerFrame; ++s) {
+            if (auto slotRes = createSkinningUboSet(skinningBuffers_[f][s], skinningSets_[f][s],
+                                                    "FrameSkinningUbo");
+                !slotRes.hasValue()) {
+                shutdown();
+                return slotRes.error();
+            }
+        }
+    }
+
     // Initialize default procedural environment map
     auto envRes = GpuEnvironmentMap::createDefault(*device_);
     if (envRes.hasValue()) {
@@ -975,7 +1081,8 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
             .offset = 0,
             .size = 128,
         }},
-        .descriptorSetLayoutHandles = {materialDescriptorSetLayout_, sceneDescriptorSetLayout_},
+        .descriptorSetLayoutHandles = {materialDescriptorSetLayout_, sceneDescriptorSetLayout_,
+                                       skinningDescriptorSetLayout_},
         .descriptorSetLayouts = {},
         .debugName = "MeshPipelineLayout",
     };
@@ -1028,6 +1135,18 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
                             .binding = 0,
                             .format = rhi::VertexFormat::Float4,
                             .offset = static_cast<uint32_t>(offsetof(Vertex, tangent)),
+                        },
+                        {
+                            .location = 5,
+                            .binding = 0,
+                            .format = rhi::VertexFormat::UInt4,
+                            .offset = static_cast<uint32_t>(offsetof(Vertex, joints)),
+                        },
+                        {
+                            .location = 6,
+                            .binding = 0,
+                            .format = rhi::VertexFormat::Float4,
+                            .offset = static_cast<uint32_t>(offsetof(Vertex, weights)),
                         },
                     },
             },
@@ -1226,7 +1345,7 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
             .offset = 0,
             .size = sizeof(Mat4),
         }},
-        .descriptorSetLayoutHandles = {},
+        .descriptorSetLayoutHandles = {skinningDescriptorSetLayout_},
         .descriptorSetLayouts = {},
         .debugName = "ShadowPipelineLayout",
     };
@@ -1254,6 +1373,18 @@ Result<void> SceneRenderer::init(rhi::RhiDevice& device, uint32_t width, uint32_
                             .binding = 0,
                             .format = rhi::VertexFormat::Float3,
                             .offset = static_cast<uint32_t>(offsetof(Vertex, position)),
+                        },
+                        {
+                            .location = 5,
+                            .binding = 0,
+                            .format = rhi::VertexFormat::UInt4,
+                            .offset = static_cast<uint32_t>(offsetof(Vertex, joints)),
+                        },
+                        {
+                            .location = 6,
+                            .binding = 0,
+                            .format = rhi::VertexFormat::Float4,
+                            .offset = static_cast<uint32_t>(offsetof(Vertex, weights)),
                         },
                     },
             },
@@ -1602,6 +1733,29 @@ void SceneRenderer::shutdown() {
             device_->destroyBuffer(lightingUniformBuffer_);
             lightingUniformBuffer_ = {};
         }
+        for (size_t f = 0; f < 2; ++f) {
+            for (size_t s = 0; s < kMaxSkinnedSlotsPerFrame; ++s) {
+                if (skinningBuffers_[f][s].isValid()) {
+                    device_->destroyBuffer(skinningBuffers_[f][s]);
+                    skinningBuffers_[f][s] = {};
+                }
+                skinningSets_[f][s] = {};
+            }
+        }
+        if (identitySkinningBuffer_.isValid()) {
+            device_->destroyBuffer(identitySkinningBuffer_);
+            identitySkinningBuffer_ = {};
+        }
+        identitySkinningSet_ = {};
+        if (skinningDescriptorPool_.isValid()) {
+            device_->destroyDescriptorPool(skinningDescriptorPool_);
+            skinningDescriptorPool_ = {};
+        }
+        if (skinningDescriptorSetLayout_.isValid()) {
+            device_->destroyDescriptorSetLayout(skinningDescriptorSetLayout_);
+            skinningDescriptorSetLayout_ = {};
+        }
+        entitySkinningSets_.clear();
         if (pipeline_.isValid()) {
             device_->destroyGraphicsPipeline(pipeline_);
             pipeline_ = {};
@@ -2294,6 +2448,7 @@ void SceneRenderer::recordShadowPass(rhi::RhiCommandList& cmdList) {
             ShadowCasterItem item{
                 .gpuMesh = gpuMesh,
                 .model = model,
+                .entityId = static_cast<uint64_t>(e.id()),
                 .submeshIndex = meshComp.submeshIndex,
                 .worldBounds = worldBounds,
                 .distanceToLight = distToLight,
@@ -2481,6 +2636,11 @@ void SceneRenderer::renderCasters(rhi::RhiCommandList& cmdList,
             }
 
             if (shadowPipelineLayout_.isValid()) {
+                const rhi::DescriptorSetHandle skinSet = resolveSkinningSet(caster.entityId);
+                if (skinSet.isValid()) {
+                    const std::array<rhi::DescriptorSetHandle, 1> skinSets{skinSet};
+                    cmdList.bindDescriptorSets(shadowPipelineLayout_, 0, skinSets);
+                }
                 const Mat4 mvp = cascadeVp * caster.model;
                 if (!hasPushedMvp || std::memcmp(lastMvp.m, mvp.m, sizeof(mvp.m)) != 0) {
                     alignas(16) float pushData[16];
@@ -2572,6 +2732,11 @@ void SceneRenderer::recordDepthPrepass(rhi::RhiCommandList& cmdList) {
         }
 
         if (shadowPipelineLayout_.isValid()) {
+            const rhi::DescriptorSetHandle skinSet = resolveSkinningSet(item.entityId);
+            if (skinSet.isValid()) {
+                const std::array<rhi::DescriptorSetHandle, 1> skinSets{skinSet};
+                cmdList.bindDescriptorSets(shadowPipelineLayout_, 0, skinSets);
+            }
             if (!hasPushedModel ||
                 std::memcmp(lastModel.m, item.model.m, sizeof(lastModel.m)) != 0) {
                 alignas(16) float pushData[16];
@@ -2821,6 +2986,7 @@ void SceneRenderer::collectVisibleMeshes() {
                             .materialSet = matSet,
                             .model = model,
                             .prevModel = prevModel,
+                            .entityId = static_cast<uint64_t>(e.id()),
                             .submeshIndex = meshComp.submeshIndex,
                             .depthSq = 0.0F,
                             .isAlphaMasked = isMasked,
@@ -2839,6 +3005,7 @@ void SceneRenderer::collectVisibleMeshes() {
                             .materialSet = matSet,
                             .model = model,
                             .prevModel = prevModel,
+                            .entityId = static_cast<uint64_t>(e.id()),
                             .submeshIndex = 0,
                             .depthSq = 0.0F,
                             .isAlphaMasked = isMasked,
@@ -2859,6 +3026,7 @@ void SceneRenderer::collectVisibleMeshes() {
                                 .materialSet = matSet,
                                 .model = model,
                                 .prevModel = prevModel,
+                                .entityId = static_cast<uint64_t>(e.id()),
                                 .submeshIndex = sIdx,
                                 .depthSq = 0.0F,
                                 .isAlphaMasked = isMasked,
@@ -3055,11 +3223,18 @@ void SceneRenderer::recordMainPbrPass(rhi::RhiCommandList& cmdList) {
             lastBoundVb = item.gpuMesh->getVertexBuffer();
         }
 
-        // Bind material descriptor set
+        // Bind material descriptor set (Set 0) and skinning descriptor set (Set 2)
         if (item.materialSet.isValid() && lastBoundMatSet != item.materialSet) {
             const std::array<rhi::DescriptorSetHandle, 1> sets = {item.materialSet};
             cmdList.bindDescriptorSets(pipelineLayout_, 0, sets);
             lastBoundMatSet = item.materialSet;
+        }
+        if (pipelineLayout_.isValid()) {
+            const rhi::DescriptorSetHandle skinSet = resolveSkinningSet(item.entityId);
+            if (skinSet.isValid()) {
+                const std::array<rhi::DescriptorSetHandle, 1> skinSets{skinSet};
+                cmdList.bindDescriptorSets(pipelineLayout_, 2, skinSets);
+            }
         }
 
         // Bind index buffer if present
@@ -3719,6 +3894,7 @@ RenderStats SceneRenderer::renderScene(world::World& world, AssetManager& assetM
 
     updateTaaDescriptors();
     updatePostProcessDescriptors();
+    updateSkinningPalettes();
 
     if (renderGraph_.isCompiled()) {
         ENG_CPU_PROFILE_SCOPE(RenderGraphCompileExec);
@@ -4922,7 +5098,7 @@ Result<void> SceneRenderer::initTaaResources() {
                     .size = sizeof(MeshVelocityPushConstants),
                 },
             },
-        .descriptorSetLayoutHandles = {},
+        .descriptorSetLayoutHandles = {skinningDescriptorSetLayout_},
         .descriptorSetLayouts = {},
         .debugName = "MeshVelocityPipelineLayout",
     };
@@ -5021,6 +5197,18 @@ Result<void> SceneRenderer::initTaaResources() {
                             .binding = 0,
                             .format = rhi::VertexFormat::Float3,
                             .offset = static_cast<uint32_t>(offsetof(Vertex, position)),
+                        },
+                        {
+                            .location = 5,
+                            .binding = 0,
+                            .format = rhi::VertexFormat::UInt4,
+                            .offset = static_cast<uint32_t>(offsetof(Vertex, joints)),
+                        },
+                        {
+                            .location = 6,
+                            .binding = 0,
+                            .format = rhi::VertexFormat::Float4,
+                            .offset = static_cast<uint32_t>(offsetof(Vertex, weights)),
                         },
                     },
             },
@@ -5252,6 +5440,7 @@ Result<void> SceneRenderer::createTaaTargets(uint32_t width, uint32_t height) {
 
     updateTaaDescriptors();
     updatePostProcessDescriptors();
+    updateSkinningPalettes();
     return Result<void>::success();
 }
 
@@ -5399,6 +5588,13 @@ void SceneRenderer::recordVelocityPass(rhi::RhiCommandList& cmdList) {
                 .curMvp = unjitteredViewProj_ * item.model,
                 .prevMvp = unjitteredPrevViewProj_ * item.prevModel,
             };
+            if (meshVelocityPipelineLayout_.isValid()) {
+                const rhi::DescriptorSetHandle skinSet = resolveSkinningSet(item.entityId);
+                if (skinSet.isValid()) {
+                    const std::array<rhi::DescriptorSetHandle, 1> skinSets{skinSet};
+                    cmdList.bindDescriptorSets(meshVelocityPipelineLayout_, 0, skinSets);
+                }
+            }
             cmdList.pushConstants(meshVelocityPipelineLayout_,
                                   rhi::ShaderStageFlags::Vertex | rhi::ShaderStageFlags::Fragment,
                                   0, sizeof(MeshVelocityPushConstants), &mpc);
@@ -6566,6 +6762,62 @@ void SceneRenderer::renderPostProcess(rhi::RhiCommandList& cmdList) {
             ENG_LOG_ERROR("SceneRenderer", "PostProcess RenderGraph execute failed");
         }
     }
+}
+
+rhi::DescriptorSetHandle SceneRenderer::resolveSkinningSet(uint64_t entityId) const noexcept {
+    if (entityId != 0) {
+        auto it = entitySkinningSets_.find(entityId);
+        if (it != entitySkinningSets_.end() && it->second.isValid()) {
+            return it->second;
+        }
+    }
+    return identitySkinningSet_;
+}
+
+void SceneRenderer::updateSkinningPalettes() {
+    entitySkinningSets_.clear();
+    if (device_ == nullptr || currentWorld_ == nullptr) {
+        return;
+    }
+
+    const uint32_t frameSlot = frameSlotIndex_ % 2;
+    size_t slotIdx = 0;
+    auto& ecs = currentWorld_->getRawWorld();
+
+    ecs.each<const MeshComponent>([&](flecs::entity e, const MeshComponent& meshComp) {
+        if (!meshComp.visible || slotIdx >= kMaxSkinnedSlotsPerFrame) {
+            return;
+        }
+        const uint64_t entityId = static_cast<uint64_t>(e.id());
+        if (entitySkinningSets_.find(entityId) != entitySkinningSets_.end()) {
+            return;
+        }
+
+        const anim::SkinningPaletteComponent* palette = e.get<anim::SkinningPaletteComponent>();
+        if (palette == nullptr && e.parent().is_valid()) {
+            palette = e.parent().get<anim::SkinningPaletteComponent>();
+        }
+        if (palette == nullptr || palette->skinningMatrices.empty()) {
+            return;
+        }
+
+        const rhi::BufferHandle buf = skinningBuffers_[frameSlot][slotIdx];
+        const rhi::DescriptorSetHandle set = skinningSets_[frameSlot][slotIdx];
+        if (!buf.isValid() || !set.isValid()) {
+            return;
+        }
+
+        SkinningUbo ubo{};
+        const size_t count = std::min<size_t>(palette->skinningMatrices.size(), 128);
+        ubo.boneCount = static_cast<uint32_t>(count);
+        for (size_t i = 0; i < count; ++i) {
+            ubo.bones[i] = palette->skinningMatrices[i];
+        }
+        const size_t writeBytes = 16U + (count * sizeof(Mat4));
+        (void)device_->writeBuffer(buf, 0, &ubo, writeBytes);
+        entitySkinningSets_[entityId] = set;
+        ++slotIdx;
+    });
 }
 
 void SceneRenderer::setPostProcessSettings(const PostProcessSettings& settings) noexcept {

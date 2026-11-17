@@ -137,7 +137,8 @@ enum class VertexFormat : uint8_t {
     Short2 = 6,
     Short4 = 7,
     Int = 8,
-    UInt = 9
+    UInt = 9,
+    UInt4 = 10
 };
 
 /// @enum VertexInputRate

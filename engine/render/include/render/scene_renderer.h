@@ -45,6 +45,7 @@
 
 #include <array>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 namespace eng::render {
@@ -482,6 +483,7 @@ private:
     struct ShadowCasterItem {
         GpuMesh* gpuMesh{nullptr};
         Mat4 model{Mat4::identity()};
+        uint64_t entityId{0};
         uint32_t submeshIndex{0};
         AABB worldBounds{};
         float distanceToLight{0.0F};
@@ -540,6 +542,24 @@ private:
     rhi::DescriptorPoolHandle sceneDescriptorPool_{};
     rhi::DescriptorSetHandle sceneDescriptorSet_{};
     rhi::BufferHandle lightingUniformBuffer_{};
+
+    static constexpr size_t kMaxSkinnedSlotsPerFrame = 8;
+    struct alignas(16) SkinningUbo {
+        uint32_t boneCount{0};
+        uint32_t pad0{0};
+        uint32_t pad1{0};
+        uint32_t pad2{0};
+        Mat4 bones[128]{};
+    };
+    rhi::DescriptorSetLayoutHandle skinningDescriptorSetLayout_{};
+    rhi::DescriptorPoolHandle skinningDescriptorPool_{};
+    rhi::BufferHandle identitySkinningBuffer_{};
+    rhi::DescriptorSetHandle identitySkinningSet_{};
+    std::array<std::array<rhi::BufferHandle, kMaxSkinnedSlotsPerFrame>, 2> skinningBuffers_{};
+    std::array<std::array<rhi::DescriptorSetHandle, kMaxSkinnedSlotsPerFrame>, 2> skinningSets_{};
+    std::unordered_map<uint64_t, rhi::DescriptorSetHandle> entitySkinningSets_{};
+    [[nodiscard]] rhi::DescriptorSetHandle resolveSkinningSet(uint64_t entityId) const noexcept;
+    void updateSkinningPalettes();
     rhi::TextureHandle shadowDepthTarget_{};
     rhi::TextureHandle staticShadowTarget_{};
     rhi::SamplerHandle shadowSampler_{};
@@ -720,6 +740,7 @@ private:
         rhi::DescriptorSetHandle materialSet{};
         Mat4 model{Mat4::identity()};
         Mat4 prevModel{Mat4::identity()};
+        uint64_t entityId{0};
         uint32_t submeshIndex{0};
         float depthSq{0.0F};
         bool isAlphaMasked{false};
