@@ -20,6 +20,7 @@
 
 #include "core/math.h"
 #include "core/result.h"
+#include "framework/character_animation.h"
 #include "framework/character_components.h"
 #include "physics/physics_types.h"
 #include "render/camera_component.h"
@@ -72,6 +73,8 @@ struct PrefabEntityNode {
     CharacterConfigComponent characterConfig{};
     bool hasCharacterState{false};
     CharacterStateComponent characterState{};
+    bool hasCharacterAnimation{false};
+    CharacterAnimationComponent characterAnimation{};
 };
 
 /// @struct PrefabDescriptor

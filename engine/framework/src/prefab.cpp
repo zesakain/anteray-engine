@@ -283,6 +283,27 @@ Result<PrefabDescriptor> PrefabLoader::parseFromString(std::string_view jsonText
                     st.facingYawRadians =
                         compData.getFloat("facingYawRadians", st.facingYawRadians);
                     st.isGrounded = compData.getBool("isGrounded", st.isGrounded);
+                } else if (compName == "CharacterAnimation") {
+                    node.hasCharacterAnimation = true;
+                    auto& ca = node.characterAnimation;
+                    ca.skeletonMeshPath =
+                        compData.getString("skeletonMeshPath", ca.skeletonMeshPath);
+                    ca.animationLibraryPath =
+                        compData.getString("animationLibraryPath", ca.animationLibraryPath);
+                    ca.idleClip = compData.getString("idleClip", ca.idleClip);
+                    ca.walkClip = compData.getString("walkClip", ca.walkClip);
+                    ca.runClip = compData.getString("runClip", ca.runClip);
+                    ca.jumpClip = compData.getString("jumpClip", ca.jumpClip);
+                    ca.inAirClip = compData.getString("inAirClip", ca.inAirClip);
+                    ca.landClip = compData.getString("landClip", ca.landClip);
+                    ca.walkSpeedThreshold =
+                        compData.getFloat("walkSpeedThreshold", ca.walkSpeedThreshold);
+                    ca.runSpeedThreshold =
+                        compData.getFloat("runSpeedThreshold", ca.runSpeedThreshold);
+                    ca.blendDurationSeconds =
+                        compData.getFloat("blendDurationSeconds", ca.blendDurationSeconds);
+                    ca.landingDurationSeconds =
+                        compData.getFloat("landingDurationSeconds", ca.landingDurationSeconds);
                 } else {
                     return Error{.code = ErrorCode::InvalidArgument,
                                  .message = "Unknown component '" + compName + "' in prefab"};
@@ -451,6 +472,9 @@ Result<world::EntityHandle> PrefabLoader::instantiate(world::World& world,
 
         if (node.hasCharacterState) {
             world.setComponent(h, node.characterState);
+        }
+        if (node.hasCharacterAnimation) {
+            world.setComponent(h, node.characterAnimation);
         }
     }
 
