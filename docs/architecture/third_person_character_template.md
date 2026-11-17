@@ -50,10 +50,16 @@ auto res = eng::framework::ThirdPersonCharacterTemplate::instantiate(world, opts
 
 ### Hikari Hub
 
-Selecting the **Third-Person Character (TPP)** template (`id = "third_person_character"`) in Hub creates a project with:
-- `Scenes/ThirdPersonTest.hikari`
+Selecting the **Third-Person Character Template** (`id = "third_person_character"`) in Hub creates a self-contained project with:
+- `Scenes/ThirdPersonTest.hikari` (clean ground, practice step, `PlayerCharacter`, `PlayerVisual`, and `ThirdPersonCamera`; no dependency on `CharacterController_TPP_Test.hikari` or Bistro)
 - `Assets/Prefabs/third_person_character.hikari_prefab`
+- `Config/input_bindings.json`
+- `Assets/Characters/Player/` (CC0 1.0 example mesh + `LICENSE_CC0.txt`)
+- `Assets/Animations/Player/` (CC0 1.0 example animation library + `LICENSE_CC0.txt`)
+- `Assets/Models/cube.glb`
 - `README.md` and `.hikari-project` manifest.
+
+When opening a project scene via `--scene <projectDir>/Scenes/<Scene>.hikari`, `src/main.cpp` configures `AssetManager::setProjectRoot()` and `setCharacterAnimationProjectRoot()` so project-relative `Assets/...` paths resolve regardless of working directory.
 
 ---
 
