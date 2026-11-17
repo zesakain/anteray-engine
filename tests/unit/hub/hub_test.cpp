@@ -413,6 +413,62 @@ void testEngineDiscoveryLaunchArgsAndSamples() {
     std::cout << "[PASS] testEngineDiscoveryLaunchArgsAndSamples\n";
 }
 
+void testThirdPersonCharacterTemplateGeneration() {
+    const auto repoRoot = EngineLauncher::findRepositoryRoot(std::filesystem::current_path());
+    if (repoRoot.empty()) {
+        std::cout << "[SKIP] testThirdPersonCharacterTemplateGeneration (repo root not found)\n";
+        return;
+    }
+
+    TempDirGuard tmp("hikari_hub_tpp_template");
+    ProjectCreateRequest req{};
+    req.projectName = "CleanTppProject";
+    req.parentDirectory = tmp.path();
+    req.templateId = "third_person_character";
+    req.repositoryRoot = repoRoot;
+    const auto res = TemplateRegistry::createProjectFromBuiltin(req);
+    TEST_CHECK(res.hasValue());
+
+    const auto& projDir = res.value().projectDirectory;
+    const auto& meta = res.value().metadata;
+    TEST_CHECK(meta.templateOrigin == "third_person_character");
+    TEST_CHECK(meta.startupScene == "Scenes/ThirdPersonTest.hikari");
+
+    // Verify all expected template files & copied CC0 assets exist
+    TEST_CHECK(std::filesystem::exists(res.value().manifestPath));
+    TEST_CHECK(std::filesystem::exists(projDir / "Scenes/ThirdPersonTest.hikari"));
+    TEST_CHECK(
+        std::filesystem::exists(projDir / "Assets/Prefabs/third_person_character.hikari_prefab"));
+    TEST_CHECK(std::filesystem::exists(projDir / "Config/input_bindings.json"));
+    TEST_CHECK(std::filesystem::exists(projDir / "Assets/Models/cube.glb"));
+    TEST_CHECK(
+        std::filesystem::exists(projDir / "Assets/Characters/Player/Superhero_Male_FullBody.gltf"));
+    TEST_CHECK(std::filesystem::exists(projDir / "Assets/Characters/Player/LICENSE_CC0.txt"));
+    TEST_CHECK(std::filesystem::exists(projDir / "Assets/Animations/Player/UAL1_Standard.glb"));
+    TEST_CHECK(std::filesystem::exists(projDir / "Assets/Animations/Player/LICENSE_CC0.txt"));
+
+    // Verify generated scene is self-contained and never references Bistro or demo scene
+    std::ifstream sceneIn(projDir / "Scenes/ThirdPersonTest.hikari", std::ios::binary);
+    TEST_CHECK(sceneIn.is_open());
+    const std::string sceneContent((std::istreambuf_iterator<char>(sceneIn)),
+                                   std::istreambuf_iterator<char>());
+    TEST_CHECK(sceneContent.find("Bistro") == std::string::npos);
+    TEST_CHECK(sceneContent.find("CharacterController_TPP_Test") == std::string::npos);
+    TEST_CHECK(sceneContent.find("PlayerCharacter") != std::string::npos);
+    TEST_CHECK(sceneContent.find("ThirdPersonCamera") != std::string::npos);
+    TEST_CHECK(sceneContent.find("Assets/Characters/Player/Superhero_Male_FullBody.gltf") !=
+               std::string::npos);
+
+    const auto sceneJsonRes = core::JsonValue::parse(sceneContent);
+    TEST_CHECK(sceneJsonRes.hasValue());
+
+    // Verify ProjectValidator considers the generated TPP project valid
+    const auto val = validateProjectDirectory(projDir);
+    TEST_CHECK(val.status == ProjectValidationStatus::Valid);
+
+    std::cout << "[PASS] testThirdPersonCharacterTemplateGeneration\n";
+}
+
 } // namespace
 
 int main() {
@@ -422,6 +478,7 @@ int main() {
     testProjectValidationStates();
     testRecentProjectsPersistenceAndDeduplication();
     testEngineDiscoveryLaunchArgsAndSamples();
+    testThirdPersonCharacterTemplateGeneration();
     std::cout << "All Hikari Machine Hub core tests PASSED!\n";
     return 0;
 }

@@ -12,13 +12,17 @@
 #include "physics/physics_system.h"
 #include "physics/physics_world.h"
 #include "platform/input_snapshot.h"
+#include "render/asset_manager.h"
 #include "render/camera_component.h"
 #include "render/mesh_component.h"
 #include "world/hierarchy_systems.h"
 #include "world/world.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 
@@ -246,6 +250,60 @@ void testInputMovementCameraAndConductorCompatibility() {
     std::cout << "[PASS] testInputMovementCameraAndConductorCompatibility\n";
 }
 
+void testPartialJsonDeserializationAndProjectRootResolution() {
+    // Regression test for SIGSEGV in jsonToVec3/jsonToQuat when optional Transform or camera
+    // sub-fields are omitted in a scene file.
+    const std::string partialSceneJson = R"({
+        "formatVersion": 1,
+        "name": "PartialFieldsRegression",
+        "settings": {
+            "camera": {
+                "fov": 60.0
+            }
+        },
+        "entities": [
+            {
+                "id": 1,
+                "name": "OnlyPositionEntity",
+                "components": {
+                    "Transform": {
+                        "position": [1.0, 2.0, 3.0]
+                    }
+                }
+            },
+            {
+                "id": 2,
+                "name": "EmptyTransformEntity",
+                "components": {
+                    "Transform": {}
+                }
+            }
+        ]
+    })";
+
+    World world;
+    auto deserRes = SceneSerializer::deserializeFromString(world, partialSceneJson);
+    if (!deserRes.hasValue()) {
+        std::cerr << "Deserialization error: " << deserRes.error().message << '\n';
+    }
+    TEST_CHECK(deserRes.hasValue());
+    TEST_CHECK(deserRes.value().entitiesLoaded == 2U);
+
+    // Verify project root setter/reset for character animation asset resolution
+    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+    const std::filesystem::path tempProj =
+        std::filesystem::temp_directory_path() / ("hikari_tpp_projroot_" + std::to_string(nonce));
+    std::error_code ec;
+    std::filesystem::create_directories(tempProj / "Assets/Animations/Player", ec);
+    TEST_CHECK(!ec);
+
+    setCharacterAnimationProjectRoot(tempProj);
+    setCharacterAnimationProjectRoot({});
+    std::filesystem::remove_all(tempProj, ec);
+
+    std::cout << "[PASS] testPartialJsonDeserializationAndProjectRootResolution\n";
+}
+
 } // namespace
 
 int main() {
@@ -253,6 +311,7 @@ int main() {
     testTemplateInstantiationAndComponents();
     testTransactionalValidationAndAppearanceModularity();
     testInputMovementCameraAndConductorCompatibility();
+    testPartialJsonDeserializationAndProjectRootResolution();
     std::cout << "All Milestone 12F Third-Person Character Template tests passed.\n";
     return 0;
 }
