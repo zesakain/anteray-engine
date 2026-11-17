@@ -333,6 +333,75 @@ static void testScriptEnableLifecycle() {
     std::cout << "[PASS] testScriptEnableLifecycle\n";
 }
 
+static int32_t hostReadOnly(ScriptCallContext& ctx, void* /*ud*/) {
+    ctx.pushNumber(42.0);
+    return 1;
+}
+
+static int32_t hostMutate(ScriptCallContext& ctx, void* ud) {
+    auto* count = static_cast<int*>(ud);
+    ++(*count);
+    ctx.pushBool(true);
+    return 1;
+}
+
+static void testStandbyMutationGuardAndEventBus() {
+    world::World world;
+    auto e = world.createEntity("Beacon");
+    world.setComponent(e, world::TransformComponent{Transform{Vec3{1.0F, 2.0F, 3.0F}}});
+
+    ScriptEngine engine;
+    TEST_CHECK(engine.initialize().hasValue());
+    engine.bindWorld(&world);
+
+    int mutationCount = 0;
+    const std::array<ScriptHostFunction, 2> fns{{
+        {.name = "read_val", .callback = hostReadOnly, .userData = nullptr, .mutatesWorld = false},
+        {.name = "mutate_val",
+         .callback = hostMutate,
+         .userData = &mutationCount,
+         .mutatesWorld = true},
+    }};
+    TEST_CHECK(engine.registerModule("host", fns).hasValue());
+
+    // 1. Active mode allows both read and mutate, plus events.emit and entity.get_position
+    engine.setExecutionMode(ScriptExecutionMode::Active);
+    auto r1 = engine.executeString(R"(
+        local b = entity.find_by_name("Beacon")
+        assert(b ~= nil and entity.is_valid(b))
+        local p = entity.get_position(b)
+        assert(math.abs(p.x - 1.0) < 0.01 and math.abs(p.y - 2.0) < 0.01)
+        assert(host.read_val() == 42)
+        assert(host.mutate_val() == true)
+        events.emit("test_evt", "ok")
+        return true
+    )");
+    if (!r1.hasValue()) {
+        std::cerr << "Lua r1 error: " << engine.lastErrorMessage() << "\n";
+    }
+    TEST_CHECK(r1.hasValue());
+    TEST_CHECK(mutationCount == 1);
+    auto evts = engine.drainEvents();
+    TEST_CHECK(evts.size() == 1);
+    TEST_CHECK(evts[0].name == "test_evt" && evts[0].payload == "ok");
+
+    // 2. Standby mode blocks mutatesWorld and events.emit, but allows read-only queries
+    engine.setExecutionMode(ScriptExecutionMode::Standby);
+    auto rRead = engine.executeString("return host.read_val()");
+    TEST_CHECK(rRead.hasValue() && std::get<double>(rRead.value()) == 42.0);
+
+    auto rMut = engine.executeString("return host.mutate_val()");
+    TEST_CHECK(!rMut.hasValue());
+    TEST_CHECK(mutationCount == 1);
+
+    auto rEvt = engine.executeString("events.emit('bad', 'x')");
+    TEST_CHECK(!rEvt.hasValue());
+    TEST_CHECK(engine.queuedEventCount() == 0);
+
+    engine.shutdown();
+    std::cout << "[PASS] testStandbyMutationGuardAndEventBus\n";
+}
+
 int main() {
     std::cout << "Running Script subsystem unit tests...\n";
     testLifecycle();
@@ -342,6 +411,7 @@ int main() {
     testVec3Bindings();
     testEntityScriptComponentIntegration();
     testScriptEnableLifecycle();
+    testStandbyMutationGuardAndEventBus();
     std::cout << "All Script subsystem tests PASSED!\n";
     return 0;
 }

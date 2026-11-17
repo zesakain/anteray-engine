@@ -2,6 +2,7 @@
 /// @brief Comprehensive regression test suite for Milestone 8B.5 glTF 2.0 and GLB 3D asset import
 /// pipeline.
 
+#include "anim/animation_sampler.h"
 #include "core/assert.h"
 #include "framework/scene_serializer.h"
 #include "physics/physics_components.h"
@@ -700,6 +701,63 @@ int main() {
     testHikariSerializationRoundTrip();
     testImportFailureLeavesAssetManagerUnchanged();
 
-    std::cout << "\nAll 31 Milestone 8B.5 glTF Importer tests PASSED successfully!\n";
+    // Skeletal & Animation import (12C.2)
+    {
+        std::filesystem::path charPath = "assets/characters/player/Superhero_Male_FullBody.gltf";
+        std::filesystem::path animPath = "assets/animations/player/UAL1_Standard.glb";
+        for (int d = 0; d < 4 && !std::filesystem::exists(charPath); ++d) {
+            charPath = std::filesystem::path("..") / charPath;
+            animPath = std::filesystem::path("..") / animPath;
+        }
+        TEST_CHECK(std::filesystem::exists(charPath));
+        TEST_CHECK(std::filesystem::exists(animPath));
+
+        auto charRes = eng::render::GltfImporter::importFromFile(charPath.string());
+        TEST_CHECK(charRes.hasValue());
+        const auto& mesh = charRes.value();
+        TEST_CHECK(mesh.skeleton.has_value());
+        TEST_CHECK(mesh.skeleton->getBoneCount() == 65);
+
+        bool anyNonZeroWeights = false;
+        for (const auto& v : mesh.vertices) {
+            if (v.weights.x + v.weights.y + v.weights.z + v.weights.w > 0.5F) {
+                anyNonZeroWeights = true;
+                break;
+            }
+        }
+        TEST_CHECK(anyNonZeroWeights);
+
+        auto clipsRes =
+            eng::render::GltfImporter::importAnimationsFromFile(animPath.string(), *mesh.skeleton);
+        TEST_CHECK(clipsRes.hasValue());
+        TEST_CHECK(clipsRes.value().size() == 43);
+
+        const eng::anim::AnimationClip* walkClip = nullptr;
+        for (const auto& c : clipsRes.value()) {
+            if (c.getName() == "Walk_Loop") {
+                walkClip = &c;
+                break;
+            }
+        }
+        TEST_CHECK(walkClip != nullptr);
+        TEST_CHECK(walkClip->getDuration() > 1.0F);
+
+        std::vector<eng::Transform> localPose(65);
+        for (size_t i = 0; i < 65; ++i) {
+            localPose[i] = mesh.skeleton->getBones()[i].localBindPose;
+        }
+        eng::anim::AnimationSampler::sampleClip(*walkClip, 0.35F, localPose);
+        std::vector<eng::Transform> modelPose(65);
+        std::vector<eng::Mat4> skinMats(65);
+        TEST_CHECK(mesh.skeleton->evaluateModelPose(localPose, modelPose).hasValue());
+        TEST_CHECK(mesh.skeleton->evaluateSkinningMatrices(modelPose, skinMats).hasValue());
+
+        std::vector<eng::render::Vertex> cpuSkinned;
+        mesh.applyCpuSkinning(skinMats, cpuSkinned);
+        TEST_CHECK(cpuSkinned.size() == mesh.vertices.size());
+        std::cout << "[PASS] testQuaterniusSkeletonAndAnimationImportAndCpuSkinning\n";
+    }
+
+    std::cout << "\nAll glTF Importer tests PASSED successfully!\n";
     return 0;
 }

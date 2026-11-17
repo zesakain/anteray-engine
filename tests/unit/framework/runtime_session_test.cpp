@@ -2,7 +2,9 @@
 /// @brief Comprehensive regression test suite for RuntimeSession, Simulation State Machine,
 /// and World Isolation.
 
+#include "anim/animation_components.h"
 #include "core/log.h"
+#include "framework/character_animation.h"
 #include "framework/character_components.h"
 #include "framework/conductor.h"
 #include "framework/runtime_session.h"
@@ -665,6 +667,73 @@ int testTppScenePlayableInputAndCameraFollow() {
     return 0;
 }
 
+int testTppLocomotionAnimationAndLuaShowcase() {
+    std::filesystem::path tppPath = "assets/scenes/CharacterController_TPP_Test.hikari";
+    for (int d = 0; d < 4 && !std::filesystem::exists(tppPath); ++d) {
+        tppPath = std::filesystem::path("..") / tppPath;
+    }
+    TEST_CHECK(std::filesystem::exists(tppPath));
+
+    World editWorld;
+    registerHierarchySystems(editWorld);
+    physics::registerPhysicsComponents(editWorld);
+    render::registerRenderComponents(editWorld);
+    registerCharacterComponents(editWorld);
+    registerCharacterAnimationComponents(editWorld);
+
+    TEST_CHECK(SceneSerializer::deserializeFromFile(editWorld, tppPath).hasValue());
+
+    RuntimeSession session;
+    session.setEditWorld(&editWorld);
+    TEST_CHECK(session.play().hasValue());
+
+    World* rtWorld = session.getRuntimeWorld();
+    TEST_CHECK(rtWorld != nullptr);
+
+    EntityHandle player{rtWorld->getRawWorld().lookup("PlayerCharacter").id()};
+    TEST_CHECK(player.isValid());
+
+    // 1. Settle onto ground (Landing -> Idle) & skinning palette populated
+    platform::InputSnapshot snap{};
+    session.setInputSnapshot(snap);
+    for (int i = 0; i < 20; ++i) {
+        session.update(Duration::fromMilliseconds(16));
+    }
+
+    const auto* ca0 = rtWorld->getComponent<CharacterAnimationComponent>(player);
+    const auto* pal0 = rtWorld->getComponent<anim::SkinningPaletteComponent>(player);
+    TEST_CHECK(ca0 != nullptr && ca0->initialized);
+    TEST_CHECK(ca0->currentState == LocomotionAnimState::Idle);
+    TEST_CHECK(pal0 != nullptr && pal0->skinningMatrices.size() == 65);
+
+    // 2. Walk/Run forward onto LuaJumpPad (at z = -4.0) -> transitions to Run and triggers Lua
+    // jump!
+    snap.keys.set(static_cast<size_t>(platform::KeyCode::W));
+    session.setInputSnapshot(snap);
+
+    bool sawRun = false;
+    bool sawJumpOrAir = false;
+    for (int i = 0; i < 60; ++i) {
+        session.update(Duration::fromMilliseconds(16));
+        const auto* ca = rtWorld->getComponent<CharacterAnimationComponent>(player);
+        TEST_CHECK(ca != nullptr);
+        if (ca->currentState == LocomotionAnimState::Run ||
+            ca->currentState == LocomotionAnimState::Walk) {
+            sawRun = true;
+        }
+        if (ca->currentState == LocomotionAnimState::Jump ||
+            ca->currentState == LocomotionAnimState::InAir) {
+            sawJumpOrAir = true;
+        }
+    }
+    TEST_CHECK(sawRun);
+    TEST_CHECK(sawJumpOrAir);
+
+    TEST_CHECK(session.stop().hasValue());
+    std::cout << "[PASS] testTppLocomotionAnimationAndLuaShowcase\n";
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -686,6 +755,8 @@ int main() {
     if (testSingleWorldProgressionPerUpdateAndStep() != 0)
         return 1;
     if (testTppScenePlayableInputAndCameraFollow() != 0)
+        return 1;
+    if (testTppLocomotionAnimationAndLuaShowcase() != 0)
         return 1;
     std::cout << "All RuntimeSession tests PASSED!\n";
     return 0;
