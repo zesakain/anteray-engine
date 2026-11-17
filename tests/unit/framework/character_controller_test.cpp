@@ -16,6 +16,8 @@
 #include "physics/physics_system.h"
 #include "physics/physics_world.h"
 #include "render/camera_component.h"
+#include "render/gltf_importer.h"
+#include "render/mesh_component.h"
 #include "world/components.h"
 #include "world/hierarchy_systems.h"
 #include "world/world.h"
@@ -548,8 +550,29 @@ void testConductorAuthorityAndSharedWorldInvariants() {
 void testDedicatedScenePrefabAndRuntimeSessionPIE() {
     const auto scenePath = resolveRepoPath("assets/scenes/CharacterController_TPP_Test.hikari");
     const auto prefabPath = resolveRepoPath("assets/prefabs/third_person_character.hikari_prefab");
+    const auto charModelPath =
+        resolveRepoPath("assets/characters/player/Superhero_Male_FullBody.gltf");
+    const auto animLibPath = resolveRepoPath("assets/animations/player/UAL1_Standard.glb");
+    const auto charLicensePath = resolveRepoPath("assets/characters/player/LICENSE_CC0.txt");
+    const auto animLicensePath = resolveRepoPath("assets/animations/player/LICENSE_CC0.txt");
     TEST_CHECK(std::filesystem::exists(scenePath));
     TEST_CHECK(std::filesystem::exists(prefabPath));
+    TEST_CHECK(std::filesystem::exists(charModelPath));
+    TEST_CHECK(std::filesystem::exists(animLibPath));
+    TEST_CHECK(std::filesystem::exists(charLicensePath));
+    TEST_CHECK(std::filesystem::exists(animLicensePath));
+
+    // 0. Import real humanoid glTF character model and verify geometry, submeshes, and materials
+    {
+        auto importRes = render::GltfImporter::importFromFile(charModelPath.string());
+        TEST_CHECK(importRes.hasValue());
+        const auto& mesh = importRes.value();
+        TEST_CHECK(mesh.vertices.size() > 1000);
+        TEST_CHECK(mesh.submeshes.size() >= 3);
+        TEST_CHECK(!mesh.materials.empty());
+        const float heightMeters = mesh.bounds.maxBound.y - mesh.bounds.minBound.y;
+        TEST_CHECK(heightMeters > 1.5F && heightMeters < 2.2F);
+    }
 
     // 1. Prefab load & instantiate
     {
@@ -608,6 +631,19 @@ void testDedicatedScenePrefabAndRuntimeSessionPIE() {
     const auto* stAfter = rtWorld->getComponent<CharacterStateComponent>(rtChar);
     TEST_CHECK(stAfter != nullptr);
     TEST_CHECK(stAfter->authoritativePositionMeters.z < -0.5F);
+
+    // Verify PlayerVisual mesh is parented to PlayerCharacter and follows its transform
+    const auto children = rtWorld->getChildren(rtChar);
+    TEST_CHECK(children.size() == 1);
+    const flecs::entity rtVisual = rtWorld->getRawWorld().entity(children[0].id);
+    TEST_CHECK(rtVisual.is_valid());
+    const auto* visMesh = rtVisual.get<render::MeshComponent>();
+    TEST_CHECK(visMesh != nullptr);
+    TEST_CHECK(visMesh->assetPath == "assets/characters/player/Superhero_Male_FullBody.gltf");
+    TEST_CHECK(visMesh->submeshIndex == render::kAllSubmeshes);
+    const auto* visWorldTr = rtVisual.get<world::WorldTransformComponent>();
+    TEST_CHECK(visWorldTr != nullptr);
+    TEST_CHECK(visWorldTr->worldTransform.position.z < -0.5F);
 
     TEST_CHECK(session.stop().hasValue());
     TEST_CHECK(editWorld.getAllEntities().size() == editEntityCount);
