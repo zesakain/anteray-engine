@@ -9,6 +9,7 @@
 #include "editor/selection_model.h"
 #include "editor/ui_helpers.h"
 #include "editor/workspace_manager.h"
+#include "framework/character_components.h"
 #include "framework/conductor.h"
 #include "framework/mode.h"
 #include "framework/runtime_session.h"
@@ -3860,6 +3861,59 @@ static void testEditorRealTimeTelemetry() {
     std::cout << "[PASS] testEditorRealTimeTelemetry\n";
 }
 
+void testEditorPieGameplayCameraAndInputLifecycle() {
+    auto rhiRes = rhi::createNullDevice();
+    TEST_CHECK(rhiRes.hasValue());
+    auto device = std::move(rhiRes.value());
+
+    world::World editWorld;
+    framework::registerCharacterComponents(editWorld);
+    physics::registerPhysicsComponents(editWorld);
+    render::registerRenderComponents(editWorld);
+
+    EditorEngine engine;
+    TEST_CHECK(engine.initialize(*device));
+    engine.bindWorld(&editWorld);
+
+    std::filesystem::path tppPath = "assets/scenes/CharacterController_TPP_Test.hikari";
+    for (int d = 0; d < 4 && !std::filesystem::exists(tppPath); ++d) {
+        tppPath = std::filesystem::path("..") / tppPath;
+    }
+    TEST_CHECK(std::filesystem::exists(tppPath));
+    TEST_CHECK(framework::SceneSerializer::deserializeFromFile(editWorld, tppPath).hasValue());
+
+    // Edit Mode: gameplay input is NOT active
+    engine.beginFrame(Duration::fromMilliseconds(16), 1280, 720);
+    engine.drawPanels();
+    ImGui::EndFrame();
+    TEST_CHECK(!engine.isGameplayInputActive());
+
+    // Enter PIE: gameplay input becomes active and EditorCamera is bypassed for Gameplay Camera
+    TEST_CHECK(engine.getRuntimeSession().play().hasValue());
+    engine.beginFrame(Duration::fromMilliseconds(16), 1280, 720);
+    engine.drawPanels();
+    ImGui::EndFrame();
+    TEST_CHECK(engine.isGameplayInputActive());
+
+    // Exit PIE: gameplay input capture is released cleanly
+    TEST_CHECK(engine.getRuntimeSession().stop().hasValue());
+    engine.beginFrame(Duration::fromMilliseconds(16), 1280, 720);
+    engine.drawPanels();
+    ImGui::EndFrame();
+    TEST_CHECK(!engine.isGameplayInputActive());
+
+    // Second Play/Stop cycle works cleanly
+    TEST_CHECK(engine.getRuntimeSession().play().hasValue());
+    engine.beginFrame(Duration::fromMilliseconds(16), 1280, 720);
+    engine.drawPanels();
+    ImGui::EndFrame();
+    TEST_CHECK(engine.isGameplayInputActive());
+    TEST_CHECK(engine.getRuntimeSession().stop().hasValue());
+
+    engine.shutdown();
+    std::cout << "[PASS] testEditorPieGameplayCameraAndInputLifecycle\n";
+}
+
 int main() {
     std::cout << "Running Editor subsystem unit tests...\n";
     const std::filesystem::path candidates[] = {"assets/models", "../../../assets/models",
@@ -3931,6 +3985,9 @@ int main() {
 
     // Live FPS and Real-Time Telemetry Tests
     testEditorRealTimeTelemetry();
+
+    // Milestone 12C.1: PIE Gameplay Camera & Input Capture Lifecycle
+    testEditorPieGameplayCameraAndInputLifecycle();
 
     std::cout << "All Editor subsystem tests PASSED!\n";
     return 0;

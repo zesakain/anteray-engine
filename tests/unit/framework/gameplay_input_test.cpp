@@ -222,6 +222,15 @@ void testCharacterInputIntegrationAndNoStaleIntent() {
     world.setComponent(
         ch, world::TransformComponent(Transform{Vec3{0, 0.02F, 0}, Quat::identity(), Vec3::one()}));
 
+    // Second character WITHOUT PlayerControlledTag must NOT receive player input
+    auto npc = world.createEntity("Npc");
+    world.addTag<CharacterTag>(npc);
+    world.setComponent(npc, CharacterConfigComponent{});
+    world.setComponent(npc, CharacterStateComponent{});
+    world.setComponent(npc, CharacterMovementIntentComponent{});
+    world.setComponent(npc, world::TransformComponent(
+                                Transform{Vec3{5, 0.02F, 0}, Quat::identity(), Vec3::one()}));
+
     auto cam = world.createEntity("ThirdPersonCamera");
     world.setComponent(cam, world::TransformComponent(Transform::identity()));
     world.setComponent(cam, render::CameraComponent{});
@@ -245,6 +254,12 @@ void testCharacterInputIntegrationAndNoStaleIntent() {
     TEST_CHECK(intentDuring->jumpRequested);
     TEST_CHECK(stateDuring->authoritativePositionMeters.z < -0.2F);
     TEST_CHECK(camDuring->yawRadians > 0.2F);
+
+    const auto* npcIntent = world.getComponent<CharacterMovementIntentComponent>(npc);
+    TEST_CHECK(npcIntent != nullptr);
+    TEST_CHECK(std::abs(npcIntent->moveAxis.x) < 1e-5F);
+    TEST_CHECK(std::abs(npcIntent->moveAxis.y) < 1e-5F);
+    TEST_CHECK(!npcIntent->jumpRequested);
 
     // Release all keys -> intent must immediately clear (no stale intent)
     snap.reset();
