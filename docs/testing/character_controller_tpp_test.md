@@ -11,23 +11,26 @@ Dedicated engineering test scene for validating Milestone 12B's physics-based th
 
 ## How to Load & Test
 
-1. Launch Hikari Machine (Editor or runtime).
-2. Load `assets/scenes/CharacterController_TPP_Test.hikari` via `SceneSerializer::deserializeFromFile` or the Editor File/Content Browser.
+1. **Via Hikari Hub:**
+   - Open **Sample Scenes** -> select **CharacterController TPP Test** (`assets/scenes/CharacterController_TPP_Test.hikari`), or
+   - Create a new project from **New Project** -> **Third-Person Character (TPP)** (`third_person_character` template).
+2. **Via Hikari Editor:**
+   - **File -> Open Scene...** -> click **TPP Character** quick-open button (or enter `assets/scenes/CharacterController_TPP_Test.hikari`), or browse `assets/scenes/` and `assets/prefabs/` in the **Content Browser**.
 3. `PlayerCharacter` (entity ID `100`) and `ThirdPersonCamera` (entity ID `2`) are pre-placed at spawn `[0, 0.05, 0]`.
-   - Alternatively, instantiate `assets/prefabs/third_person_character.hikari_prefab` via `PrefabLoader` + `PrefabInstantiator`.
-4. Press **Play** (`RuntimeSession::play()`) to activate `PhysicsWorld`, `CharacterControllerStep`, and `ThirdPersonCameraFollow`.
+   - Alternatively, instantiate `assets/prefabs/third_person_character.hikari_prefab` via `PrefabLoader`.
+4. Press **Play** (`RuntimeSession::play()`) to activate `GameplayInputSystem`, `PhysicsWorld`, `CharacterControllerStep`, and `ThirdPersonCameraFollow`.
 
-## Controls (Temporary 12B Input Adapter)
+## Controls (GameplayInputSystem Defaults)
 
 | Input | Action |
 |---|---|
-| `W` / `S` | Move forward / backward relative to camera horizontal yaw |
-| `A` / `D` | Strafe left / right relative to camera horizontal yaw |
-| `Space` | Jump (when grounded) |
-| `Q` / `E` | Orbit third-person camera yaw left / right |
-| `Right Mouse + Drag` | Orbit camera yaw and pitch |
+| `W` / `S` | `MoveForward` / `MoveBackward` relative to camera horizontal yaw |
+| `A` / `D` | `MoveLeft` / `MoveRight` relative to camera horizontal yaw |
+| `Space` / Gamepad `South` | `Jump` (when grounded) |
+| `Q` / `E` | `CameraOrbitLeft` / `CameraOrbitRight` |
+| `Right Mouse + Drag` | `CameraLookX` / `CameraLookY` |
 
-*(Note: This input adapter in `src/main.cpp` is temporary and will be replaced by the Milestone 12C Gameplay Input API.)*
+*(Bindings are configured via `GameplayInputSystem` in `"Gameplay"` context and can be rebound at runtime or loaded from JSON.)*
 
 ## Test Areas
 
