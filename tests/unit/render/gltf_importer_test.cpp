@@ -746,6 +746,21 @@ int main() {
         for (size_t i = 0; i < 65; ++i) {
             localPose[i] = mesh.skeleton->getBones()[i].localBindPose;
         }
+        std::vector<eng::Mat4> bindModelPose(65);
+        std::vector<eng::Transform> bindModelTr(65);
+        std::vector<eng::Mat4> bindSkinMats(65);
+        TEST_CHECK(mesh.skeleton->evaluateModelPose(localPose, bindModelTr).hasValue());
+        TEST_CHECK(mesh.skeleton->evaluateSkinningMatrices(bindModelTr, bindSkinMats).hasValue());
+        float maxBindErr = 0.0F;
+        const eng::Mat4 ident = eng::Mat4::identity();
+        for (size_t i = 0; i < 65; ++i) {
+            for (int k = 0; k < 16; ++k) {
+                maxBindErr = std::max(maxBindErr, std::abs(bindSkinMats[i].m[k] - ident.m[k]));
+            }
+        }
+        std::cout << "  [DIAG] Superhero bind-pose max skinning matrix error vs I: " << maxBindErr
+                  << "\n";
+
         eng::anim::AnimationSampler::sampleClip(*walkClip, 0.35F, localPose);
         std::vector<eng::Transform> modelPose(65);
         std::vector<eng::Mat4> skinMats(65);
@@ -755,6 +770,18 @@ int main() {
         std::vector<eng::render::Vertex> cpuSkinned;
         mesh.applyCpuSkinning(skinMats, cpuSkinned);
         TEST_CHECK(cpuSkinned.size() == mesh.vertices.size());
+        eng::AABB skinnedBounds;
+        for (const auto& v : cpuSkinned) {
+            skinnedBounds.expand(v.position);
+        }
+        std::cout << "  [DIAG] Bind bounds min=(" << mesh.bounds.minBound.x << ","
+                  << mesh.bounds.minBound.y << "," << mesh.bounds.minBound.z << ") max=("
+                  << mesh.bounds.maxBound.x << "," << mesh.bounds.maxBound.y << ","
+                  << mesh.bounds.maxBound.z << ")\n";
+        std::cout << "  [DIAG] Walk(0.35s) CPU-skinned bounds min=(" << skinnedBounds.minBound.x
+                  << "," << skinnedBounds.minBound.y << "," << skinnedBounds.minBound.z << ") max=("
+                  << skinnedBounds.maxBound.x << "," << skinnedBounds.maxBound.y << ","
+                  << skinnedBounds.maxBound.z << ")\n";
         std::cout << "[PASS] testQuaterniusSkeletonAndAnimationImportAndCpuSkinning\n";
     }
 

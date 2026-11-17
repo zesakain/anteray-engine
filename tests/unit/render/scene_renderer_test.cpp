@@ -1,10 +1,14 @@
 /// @file scene_renderer_test.cpp
 /// @brief Comprehensive tests for SceneRenderer GPU offscreen integration and pixel verification.
 
+#include "anim/animation_components.h"
+#include "anim/animation_sampler.h"
 #include "core/assert.h"
 #include "core/math.h"
 #include "physics/physics_components.h"
 #include "render/asset_manager.h"
+#include "render/gltf_importer.h"
+#include "render/light_components.h"
 #include "render/mesh_component.h"
 #include "render/scene_renderer.h"
 #include "rhi/rhi_device.h"
@@ -13,6 +17,8 @@
 
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <vector>
 
@@ -1006,6 +1012,141 @@ static int testStaticDynamicShadowCacheSeparation() {
     return 0;
 }
 
+int testVulkanGpuVsCpuSkinningIsolation() {
+    auto devRes = rhi::createVulkanDevice(rhi::VulkanDeviceDesc{});
+    if (!devRes.hasValue()) {
+        std::cout << "  [SKIP] testVulkanGpuVsCpuSkinningIsolation (no Vulkan GPU)\n";
+        return 0;
+    }
+    auto device = std::move(devRes.value());
+
+    std::filesystem::path charPath = "assets/characters/player/Superhero_Male_FullBody.gltf";
+    std::filesystem::path animPath = "assets/animations/player/UAL1_Standard.glb";
+    for (int d = 0; d < 4 && !std::filesystem::exists(charPath); ++d) {
+        charPath = std::filesystem::path("..") / charPath;
+        animPath = std::filesystem::path("..") / animPath;
+    }
+    TEST_CHECK(std::filesystem::exists(charPath));
+    TEST_CHECK(std::filesystem::exists(animPath));
+
+    auto meshRes = GltfImporter::importFromFile(charPath.string());
+    TEST_CHECK(meshRes.hasValue() && meshRes.value().skeleton.has_value());
+    MeshData bindMesh = std::move(meshRes.value());
+    const anim::Skeleton& skel = *bindMesh.skeleton;
+
+    auto clipsRes = GltfImporter::importAnimationsFromFile(animPath.string(), skel);
+    TEST_CHECK(clipsRes.hasValue());
+    const anim::AnimationClip* walkClip = nullptr;
+    for (const auto& c : clipsRes.value()) {
+        if (c.getName() == "Walk_Loop") {
+            walkClip = &c;
+            break;
+        }
+    }
+    TEST_CHECK(walkClip != nullptr);
+
+    std::vector<Transform> localPose(skel.getBoneCount());
+    for (size_t i = 0; i < skel.getBoneCount(); ++i) {
+        localPose[i] = skel.getBones()[i].localBindPose;
+    }
+    anim::AnimationSampler::sampleClip(*walkClip, 0.35F, localPose);
+    std::vector<Transform> modelPose(skel.getBoneCount());
+    std::vector<Mat4> skinMats(skel.getBoneCount());
+    TEST_CHECK(skel.evaluateModelPose(localPose, modelPose).hasValue());
+    TEST_CHECK(skel.evaluateSkinningMatrices(modelPose, skinMats).hasValue());
+
+    MeshData cpuSkinnedMesh = bindMesh;
+    bindMesh.applyCpuSkinning(skinMats, cpuSkinnedMesh.vertices);
+
+    const uint32_t vpW = 256;
+    const uint32_t vpH = 256;
+    SceneRenderer renderer;
+    TEST_CHECK(renderer.init(*device, vpW, vpH).hasValue());
+
+    const uint64_t byteSize = static_cast<uint64_t>(vpW) * vpH * 4ULL;
+    auto rbRes = device->createBuffer(rhi::BufferDesc{
+        .sizeInBytes = byteSize,
+        .usage = rhi::BufferUsageFlags::TransferDst,
+        .memoryUsage = rhi::MemoryUsage::GpuToCpu,
+    });
+    TEST_CHECK(rbRes.hasValue());
+    rhi::BufferHandle readbackBuf = rbRes.value();
+
+    auto renderOne = [&](bool useCpuMesh, bool useGpuPalette,
+                         std::vector<uint8_t>& outPixels) -> int {
+        world::World world;
+        registerRenderComponents(world);
+        anim::registerAnimationComponents(world);
+        AssetManager assetManager;
+
+        auto meshResId = assetManager.registerMesh(useCpuMesh ? "cpu_char" : "bind_char",
+                                                   useCpuMesh ? cpuSkinnedMesh : bindMesh);
+        TEST_CHECK(meshResId.hasValue());
+        AssetId meshId = meshResId.value();
+        TEST_CHECK(assetManager.uploadMesh(meshId, *device).hasValue());
+
+        auto sun = world.createEntity("Sun");
+        world.setComponent(sun, DirectionalLightComponent{.direction = Vec3(-0.3F, -0.8F, -0.5F),
+                                                          .color = Vec3(1.0F, 1.0F, 1.0F),
+                                                          .intensity = 3.0F,
+                                                          .castShadows = false});
+
+        auto ch = world.createEntity("Char");
+        world.setComponent(ch, world::TransformComponent{Transform::identity()});
+        world.setComponent(ch, MeshComponent{.meshAsset = meshId,
+                                             .submeshIndex = static_cast<uint32_t>(-1),
+                                             .visible = true,
+                                             .castShadows = false});
+        if (useGpuPalette) {
+            anim::SkinningPaletteComponent pal{};
+            pal.skinningMatrices = skinMats;
+            world.setComponent(ch, std::move(pal));
+        }
+
+        auto cmdRes = device->createCommandList();
+        TEST_CHECK(cmdRes.hasValue());
+        auto cmd = std::move(cmdRes.value());
+        cmd->begin();
+        (void)renderer.renderScene(world, assetManager, *device, *cmd, viewProj);
+        cmd->copyTextureToBuffer(renderer.getColorTarget(), readbackBuf);
+        cmd->end();
+        TEST_CHECK(device->submit(cmd.get()).hasValue());
+        device->waitIdle();
+
+        outPixels.resize(byteSize);
+        TEST_CHECK(device->readBuffer(readbackBuf, 0, outPixels.data(), byteSize).hasValue());
+        assetManager.unloadAll();
+        return 0;
+    };
+
+    std::vector<uint8_t> pxBind, pxCpu, pxGpu;
+    TEST_CHECK(renderOne(false, false, pxBind) == 0);
+    TEST_CHECK(renderOne(true, false, pxCpu) == 0);
+    TEST_CHECK(renderOne(false, true, pxGpu) == 0);
+
+    double totalDiff = 0.0;
+    size_t diffPixels = 0;
+    for (size_t i = 0; i < pxCpu.size(); i += 4) {
+        const int dr = std::abs(static_cast<int>(pxCpu[i + 0]) - static_cast<int>(pxGpu[i + 0]));
+        const int dg = std::abs(static_cast<int>(pxCpu[i + 1]) - static_cast<int>(pxGpu[i + 1]));
+        const int db = std::abs(static_cast<int>(pxCpu[i + 2]) - static_cast<int>(pxGpu[i + 2]));
+        const int d = std::max({dr, dg, db});
+        totalDiff += static_cast<double>(dr + dg + db) / 3.0;
+        if (d > 25) {
+            ++diffPixels;
+        }
+    }
+    const double meanDiff = totalDiff / static_cast<double>(vpW * vpH);
+    std::cout << "  [DIAG] GPU vs CPU skinning: meanChannelDiff=" << meanDiff
+              << ", diffPixels(>25)=" << diffPixels << "/" << (vpW * vpH) << "\n";
+
+    device->destroyBuffer(readbackBuf);
+    renderer.shutdown();
+    TEST_CHECK(meanDiff < 5.0);
+    std::cout << "  [PASS] testVulkanGpuVsCpuSkinningIsolation\n";
+    return 0;
+}
+
 int main() {
     std::cout << "Running SceneRenderer Tests...\n";
 
@@ -1037,6 +1178,9 @@ int main() {
         return 1;
     }
     if (testStaticDynamicShadowCacheSeparation() != 0) {
+        return 1;
+    }
+    if (testVulkanGpuVsCpuSkinningIsolation() != 0) {
         return 1;
     }
 

@@ -3914,6 +3914,118 @@ void testEditorPieGameplayCameraAndInputLifecycle() {
     std::cout << "[PASS] testEditorPieGameplayCameraAndInputLifecycle\n";
 }
 
+void testEditorVulkanTppPlayableAndAnimatedVisuals() {
+    auto devRes = rhi::createVulkanDevice(rhi::VulkanDeviceDesc{});
+    if (!devRes.hasValue()) {
+        std::cout << "[SKIP] testEditorVulkanTppPlayableAndAnimatedVisuals (no Vulkan GPU)\n";
+        return;
+    }
+    auto device = std::move(devRes.value());
+
+    world::World editWorld;
+    framework::registerCharacterComponents(editWorld);
+    physics::registerPhysicsComponents(editWorld);
+    render::registerRenderComponents(editWorld);
+
+    EditorEngine engine;
+    TEST_CHECK(engine.initialize(*device));
+    TEST_CHECK(engine.resizeViewport(512, 512));
+    engine.bindWorld(&editWorld);
+
+    std::filesystem::path tppPath = "assets/scenes/CharacterController_TPP_Test.hikari";
+    for (int d = 0; d < 4 && !std::filesystem::exists(tppPath); ++d) {
+        tppPath = std::filesystem::path("..") / tppPath;
+    }
+    TEST_CHECK(std::filesystem::exists(tppPath));
+    TEST_CHECK(framework::SceneSerializer::deserializeFromFile(editWorld, tppPath).hasValue());
+
+    auto renderAndCheck = [&]() {
+        engine.beginFrame(Duration::fromMilliseconds(16), 1280, 720);
+        engine.drawPanels();
+        auto cmdRes = device->createCommandList();
+        TEST_CHECK(cmdRes.hasValue());
+        auto cmd = std::move(cmdRes.value());
+        cmd->begin();
+        engine.renderScene(*cmd);
+        cmd->end();
+        TEST_CHECK(device->submit(cmd.get()).hasValue());
+        device->waitIdle();
+        ImGui::EndFrame();
+    };
+
+    // 1. Edit mode frame
+    renderAndCheck();
+
+    // 2. Enter PIE and settle into Idle
+    TEST_CHECK(engine.getRuntimeSession().play().hasValue());
+    platform::InputSnapshot snap{};
+    engine.getRuntimeSession().setInputSnapshot(snap);
+    for (int i = 0; i < 20; ++i) {
+        engine.beginFrame(Duration::fromMilliseconds(16), 1280, 720);
+        engine.drawPanels();
+        ImGui::EndFrame();
+        engine.getRuntimeSession().update(Duration::fromMilliseconds(16));
+    }
+    world::World* rtWorld = engine.getRuntimeSession().getRuntimeWorld();
+    TEST_CHECK(rtWorld != nullptr);
+    world::EntityHandle rtPlayer{};
+    world::EntityHandle rtVisual{};
+    for (auto entH : rtWorld->getAllEntities()) {
+        if (rtWorld->getEntityName(entH) == "PlayerCharacter") {
+            rtPlayer = entH;
+        } else if (rtWorld->getEntityName(entH) == "PlayerVisual") {
+            rtVisual = entH;
+        }
+    }
+    TEST_CHECK(rtPlayer.isValid() && rtVisual.isValid());
+    const Vec3 posIdle =
+        rtWorld->getComponent<world::TransformComponent>(rtPlayer)->transform.position;
+    renderAndCheck();
+
+    // 3. Hold W + rotate camera -> Run forward and verify physics + visual transform + animation
+    snap.keys.set(static_cast<size_t>(platform::KeyCode::W));
+    snap.mouseDeltaX = -40.0F;
+    engine.getRuntimeSession().setInputSnapshot(snap);
+    for (int i = 0; i < 25; ++i) {
+        if (i == 1) {
+            snap.mouseDeltaX = 0.0F;
+            engine.getRuntimeSession().setInputSnapshot(snap);
+        }
+        engine.beginFrame(Duration::fromMilliseconds(16), 1280, 720);
+        engine.drawPanels();
+        ImGui::EndFrame();
+        engine.getRuntimeSession().update(Duration::fromMilliseconds(16));
+    }
+    const Vec3 posRun =
+        rtWorld->getComponent<world::TransformComponent>(rtPlayer)->transform.position;
+    const Vec3 visRun =
+        rtWorld->getComponent<world::WorldTransformComponent>(rtVisual)->worldTransform.position;
+    const float movedDist = (posRun - posIdle).length();
+    std::cout << "  [DIAG] Editor PIE Player movedDist=" << movedDist << "m, pos=(" << posRun.x
+              << "," << posRun.y << "," << posRun.z << "), visual=(" << visRun.x << "," << visRun.y
+              << "," << visRun.z << ")\n";
+    TEST_CHECK(movedDist > 1.0F);
+    TEST_CHECK((visRun - posRun).length() < 0.05F);
+    renderAndCheck();
+
+    // 4. Jump with Space
+    snap.keys.set(static_cast<size_t>(platform::KeyCode::Space));
+    engine.getRuntimeSession().setInputSnapshot(snap);
+    for (int i = 0; i < 6; ++i) {
+        engine.beginFrame(Duration::fromMilliseconds(16), 1280, 720);
+        engine.drawPanels();
+        ImGui::EndFrame();
+        engine.getRuntimeSession().update(Duration::fromMilliseconds(16));
+    }
+    const auto* stJump = rtWorld->getComponent<framework::CharacterStateComponent>(rtPlayer);
+    TEST_CHECK(stJump != nullptr && !stJump->isGrounded);
+    renderAndCheck();
+
+    TEST_CHECK(engine.getRuntimeSession().stop().hasValue());
+    engine.shutdown();
+    std::cout << "[PASS] testEditorVulkanTppPlayableAndAnimatedVisuals\n";
+}
+
 int main() {
     std::cout << "Running Editor subsystem unit tests...\n";
     const std::filesystem::path candidates[] = {"assets/models", "../../../assets/models",
@@ -3988,6 +4100,7 @@ int main() {
 
     // Milestone 12C.1: PIE Gameplay Camera & Input Capture Lifecycle
     testEditorPieGameplayCameraAndInputLifecycle();
+    testEditorVulkanTppPlayableAndAnimatedVisuals();
 
     std::cout << "All Editor subsystem tests PASSED!\n";
     return 0;
