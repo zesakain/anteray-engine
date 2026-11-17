@@ -520,7 +520,8 @@ body {
                     if (editorEngine.isInitialized()) {
                         if (editorEngine.getRuntimeSession().isSimulating()) {
                             editorEngine.getRuntimeSession().setInputSnapshot(
-                                editorEngine.wantTextInput() ? platform::InputSnapshot{} : input);
+                                editorEngine.isGameplayInputActive() ? input
+                                                                     : platform::InputSnapshot{});
                         }
                         editorEngine.getRuntimeSession().update(fixedStep);
                         if (!editorEngine.getRuntimeSession().isSimulating() &&

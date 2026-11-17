@@ -637,6 +637,18 @@ void EditorEngine::beginFrame(Duration dt, uint32_t width, uint32_t height) {
     if (impl_->runtimeSession != nullptr) {
         auto currentSimState = impl_->runtimeSession->getSimulationState();
         if (currentSimState != impl_->lastSimulationState) {
+            const bool wasSimulating =
+                (impl_->lastSimulationState == framework::SimulationState::Playing ||
+                 impl_->lastSimulationState == framework::SimulationState::Paused);
+            const bool nowSimulating = (currentSimState == framework::SimulationState::Playing ||
+                                        currentSimState == framework::SimulationState::Paused);
+            if (!wasSimulating && nowSimulating) {
+                impl_->context.useGameplayCameraInPie = true;
+                impl_->context.isGameplayInputCaptured = true;
+            } else if (!nowSimulating) {
+                impl_->context.isGameplayInputCaptured = false;
+                impl_->context.gameplayCameraActive = false;
+            }
             impl_->selectionModel.clear();
             impl_->lastSimulationState = currentSimState;
         }
@@ -849,6 +861,14 @@ bool EditorEngine::wantTextInput() const noexcept {
     }
     ImGui::SetCurrentContext(impl_->imguiContext);
     return ImGui::GetIO().WantTextInput;
+}
+
+bool EditorEngine::isGameplayInputActive() const noexcept {
+    if (!impl_->initialized) {
+        return false;
+    }
+    return impl_->context.isSimulating && !impl_->context.isPaused &&
+           impl_->context.isGameplayInputCaptured && !wantTextInput();
 }
 
 void EditorEngine::bindWorld(world::World* world) noexcept {

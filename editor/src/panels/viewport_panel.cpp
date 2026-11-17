@@ -14,6 +14,7 @@
 #include "imgui_utils.h"
 #include "physics/physics_components.h"
 #include "render/asset_manager.h"
+#include "render/camera_component.h"
 #include "render/mesh_component.h"
 #include "render/scene_renderer.h"
 #include "world/components.h"
@@ -27,6 +28,40 @@
 #include <vector>
 
 namespace eng::editor {
+
+namespace {
+
+[[nodiscard]] bool resolveGameplayCameraViewProj(world::World& world, float aspectRatio,
+                                                 Mat4& outViewProj) noexcept {
+    bool found = false;
+    world.getRawWorld().each([&](flecs::entity e, const render::CameraComponent& cam) {
+        if (found || !cam.isPrimary) {
+            return;
+        }
+        Transform tr{};
+        if (const auto* wt = e.get<world::WorldTransformComponent>()) {
+            tr = wt->worldTransform;
+        } else if (const auto* lt = e.get<world::TransformComponent>()) {
+            tr = lt->transform;
+        } else {
+            return;
+        }
+        const Vec3 eye = tr.position;
+        const Vec3 fwd = tr.rotation.rotate(Vec3{0.0F, 0.0F, -1.0F}).normalized();
+        const Vec3 up = tr.rotation.rotate(Vec3::unitY()).normalized();
+        const float fovRad =
+            std::clamp(cam.fovDegrees, 1.0F, 179.0F) * (std::numbers::pi_v<float> / 180.0F);
+        const float nearP = std::max(0.01F, cam.nearPlane);
+        const float farP = std::max(nearP + 1.0F, cam.farPlane);
+        const Mat4 view = Mat4::lookAt(eye, eye + fwd, up);
+        const Mat4 proj = Mat4::perspective(fovRad, std::max(0.01F, aspectRatio), nearP, farP);
+        outViewProj = proj * view;
+        found = true;
+    });
+    return found;
+}
+
+} // namespace
 
 namespace {
 
@@ -163,15 +198,35 @@ void ViewportPanel::draw(EditorContext& ctx) {
 
             ImGui::SameLine();
             const bool isFlyMode = (camera_.getCameraMode() == EditorCameraMode::Fly);
-            if (ImGui::Button(isFlyMode ? "Cam: Fly" : "Cam: Orbit")) {
-                camera_.setCameraMode(isFlyMode ? EditorCameraMode::Orbit : EditorCameraMode::Fly);
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip(
-                    "Toggle Camera Mode (Current: %s)\n"
-                    "- Orbit: RMB + WASD Fly, MMB/Alt+LMB Orbit, Shift+MMB Pan, Scroll Zoom\n"
-                    "- Fly: First-person WASD + QE Fly, RMB Look, Scroll adjusts speed",
-                    isFlyMode ? "Fly" : "Orbit");
+            if (ctx.isSimulating && ctx.gameplayCameraActive) {
+                if (ImGui::Button("Cam: Gameplay")) {
+                    ctx.useGameplayCameraInPie = false;
+                    ctx.isGameplayInputCaptured = false;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "Gameplay Camera Active (PIE)\nClick or press F8 to switch to Editor "
+                        "Camera");
+                }
+            } else {
+                if (ImGui::Button(isFlyMode ? "Cam: Fly" : "Cam: Orbit")) {
+                    camera_.setCameraMode(isFlyMode ? EditorCameraMode::Orbit
+                                                    : EditorCameraMode::Fly);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip(
+                        "Toggle Camera Mode (Current: %s)\n"
+                        "- Orbit: RMB + WASD Fly, MMB/Alt+LMB Orbit, Shift+MMB Pan, Scroll Zoom\n"
+                        "- Fly: First-person WASD + QE Fly, RMB Look, Scroll adjusts speed",
+                        isFlyMode ? "Fly" : "Orbit");
+                }
+                if (ctx.isSimulating) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Use Gameplay Cam")) {
+                        ctx.useGameplayCameraInPie = true;
+                        ctx.isGameplayInputCaptured = true;
+                    }
+                }
             }
 
             ImGui::SameLine();
@@ -387,7 +442,16 @@ void ViewportPanel::draw(EditorContext& ctx) {
 
         // Synchronize camera matrices with active viewport dimensions
         camera_.updateMatrices(canvasSize.x, canvasSize.y);
-        ctx.viewportCameraViewProj = camera_.getViewProjectionMatrix();
+        const float aspectRatio = (canvasSize.y > 0.0F) ? (canvasSize.x / canvasSize.y) : 1.0F;
+        Mat4 gameplayViewProj = Mat4::identity();
+        if (ctx.isSimulating && ctx.useGameplayCameraInPie && ctx.world != nullptr &&
+            resolveGameplayCameraViewProj(*ctx.world, aspectRatio, gameplayViewProj)) {
+            ctx.viewportCameraViewProj = gameplayViewProj;
+            ctx.gameplayCameraActive = true;
+        } else {
+            ctx.viewportCameraViewProj = camera_.getViewProjectionMatrix();
+            ctx.gameplayCameraActive = false;
+        }
 
         if (camera_.hasCutOccurred()) {
             if (ctx.sceneRenderer != nullptr) {
@@ -476,7 +540,23 @@ void ViewportPanel::draw(EditorContext& ctx) {
         // ---------------------------------------------------------------------
         // Camera Navigation & Input Processing
         // ---------------------------------------------------------------------
-        if (isCanvasHovered || isCanvasActive) {
+        if (ctx.isSimulating && ImGui::IsKeyPressed(ImGuiKey_F8)) {
+            ctx.useGameplayCameraInPie = !ctx.useGameplayCameraInPie;
+            ctx.isGameplayInputCaptured = ctx.useGameplayCameraInPie;
+        }
+
+        if (ctx.isSimulating && ctx.gameplayCameraActive) {
+            s_wasLooking = false;
+            s_isFlying = false;
+            if ((isCanvasHovered || isCanvasActive) &&
+                (ImGui::IsMouseClicked(ImGuiMouseButton_Left) ||
+                 ImGui::IsMouseClicked(ImGuiMouseButton_Right))) {
+                ctx.isGameplayInputCaptured = true;
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                ctx.isGameplayInputCaptured = false;
+            }
+        } else if (isCanvasHovered || isCanvasActive) {
             const bool isFlyMode = (camera_.getCameraMode() == EditorCameraMode::Fly);
             const bool isRmbDown =
                 ImGui::IsMouseDown(ImGuiMouseButton_Right) && !io.KeyShift && !s_isDraggingGizmo;
@@ -1830,8 +1910,13 @@ void ViewportPanel::draw(EditorContext& ctx) {
                 if (ctx.isPaused) {
                     simBadge = "[PAUSED]";
                     badgeColor = ImVec4(0.96F, 0.62F, 0.04F, 1.0F);
+                } else if (ctx.gameplayCameraActive) {
+                    simBadge = ctx.isGameplayInputCaptured
+                                   ? "[PLAYING - GAMEPLAY CAM | Esc: Release, F8: Editor Cam]"
+                                   : "[PLAYING - GAMEPLAY CAM | Click Viewport for Input]";
+                    badgeColor = ImVec4(0.38F, 0.74F, 0.98F, 1.0F);
                 } else {
-                    simBadge = "[PLAYING - RUNTIME WORLD]";
+                    simBadge = "[PLAYING - EDITOR CAM | F8: Gameplay Cam]";
                     badgeColor = ImVec4(0.38F, 0.74F, 0.98F, 1.0F);
                 }
             }

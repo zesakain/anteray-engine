@@ -143,8 +143,11 @@ public:
     /// focused).
     [[nodiscard]] bool wantCaptureKeyboard() const noexcept;
 
-    /// Returns true if Dear ImGui currently has an active text input widget.
+    /// Returns true if Dear ImGui is currently capturing text input (e.g. InputText focused).
     [[nodiscard]] bool wantTextInput() const noexcept;
+
+    /// Returns true when PIE is actively playing and gameplay input focus is captured.
+    [[nodiscard]] bool isGameplayInputActive() const noexcept;
 
     /// Binds the authoritative Shared World for entity inspection.
     void bindWorld(world::World* world) noexcept;

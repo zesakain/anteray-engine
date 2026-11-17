@@ -82,6 +82,9 @@ struct EditorContext {
     bool isRuntimeActive{false};
     bool isSimulating{false};
     bool isPaused{false};
+    bool useGameplayCameraInPie{true};
+    bool gameplayCameraActive{false};
+    bool isGameplayInputCaptured{false};
 
     uint32_t windowWidth{1280};
     uint32_t windowHeight{720};
