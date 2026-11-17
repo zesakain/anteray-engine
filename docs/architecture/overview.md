@@ -2,7 +2,7 @@
 
 ## Mission & Scope
 
-Hikari-Machine is a 3D game engine designed with a mode-based execution model. The initial focus is on fast-paced action titles, with architecture designed to scale to other genres without embedding game-specific assumptions into the engine runtime.
+ANTERAY ENGINE (formerly Hikari Machine) is a 3D game engine designed with a mode-based execution model. The initial focus is on fast-paced action titles, with architecture designed to scale to other genres without embedding game-specific assumptions into the engine runtime.
 
 ## Core Architectural Pillars
 

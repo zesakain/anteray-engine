@@ -52,13 +52,13 @@ The engine contains functional implementations across core systems, rendering, p
   - RmlUi 6.0 runtime UI system with custom RHI render interface and unscaled real-time clock domain.
   - `RuntimeSession` orchestrating simulation lifecycles with an isolated, in-memory `RuntimeWorld` cloned from the authoring `EditWorld`.
   - `AsyncSceneLoader`: scheduler-driven, budget-aware multi-stage scene loading over `JobSystem` with worker-isolated mesh staging, bounded texture decode backpressure, cancellation safety, and per-phase telemetry.
-  - Native `.hikari` versioned JSON scene serialization (`SceneSerializer`), including embedded graphics, lighting, and shadow settings.
+  - Native `.anteray` (and legacy `.hikari`) versioned JSON scene serialization (`SceneSerializer`), including embedded graphics, lighting, and shadow settings.
 - **3D Asset Pipeline**:
   - glTF 2.0 (`.gltf`) and Binary glTF (`.glb`) importers (`GltfImporter`, `GltfSceneImporter`) via vendored `cgltf` (v1.14), supporting scene hierarchy, PBR metallic-roughness/extensions, and embedded or external textures decoded via `stb`.
   - Wavefront OBJ (`.obj`) asset importer (`ObjImporter`).
   - Central `AssetManager` with 64-bit `AssetId` hashing, `SamplerCache`, and GPU mesh/texture upload deduplication.
-- **Developer Visual Editor & IDE** (`HIKARI_BUILD_EDITOR=ON`):
-  - Dear ImGui docking workspace with layout persistence (`hikari_editor_layout.ini`) and persisted `EditorPreferences`.
+- **Developer Visual Editor & IDE** (`ANTERAY_BUILD_EDITOR=ON`):
+  - Dear ImGui docking workspace with layout persistence (`anteray_editor_layout.ini`) and persisted `EditorPreferences`.
   - Centralized UI design tokens and theme palettes (ANTERAY Dark, Midnight, Light) with live runtime switching.
   - Viewport GPU scene rendering: Vulkan 1.3 offscreen dynamic rendering target sampled directly by Dear ImGui (zero CPU readback) with debug view mode switching.
   - 6-DOF fly camera navigation (WASD + QE + Shift boost) and orbit camera mode with mouse look and pitch clamping.
@@ -83,7 +83,7 @@ The engine contains functional implementations across core systems, rendering, p
 | **File Dialogs** | `tinyfiledialogs` | Integrated for native asset import picker |
 | **Scripting** | Lua 5.4 (Sandboxed C API with memory bounds) | Integrated (direct C API used; `sol2` omitted due to `-fno-exceptions`) |
 | **Game UI** | RmlUi 6.0 (via FetchContent) | Integrated with custom RHI render interface |
-| **Editor UI** | Dear ImGui `v1.91.8-docking` (via FetchContent) | Integrated (`HIKARI_BUILD_EDITOR=ON`) |
+| **Editor UI** | Dear ImGui `v1.91.8-docking` (via FetchContent) | Integrated (`ANTERAY_BUILD_EDITOR=ON`) |
 | **Shaders** | GLSL sources (`assets/shaders/`) -> embedded SPIR-V | Compiled & embedded (`mesh_shader_spirv.h`) |
 | **Audio** | N/A | Not implemented (`engine/audio/` is a placeholder) |
 
@@ -117,7 +117,7 @@ The engine contains functional implementations across core systems, rendering, p
 │   ├── ui/                     # RmlUi runtime UI system & RHI render interface
 │   ├── framework/              # Two-State Conductor, Mode, AsyncSceneLoader, SceneSerializer, RuntimeSession
 │   └── audio/                  # Audio subsystem (placeholder directory)
-├── editor/                     # Dear ImGui visual editor & IDE (HIKARI_BUILD_EDITOR)
+├── editor/                     # Dear ImGui visual editor & IDE (ANTERAY_BUILD_EDITOR)
 │   ├── include/editor/         # Editor public interfaces, theme tokens, preferences, selection service
 │   └── src/                    # EditorEngine, WorkspaceManager, panels (Viewport, Hierarchy, Inspector, Settings, etc.)
 ├── assets/                     # Models (.glb, .obj), benchmark scenes (.hikari), Lua scripts, GLSL shaders
@@ -158,38 +158,38 @@ ctest --preset editor --output-on-failure
 
 ### Available Presets
 
-All presets inherit `HIKARI_WARNINGS_AS_ERRORS=ON` and use the Ninja generator:
+All presets inherit `ANTERAY_WARNINGS_AS_ERRORS=ON` and use the Ninja generator:
 
 | Preset | Build Type | Key Cache Variables | Primary Use |
 | :--- | :--- | :--- | :--- |
-| `editor` | `Debug` | `HIKARI_BUILD_EDITOR=ON` | Visual Editor & IDE development |
-| `debug` | `Debug` | Default (`HIKARI_BUILD_EDITOR=OFF`) | Local engine development with assertions |
+| `editor` | `Debug` | `ANTERAY_BUILD_EDITOR=ON` | Visual Editor & IDE development |
+| `debug` | `Debug` | Default (`ANTERAY_BUILD_EDITOR=OFF`) | Local engine development with assertions |
 | `release` | `Release` | Optimizations enabled | Performance testing and distribution |
 | `profile` | `RelWithDebInfo` | Release optimizations with debug symbols | Profiling and trace analysis |
-| `asan` | `Debug` | `HIKARI_SANITIZER=address,undefined` | Memory safety, UB, and leak verification |
-| `tsan` | `Debug` | `HIKARI_SANITIZER=thread` | Concurrency and data-race verification |
+| `asan` | `Debug` | `ANTERAY_SANITIZER=address,undefined` | Memory safety, UB, and leak verification |
+| `tsan` | `Debug` | `ANTERAY_SANITIZER=thread` | Concurrency and data-race verification |
 
 ### Running the Executable
 
 ```bash
 # Launch the visual editor
-./build/editor/bin/hikari
+./build/editor/bin/anteray
 
 # Launch the editor directly on a scene or glTF model
-./build/editor/bin/hikari --scene assets/benchmark-scenes/Sponza_Benchmark.hikari
+./build/editor/bin/anteray --scene assets/benchmark-scenes/Sponza_Benchmark.hikari
 
 # Run headless simulation loop for 60 frames (Null RHI, no window)
-./build/release/bin/hikari --headless --frames 60
+./build/release/bin/anteray --headless --frames 60
 
 # Display CLI options and version
-./build/release/bin/hikari --help
+./build/release/bin/anteray --help
 ```
 
 ---
 
 ## 7. Testing and Validation
 
-CTest registers **58** core test suites in non-editor presets (`debug`, `release`, `profile`, `asan`, `tsan`) and **63** total test suites when `HIKARI_BUILD_EDITOR=ON` (`editor` preset):
+CTest registers **58** core test suites in non-editor presets (`debug`, `release`, `profile`, `asan`, `tsan`) and **63** total test suites when `ANTERAY_BUILD_EDITOR=ON` (`editor` preset):
 
 - **Core Primitives**: `smoke_test`, `result_test`, `assert_test`, `linear_allocator_test`, `arena_allocator_test`, `pool_allocator_test`, `generational_handle_test`, `time_test`, `log_test`, `slot_map_test`, `id_test`, `event_test`, `json_test`, `job_system_test`, `math_test`.
 - **Platform & RHI**: `platform_test`, `null_rhi_test`, `vulkan_rhi_test` (validates physical GPU selection, offscreen/swapchain dynamic rendering, and pipeline compatibility).
