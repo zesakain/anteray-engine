@@ -109,14 +109,15 @@ EngineInstallation EngineLauncher::discover(const std::filesystem::path& hubExec
     if (!overrideExecutable.empty()) {
         candidates.push_back(overrideExecutable);
     }
-    // Prefer Editor-enabled builds (release-editor, editor-release, sibling editor binary,
-    // build/editor/bin) before non-editor runtime builds (profile, release, debug).
+    // Prefer official Editor-enabled builds (editor-release, build/editor/bin) before
+    // legacy release-editor or non-editor runtime builds (profile, release, debug).
     if (!info.repositoryRoot.empty()) {
-        static constexpr std::array<const char*, 2> kReleaseEditorBins{
-            "build/release-editor/bin",
+        static constexpr std::array<const char*, 3> kEditorBins{
             "build/editor-release/bin",
+            "build/editor/bin",
+            "build/release-editor/bin",
         };
-        for (const char* relBin : kReleaseEditorBins) {
+        for (const char* relBin : kEditorBins) {
             candidates.push_back(info.repositoryRoot / relBin / kExeName);
         }
     }
@@ -124,8 +125,7 @@ EngineInstallation EngineLauncher::discover(const std::filesystem::path& hubExec
         candidates.push_back(hubExecutablePath.parent_path() / kExeName);
     }
     if (!info.repositoryRoot.empty()) {
-        static constexpr std::array<const char*, 4> kFallbackBins{
-            "build/editor/bin",
+        static constexpr std::array<const char*, 3> kFallbackBins{
             "build/profile/bin",
             "build/release/bin",
             "build/debug/bin",
