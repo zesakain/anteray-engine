@@ -212,6 +212,10 @@ std::optional<Vec3> jsonToVec3(const core::JsonValue& val) {
     return Vec3(val[0].asFloat(), val[1].asFloat(), val[2].asFloat());
 }
 
+std::optional<Vec3> jsonToVec3(const core::JsonValue* val) {
+    return (val != nullptr) ? jsonToVec3(*val) : std::nullopt;
+}
+
 std::optional<Quat> jsonToQuat(const core::JsonValue& val) {
     if (!val.isArray() || val.size() < 4) {
         return std::nullopt;
@@ -225,6 +229,10 @@ std::optional<Quat> jsonToQuat(const core::JsonValue& val) {
         return Quat::identity();
     }
     return Quat(x, y, z, w).normalized();
+}
+
+std::optional<Quat> jsonToQuat(const core::JsonValue* val) {
+    return (val != nullptr) ? jsonToQuat(*val) : std::nullopt;
 }
 
 const char* toneMapOpToString(render::ToneMapOperator op) noexcept {
@@ -814,10 +822,10 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
             }
         }
         if (const auto* camVal = settingsVal->getObject("camera")) {
-            if (auto pos = jsonToVec3(*camVal->find("position"))) {
+            if (auto pos = jsonToVec3(camVal->find("position"))) {
                 sceneCamPos = *pos;
             }
-            if (auto tgt = jsonToVec3(*camVal->find("target"))) {
+            if (auto tgt = jsonToVec3(camVal->find("target"))) {
                 sceneCamTarget = *tgt;
             }
         }
@@ -860,13 +868,13 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
 
                 if (compName == "Transform") {
                     staged.transform.present = true;
-                    if (auto pos = jsonToVec3(*compData.find("position"))) {
+                    if (auto pos = jsonToVec3(compData.find("position"))) {
                         staged.transform.position = *pos;
                     }
-                    if (auto rot = jsonToQuat(*compData.find("rotation"))) {
+                    if (auto rot = jsonToQuat(compData.find("rotation"))) {
                         staged.transform.rotation = *rot;
                     }
-                    if (auto scl = jsonToVec3(*compData.find("scale"))) {
+                    if (auto scl = jsonToVec3(compData.find("scale"))) {
                         if (scl->x < 0.0001F || scl->y < 0.0001F || scl->z < 0.0001F) {
                             return Result<DeserializationResult>::failure(
                                 Error(ErrorCode::InvalidArgument,
@@ -947,10 +955,10 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                     staged.directionalLight.light.enabled = compData.getBool("enabled", true);
                 } else if (compName == "PointLight") {
                     staged.pointLight.present = true;
-                    if (auto pos = jsonToVec3(*compData.find("position"))) {
+                    if (auto pos = jsonToVec3(compData.find("position"))) {
                         staged.pointLight.light.position = *pos;
                     }
-                    if (auto col = jsonToVec3(*compData.find("color"))) {
+                    if (auto col = jsonToVec3(compData.find("color"))) {
                         staged.pointLight.light.color = *col;
                     }
                     staged.pointLight.light.intensity = compData.getFloat("intensity", 10.0F);
@@ -958,13 +966,13 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                     staged.pointLight.light.enabled = compData.getBool("enabled", true);
                 } else if (compName == "SpotLight") {
                     staged.spotLight.present = true;
-                    if (auto pos = jsonToVec3(*compData.find("position"))) {
+                    if (auto pos = jsonToVec3(compData.find("position"))) {
                         staged.spotLight.light.position = *pos;
                     }
-                    if (auto dir = jsonToVec3(*compData.find("direction"))) {
+                    if (auto dir = jsonToVec3(compData.find("direction"))) {
                         staged.spotLight.light.direction = dir->normalized();
                     }
-                    if (auto col = jsonToVec3(*compData.find("color"))) {
+                    if (auto col = jsonToVec3(compData.find("color"))) {
                         staged.spotLight.light.color = *col;
                     }
                     staged.spotLight.light.intensity = compData.getFloat("intensity", 15.0F);
@@ -986,14 +994,14 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                     staged.postProcess.settings = jsonToPostProcess(compData);
                 } else if (compName == "IrradianceProbe") {
                     staged.irradianceProbe.present = true;
-                    if (auto pos = jsonToVec3(*compData.find("position"))) {
+                    if (auto pos = jsonToVec3(compData.find("position"))) {
                         staged.irradianceProbe.probe.position = *pos;
                     }
                     staged.irradianceProbe.probe.radius = compData.getFloat("radius", 10.0F);
-                    if (auto bMin = jsonToVec3(*compData.find("boxMin"))) {
+                    if (auto bMin = jsonToVec3(compData.find("boxMin"))) {
                         staged.irradianceProbe.probe.boxMin = *bMin;
                     }
-                    if (auto bMax = jsonToVec3(*compData.find("boxMax"))) {
+                    if (auto bMax = jsonToVec3(compData.find("boxMax"))) {
                         staged.irradianceProbe.probe.boxMax = *bMax;
                     }
                     staged.irradianceProbe.probe.intensity = compData.getFloat("intensity", 1.0F);
