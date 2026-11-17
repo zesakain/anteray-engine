@@ -567,7 +567,8 @@ Result<MeshData> processGltfData(cgltf_data* data, std::string_view baseDir, std
                                ? prim.material->name
                                : ((mesh->name != nullptr) ? mesh->name : "Submesh");
             submesh.firstIndex = static_cast<uint32_t>(meshData.indices.size());
-            submesh.vertexOffset = vertexBase;
+            // Absolute vertex indices (vertexBase + localIndex) are baked into meshData.indices.
+            submesh.vertexOffset = 0;
 
             if (prim.material != nullptr) {
                 const auto diff = prim.material - data->materials;
