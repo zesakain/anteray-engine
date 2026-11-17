@@ -61,7 +61,7 @@ static void testPreferencesDefaultsAndClamping() {
     TEST_CHECK(prefs.general.openLastProjectOnStartup == true);
     TEST_CHECK(prefs.general.undoHistoryLimit == 100);
 
-    TEST_CHECK(prefs.appearance.themeName == "Hikari Dark");
+    TEST_CHECK(prefs.appearance.themeName == "ANTERAY Dark");
     TEST_CHECK(prefs.appearance.uiScaleFactor == 1.0F);
 
     TEST_CHECK(prefs.workspace.restoreLayoutOnStartup == true);
@@ -250,7 +250,10 @@ static void testExternalEditorServiceLaunchAndHook() {
 }
 
 static void testThemeStateSynchronization() {
-    // 1. Theme name to enum mapping
+    // 1. Theme name to enum mapping (ANTERAY display names + legacy Hikari compatibility)
+    TEST_CHECK(themeTypeFromName("ANTERAY Dark") == ThemeType::Dark);
+    TEST_CHECK(themeTypeFromName("ANTERAY Midnight") == ThemeType::Midnight);
+    TEST_CHECK(themeTypeFromName("ANTERAY Light") == ThemeType::Light);
     TEST_CHECK(themeTypeFromName("Hikari Dark") == ThemeType::Dark);
     TEST_CHECK(themeTypeFromName("Hikari Midnight") == ThemeType::Midnight);
     TEST_CHECK(themeTypeFromName("Midnight") == ThemeType::Midnight);
@@ -260,14 +263,14 @@ static void testThemeStateSynchronization() {
     TEST_CHECK(themeTypeFromName("") == ThemeType::Dark);
 
     // 2. Enum to name mapping
-    TEST_CHECK(std::string_view(getThemeName(ThemeType::Dark)) == "Hikari Dark");
-    TEST_CHECK(std::string_view(getThemeName(ThemeType::Midnight)) == "Hikari Midnight");
-    TEST_CHECK(std::string_view(getThemeName(ThemeType::Light)) == "Hikari Light");
+    TEST_CHECK(std::string_view(getThemeName(ThemeType::Dark)) == "ANTERAY Dark");
+    TEST_CHECK(std::string_view(getThemeName(ThemeType::Midnight)) == "ANTERAY Midnight");
+    TEST_CHECK(std::string_view(getThemeName(ThemeType::Light)) == "ANTERAY Light");
 
     // 3. Theme application updates authoritative state
     applyEditorTheme(ThemeType::Midnight);
     TEST_CHECK(getActiveThemeType() == ThemeType::Midnight);
-    TEST_CHECK(std::string_view(getThemeName(getActiveThemeType())) == "Hikari Midnight");
+    TEST_CHECK(std::string_view(getThemeName(getActiveThemeType())) == "ANTERAY Midnight");
 
     applyEditorTheme(ThemeType::Light);
     TEST_CHECK(getActiveThemeType() == ThemeType::Light);
@@ -275,21 +278,30 @@ static void testThemeStateSynchronization() {
     applyEditorTheme(ThemeType::Dark);
     TEST_CHECK(getActiveThemeType() == ThemeType::Dark);
 
-    // 4. Persistence round-trip
+    // 4. Persistence round-trip (new ANTERAY name + legacy Hikari name compatibility)
     EditorPreferences prefs{};
-    prefs.appearance.themeName = "Hikari Midnight";
+    prefs.appearance.themeName = "ANTERAY Midnight";
     auto serializeRes = EditorPreferencesSerializer::serializeToString(prefs);
     TEST_CHECK(serializeRes.hasValue());
 
     auto deserializeRes = EditorPreferencesSerializer::deserializeFromString(serializeRes.value());
     TEST_CHECK(deserializeRes.hasValue());
-    TEST_CHECK(deserializeRes.value().appearance.themeName == "Hikari Midnight");
+    TEST_CHECK(deserializeRes.value().appearance.themeName == "ANTERAY Midnight");
     TEST_CHECK(themeTypeFromName(deserializeRes.value().appearance.themeName) ==
                ThemeType::Midnight);
 
+    prefs.appearance.themeName = "Hikari Light";
+    auto legacySerializeRes = EditorPreferencesSerializer::serializeToString(prefs);
+    TEST_CHECK(legacySerializeRes.hasValue());
+    auto legacyDeserializeRes =
+        EditorPreferencesSerializer::deserializeFromString(legacySerializeRes.value());
+    TEST_CHECK(legacyDeserializeRes.hasValue());
+    TEST_CHECK(themeTypeFromName(legacyDeserializeRes.value().appearance.themeName) ==
+               ThemeType::Light);
+
     // 5. Reset to defaults
     prefs.resetToDefaults();
-    TEST_CHECK(prefs.appearance.themeName == "Hikari Dark");
+    TEST_CHECK(prefs.appearance.themeName == "ANTERAY Dark");
     TEST_CHECK(themeTypeFromName(prefs.appearance.themeName) == ThemeType::Dark);
 
     std::cout << "[PASS] testThemeStateSynchronization\n";

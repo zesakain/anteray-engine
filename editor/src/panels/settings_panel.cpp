@@ -326,7 +326,7 @@ void SettingsPanel::drawAppearanceTab(EditorContext& ctx) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    const char* themes[] = {"Hikari Dark", "Hikari Midnight", "Hikari Light"};
+    const char* themes[] = {"ANTERAY Dark", "ANTERAY Midnight", "ANTERAY Light"};
     ThemeType currentThemeType = getActiveThemeType();
     int currentTheme = static_cast<int>(currentThemeType);
 

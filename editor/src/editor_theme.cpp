@@ -161,21 +161,23 @@ const ThemeColors& getActiveThemeColors() noexcept {
 const char* getThemeName(ThemeType type) noexcept {
     switch (type) {
     case ThemeType::Dark:
-        return "Hikari Dark";
+        return "ANTERAY Dark";
     case ThemeType::Midnight:
-        return "Hikari Midnight";
+        return "ANTERAY Midnight";
     case ThemeType::Light:
-        return "Hikari Light";
+        return "ANTERAY Light";
     default:
         return "Unknown";
     }
 }
 
 ThemeType themeTypeFromName(std::string_view name) noexcept {
-    if (name == "Hikari Midnight" || name == "Midnight") {
+    // Preserve legacy "Hikari *" theme names so existing editor_preferences.json files load
+    // cleanly.
+    if (name == "ANTERAY Midnight" || name == "Hikari Midnight" || name == "Midnight") {
         return ThemeType::Midnight;
     }
-    if (name == "Hikari Light" || name == "Light") {
+    if (name == "ANTERAY Light" || name == "Hikari Light" || name == "Light") {
         return ThemeType::Light;
     }
     return ThemeType::Dark;

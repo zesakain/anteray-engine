@@ -503,7 +503,7 @@ bool EditorEngine::initialize(rhi::RhiDevice& rhiDevice, const EditorConfig& con
     (void)impl_->resizeViewport(1280, 720);
 
     impl_->initialized = true;
-    ENG_LOG_INFO("Editor", "Hikari Editor Workspace initialized successfully");
+    ENG_LOG_INFO("Editor", "ANTERAY Editor Workspace initialized successfully");
     return true;
 }
 
@@ -561,7 +561,7 @@ void EditorEngine::shutdown() {
         impl_->context.viewportTextureId = nullptr;
         impl_->context.gpuRenderingActive = false;
         impl_->initialized = false;
-        ENG_LOG_INFO("Editor", "Hikari Editor Workspace shut down cleanly");
+        ENG_LOG_INFO("Editor", "ANTERAY Editor Workspace shut down cleanly");
     }
 }
 

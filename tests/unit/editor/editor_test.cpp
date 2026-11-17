@@ -312,15 +312,15 @@ static void testThemeTokens() {
     // 5. Test Theme Switching API
     applyEditorTheme(ThemeType::Midnight);
     TEST_CHECK(getActiveThemeType() == ThemeType::Midnight);
-    TEST_CHECK(std::strcmp(getThemeName(getActiveThemeType()), "Hikari Midnight") == 0);
+    TEST_CHECK(std::strcmp(getThemeName(getActiveThemeType()), "ANTERAY Midnight") == 0);
 
     applyEditorTheme(ThemeType::Light);
     TEST_CHECK(getActiveThemeType() == ThemeType::Light);
-    TEST_CHECK(std::strcmp(getThemeName(getActiveThemeType()), "Hikari Light") == 0);
+    TEST_CHECK(std::strcmp(getThemeName(getActiveThemeType()), "ANTERAY Light") == 0);
 
     applyEditorTheme(ThemeType::Dark);
     TEST_CHECK(getActiveThemeType() == ThemeType::Dark);
-    TEST_CHECK(std::strcmp(getThemeName(getActiveThemeType()), "Hikari Dark") == 0);
+    TEST_CHECK(std::strcmp(getThemeName(getActiveThemeType()), "ANTERAY Dark") == 0);
 
     // 6. Test Editor Icons
     TEST_CHECK(EditorIcons::kPlay != nullptr && EditorIcons::kPlay[0] != '\0');

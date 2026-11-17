@@ -495,7 +495,7 @@ struct WorkspaceManager::Impl {
             } else {
                 // Headless/null RHI fallback header
                 ImGui::Spacing();
-                const char* brandText = "H I K A R I   E N G I N E";
+                const char* brandText = "A N T E R A Y   E N G I N E";
                 float textWidth = ImGui::CalcTextSize(brandText).x;
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availWidth - textWidth) * 0.5F);
                 ImGui::TextColored(ImVec4(0.00F, 0.83F, 1.00F, 1.0F), "%s", brandText);
@@ -505,7 +505,7 @@ struct WorkspaceManager::Impl {
             ImGui::Spacing();
 
             // 2. Title & Scene Header
-            const char* headerTitle = "HIKARI ENGINE";
+            const char* headerTitle = "ANTERAY ENGINE";
             float hWidth = ImGui::CalcTextSize(headerTitle).x;
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (availWidth - hWidth) * 0.5F);
             ImGui::TextColored(ImVec4(0.00F, 0.83F, 1.00F, 1.0F), "%s", headerTitle);
@@ -957,27 +957,27 @@ struct WorkspaceManager::Impl {
                 }
                 if (ImGui::BeginMenu("Theme")) {
                     auto currentTheme = getActiveThemeType();
-                    if (ImGui::MenuItem("Hikari Dark", nullptr, currentTheme == ThemeType::Dark)) {
+                    if (ImGui::MenuItem("ANTERAY Dark", nullptr, currentTheme == ThemeType::Dark)) {
                         applyEditorTheme(ThemeType::Dark);
                         if (ctx.editorEngine != nullptr) {
                             ctx.editorEngine->getEditorPreferences().appearance.themeName =
-                                "Hikari Dark";
+                                "ANTERAY Dark";
                         }
                     }
-                    if (ImGui::MenuItem("Hikari Midnight", nullptr,
+                    if (ImGui::MenuItem("ANTERAY Midnight", nullptr,
                                         currentTheme == ThemeType::Midnight)) {
                         applyEditorTheme(ThemeType::Midnight);
                         if (ctx.editorEngine != nullptr) {
                             ctx.editorEngine->getEditorPreferences().appearance.themeName =
-                                "Hikari Midnight";
+                                "ANTERAY Midnight";
                         }
                     }
-                    if (ImGui::MenuItem("Hikari Light", nullptr,
+                    if (ImGui::MenuItem("ANTERAY Light", nullptr,
                                         currentTheme == ThemeType::Light)) {
                         applyEditorTheme(ThemeType::Light);
                         if (ctx.editorEngine != nullptr) {
                             ctx.editorEngine->getEditorPreferences().appearance.themeName =
-                                "Hikari Light";
+                                "ANTERAY Light";
                         }
                     }
                     ImGui::EndMenu();
@@ -1067,7 +1067,7 @@ struct WorkspaceManager::Impl {
 
             // 9. Help Menu
             if (ImGui::BeginMenu("Help")) {
-                if (ImGui::MenuItem("About Hikari Editor...")) {
+                if (ImGui::MenuItem("About ANTERAY Editor...")) {
                     showAboutModal = true;
                 }
                 ImGui::EndMenu();
@@ -1150,10 +1150,10 @@ struct WorkspaceManager::Impl {
         // --- Modals ---
 
         if (showAboutModal) {
-            ImGui::OpenPopup("About Hikari Editor");
+            ImGui::OpenPopup("About ANTERAY Editor");
             showAboutModal = false;
         }
-        if (ImGui::BeginPopupModal("About Hikari Editor", nullptr,
+        if (ImGui::BeginPopupModal("About ANTERAY Editor", nullptr,
                                    ImGuiWindowFlags_AlwaysAutoResize)) {
             if (ctx.logoTextureId != nullptr) {
                 const float logoHeight = 112.0F;
@@ -1168,7 +1168,7 @@ struct WorkspaceManager::Impl {
                     ImVec4(1.0F, 1.0F, 1.0F, 1.0F));
                 ImGui::Spacing();
             }
-            ImGui::TextColored(ImVec4(0.00F, 0.83F, 1.00F, 1.0F), "Hikari Machine - Studio Editor");
+            ImGui::TextColored(ImVec4(0.00F, 0.83F, 1.00F, 1.0F), "ANTERAY ENGINE - Studio Editor");
             ImGui::Text("Architecture: Two-State Conductor over Single Shared World");
             ImGui::Text("Version: 0.1.0 (Stabilization & Brand Consistency)");
             ImGui::Separator();

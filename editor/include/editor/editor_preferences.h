@@ -52,7 +52,7 @@ struct GeneralPreferences {
 /// @struct AppearancePreferences
 /// @brief Visual styling, fonts, and UI scaling configuration.
 struct AppearancePreferences {
-    std::string themeName{"Hikari Dark"};
+    std::string themeName{"ANTERAY Dark"};
     float uiScaleFactor{1.0F};
     bool useMonospaceFontForScripts{true};
 };
