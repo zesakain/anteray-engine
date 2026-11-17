@@ -86,6 +86,20 @@
           "facingYawRadians": 0.0,
           "isGrounded": false
         },
+        "CharacterAnimation": {
+          "skeletonMeshPath": "assets/characters/player/Superhero_Male_FullBody.gltf",
+          "animationLibraryPath": "assets/animations/player/UAL1_Standard.glb",
+          "idleClip": "Idle_Loop",
+          "walkClip": "Walk_Loop",
+          "runClip": "Jog_Fwd_Loop",
+          "jumpClip": "Jump_Start",
+          "inAirClip": "Jump_Loop",
+          "landClip": "Jump_Land",
+          "walkSpeedThreshold": 0.25,
+          "runSpeedThreshold": 3.20,
+          "blendDurationSeconds": 0.14,
+          "landingDurationSeconds": 0.22
+        },
         "RigidBody": {
           "motionType": "Kinematic",
           "collisionLayer": 2
@@ -463,6 +477,23 @@
         "RigidBody": { "motionType": "Static", "collisionLayer": 0 },
         "Collider": { "type": "Box", "halfExtents": [0.3, 3.0, 4.0] },
         "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": true }
+      }
+    },
+    {
+      "id": 70,
+      "name": "LuaJumpPad",
+      "components": {
+        "Transform": {
+          "position": [0.0, 0.05, -4.0],
+          "rotation": [0.0, 0.0, 0.0, 1.0],
+          "scale": [2.2, 0.1, 2.2]
+        },
+        "Mesh": { "assetPath": "assets/models/cube.glb", "submeshIndex": 0, "visible": true, "castShadows": false },
+        "Script": {
+          "scriptName": "assets/scripts/tpp_showcase.lua",
+          "updateInterval": 0.05,
+          "enabled": true
+        }
       }
     }
   ]

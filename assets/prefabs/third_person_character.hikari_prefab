@@ -36,6 +36,20 @@
           "facingYawRadians": 0.0,
           "isGrounded": false
         },
+        "CharacterAnimation": {
+          "skeletonMeshPath": "assets/characters/player/Superhero_Male_FullBody.gltf",
+          "animationLibraryPath": "assets/animations/player/UAL1_Standard.glb",
+          "idleClip": "Idle_Loop",
+          "walkClip": "Walk_Loop",
+          "runClip": "Jog_Fwd_Loop",
+          "jumpClip": "Jump_Start",
+          "inAirClip": "Jump_Loop",
+          "landClip": "Jump_Land",
+          "walkSpeedThreshold": 0.25,
+          "runSpeedThreshold": 3.20,
+          "blendDurationSeconds": 0.14,
+          "landingDurationSeconds": 0.22
+        },
         "RigidBody": {
           "motionType": "Kinematic",
           "collisionLayer": 2
