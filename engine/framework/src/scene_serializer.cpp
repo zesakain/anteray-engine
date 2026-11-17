@@ -578,8 +578,16 @@ Result<std::string> SceneSerializer::serializeToString(
 
         // 15. ThirdPersonCameraComponent
         if (const auto* tpc = world.getComponent<ThirdPersonCameraComponent>(h)) {
+            uint64_t serializedTargetId = tpc->targetEntityId;
+            if (serializedTargetId != 0) {
+                world::EntityHandle targetHandle{serializedTargetId};
+                if (const auto* targetStable =
+                        world.getComponent<StableIdComponent>(targetHandle)) {
+                    serializedTargetId = targetStable->id;
+                }
+            }
             JsonValue tpcObj = JsonValue::makeObject();
-            tpcObj.set("targetEntityId", static_cast<int64_t>(tpc->targetEntityId));
+            tpcObj.set("targetEntityId", static_cast<int64_t>(serializedTargetId));
             tpcObj.set("yawRadians", tpc->yawRadians);
             tpcObj.set("pitchRadians", tpc->pitchRadians);
             tpcObj.set("minPitchRadians", tpc->minPitchRadians);
@@ -1174,13 +1182,22 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
         }
     }
 
-    // 6. Establish parent-child hierarchy
+    // 6. Establish parent-child hierarchy & remap entity references
     for (const auto& staged : stagedEntities) {
         if (staged.parentStableId != 0) {
             auto it = stableIdToHandle.find(staged.parentStableId);
             if (it != stableIdToHandle.end()) {
                 world::EntityHandle childHandle = stableIdToHandle[staged.stableId];
                 world.setParent(childHandle, it->second, false);
+            }
+        }
+        if (staged.thirdPersonCamera.present && staged.thirdPersonCamera.cam.targetEntityId != 0) {
+            auto it = stableIdToHandle.find(staged.thirdPersonCamera.cam.targetEntityId);
+            if (it != stableIdToHandle.end()) {
+                world::EntityHandle camHandle = stableIdToHandle[staged.stableId];
+                if (auto* tpc = world.getMutableComponent<ThirdPersonCameraComponent>(camHandle)) {
+                    tpc->targetEntityId = it->second.id;
+                }
             }
         }
     }

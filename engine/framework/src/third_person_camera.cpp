@@ -23,7 +23,14 @@ namespace {
 
     flecs::entity found{};
     ecs.each<const CharacterTag>([&found](flecs::entity e, const CharacterTag& /*tag*/) {
-        if (!found.is_valid() && e.has<world::TransformComponent>()) {
+        if (!e.has<world::TransformComponent>()) {
+            return;
+        }
+        if (e.has<PlayerControlledTag>()) {
+            found = e;
+            return;
+        }
+        if (!found.is_valid()) {
             found = e;
         }
     });

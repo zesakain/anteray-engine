@@ -504,10 +504,8 @@ void GameplayInputSystem::installDefaultThirdPersonBindings() {
 
     (void)bindAction("Gameplay", "CameraOrbitLeft", InputBinding::fromKey(platform::KeyCode::Q));
     (void)bindAction("Gameplay", "CameraOrbitRight", InputBinding::fromKey(platform::KeyCode::E));
-    (void)bindAction("Gameplay", "CameraLookX",
-                     InputBinding::fromMouseDeltaX(-0.004F, platform::MouseButton::Right));
-    (void)bindAction("Gameplay", "CameraLookY",
-                     InputBinding::fromMouseDeltaY(0.004F, platform::MouseButton::Right));
+    (void)bindAction("Gameplay", "CameraLookX", InputBinding::fromMouseDeltaX(-0.004F));
+    (void)bindAction("Gameplay", "CameraLookY", InputBinding::fromMouseDeltaY(0.004F));
 
     // Optional gamepad defaults on port 0
     (void)bindAction("Gameplay", "Jump",
