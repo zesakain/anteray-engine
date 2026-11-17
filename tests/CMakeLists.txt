@@ -139,6 +139,10 @@ add_executable(gameplay_input_test unit/framework/gameplay_input_test.cpp)
 target_link_libraries(gameplay_input_test PRIVATE hikari::engine_framework)
 add_test(NAME gameplay_input_test COMMAND gameplay_input_test)
 
+add_executable(conductor_script_test unit/framework/conductor_script_test.cpp)
+target_link_libraries(conductor_script_test PRIVATE hikari::engine_framework)
+add_test(NAME conductor_script_test COMMAND conductor_script_test)
+
 # Headless Integration / Stress Tests
 add_executable(conductor_stress_test headless/conductor_stress_test.cpp)
 target_link_libraries(conductor_stress_test PRIVATE hikari::engine_framework)
