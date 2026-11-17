@@ -576,7 +576,7 @@ Result<void> copyDirectoryFiles(const std::filesystem::path& srcDir,
 
 std::string buildReadme(const ProjectCreateRequest& req, const ProjectTemplateDesc& tmpl) {
     std::string text = "# " + req.projectName + "\n\n";
-    text += "Created with Hikari Machine Hub (`" + std::string(kCurrentEngineVersion) + "`)\n";
+    text += "Created with ANTERAY Hub (`" + std::string(kCurrentEngineVersion) + "`)\n";
     text += "Template: **" + tmpl.name + "** (`" + tmpl.id + "`)\n\n";
     text += "## Description\n\n" + tmpl.description + "\n";
 
@@ -591,7 +591,7 @@ std::string buildReadme(const ProjectCreateRequest& req, const ProjectTemplateDe
                 "(`on_init()`, `on_update(dt)`) and `Vec3` / `print` bindings.\n";
     } else if (tmpl.id == "two_state_conductor") {
         text += "\n## Two-State Conductor Architecture\n\n";
-        text += "Hikari's `Conductor` manages two standby/active time states (`StateA` and "
+        text += "ANTERAY's `Conductor` manages two standby/active time states (`StateA` and "
                 "`StateB`) over a single shared Flecs `World`. Use the Editor toolbar's "
                 "`Switch to State B` / `Play` controls to inspect transitions.\n";
     } else if (tmpl.id == "third_person_character") {
@@ -635,11 +635,11 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
             .name = "Empty Project",
             .category = "Core",
             .description =
-                "Minimal valid Hikari project layout with no sample assets or startup scene.",
+                "Minimal valid ANTERAY project layout with no sample assets or startup scene.",
             .defaultStartupScene = "",
             .capabilities = {"Valid .hikari-project manifest",
                              "Standard Assets/Scenes/Scripts/Config folders"},
-            .requirements = {"Hikari Engine 0.1.0"},
+            .requirements = {"ANTERAY ENGINE 0.1.0"},
         },
         ProjectTemplateDesc{
             .id = "basic_3d",
@@ -650,7 +650,7 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
                 "for the Editor.",
             .defaultStartupScene = "Scenes/Main.hikari",
             .capabilities = {"Transform hierarchy", "Static GroundPlane with Box Collider"},
-            .requirements = {"Hikari Engine 0.1.0", "Vulkan or Null RHI"},
+            .requirements = {"ANTERAY ENGINE 0.1.0", "Vulkan or Null RHI"},
         },
         ProjectTemplateDesc{
             .id = "rendering_benchmark",
@@ -661,7 +661,7 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
                 "repository scenes without copying large assets.",
             .defaultStartupScene = "Scenes/BenchmarkEntry.hikari",
             .capabilities = {"Lightweight entry scene", "Shared benchmark catalog references"},
-            .requirements = {"Hikari Engine 0.1.0",
+            .requirements = {"ANTERAY ENGINE 0.1.0",
                              "Optional repository test-assets/benchmark/ for full scenes"},
         },
         ProjectTemplateDesc{
@@ -673,7 +673,7 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
                 "body cube.",
             .defaultStartupScene = "Scenes/PhysicsSandbox.hikari",
             .capabilities = {"Static & Dynamic RigidBody", "Box Collider simulation"},
-            .requirements = {"Hikari Engine 0.1.0", "Jolt Physics"},
+            .requirements = {"ANTERAY ENGINE 0.1.0", "Jolt Physics"},
         },
         ProjectTemplateDesc{
             .id = "scripting_playground",
@@ -684,18 +684,18 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
                 "Vec3 math bindings.",
             .defaultStartupScene = "Scenes/ScriptingPlayground.hikari",
             .capabilities = {"Lua 5.4 ScriptComponent", "Vec3 math & print() bindings"},
-            .requirements = {"Hikari Engine 0.1.0", "Lua 5.4 runtime"},
+            .requirements = {"ANTERAY ENGINE 0.1.0", "Lua 5.4 runtime"},
         },
         ProjectTemplateDesc{
             .id = "two_state_conductor",
             .name = "Two-State Conductor Demo",
             .category = "Architecture",
-            .description = "Starter project configured to explore Hikari's Two-State Conductor "
+            .description = "Starter project configured to explore ANTERAY's Two-State Conductor "
                            "(StateA/StateB) "
                            "over a shared ECS World in the Editor.",
             .defaultStartupScene = "Scenes/ConductorDemo.hikari",
             .capabilities = {"Shared World scene", "StateA / StateB transition inspection"},
-            .requirements = {"Hikari Engine 0.1.0", "Conductor framework"},
+            .requirements = {"ANTERAY ENGINE 0.1.0", "Conductor framework"},
         },
         ProjectTemplateDesc{
             .id = "third_person_character",
@@ -711,7 +711,7 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
                              "GameplayInputSystem WASD/Space/Mouse orbit",
                              "Reusable third_person_character.hikari_prefab",
                              "Self-contained CC0 character & animation assets"},
-            .requirements = {"Hikari Engine 0.1.0", "Jolt Physics"},
+            .requirements = {"ANTERAY ENGINE 0.1.0", "Jolt Physics"},
         },
     };
     return kTemplates;

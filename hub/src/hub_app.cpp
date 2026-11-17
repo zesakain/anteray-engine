@@ -149,7 +149,7 @@ bool HubApp::initialize(rhi::RhiDevice& device, const HubConfig& config) {
         setStatus(true, "Failed to load recent projects: " + std::string(loadRes.error().message));
     }
 
-    copyStringToBuf("MyHikariProject", createProjectNameBuf_.data(), createProjectNameBuf_.size());
+    copyStringToBuf("MyAnterayProject", createProjectNameBuf_.data(), createProjectNameBuf_.size());
     const std::filesystem::path defaultProjectsRoot =
         std::filesystem::current_path(ec) / "projects";
     copyStringToBuf(defaultProjectsRoot.string(), createParentDirBuf_.data(),
@@ -343,7 +343,7 @@ void HubApp::drawSidebar() {
         ImGui::Image(static_cast<ImTextureID>(logoTextureId_), ImVec2(logoSize, logoSize));
     }
 
-    ImGui::TextColored(ImVec4(0.32F, 0.78F, 0.98F, 1.0F), "HIKARI MACHINE HUB");
+    ImGui::TextColored(ImVec4(0.32F, 0.78F, 0.98F, 1.0F), "ANTERAY HUB");
     ImGui::TextDisabled("Project Management MVP v%s", kCurrentEngineVersion.data());
     ImGui::Separator();
     ImGui::Spacing();
@@ -400,8 +400,8 @@ void HubApp::drawStatusBanner() {
 }
 
 void HubApp::drawHomeTab() {
-    ImGui::Text("Welcome to Hikari Machine Hub");
-    ImGui::TextDisabled("Create, validate, and launch Hikari Engine projects.");
+    ImGui::Text("Welcome to ANTERAY Hub");
+    ImGui::TextDisabled("Create, validate, and launch ANTERAY ENGINE projects.");
     ImGui::Spacing();
 
     if (ImGui::Button("Create New Project", ImVec2(190.0F, 38.0F))) {
@@ -735,8 +735,8 @@ void HubApp::drawSettingsTab() {
         rescanEnvironment();
         setStatus(!engineInfo_.available,
                   engineInfo_.available
-                      ? "Discovered Hikari executable: " + engineInfo_.executablePath.string()
-                      : "Could not locate Hikari executable.");
+                      ? "Discovered ANTERAY executable: " + engineInfo_.executablePath.string()
+                      : "Could not locate ANTERAY executable.");
     }
     ImGui::EndChild();
 }
@@ -771,7 +771,7 @@ void HubApp::openProjectDirectory(const std::filesystem::path& projectDir, bool 
 void HubApp::launchProjectInEditor(const std::filesystem::path& projectDir,
                                    const ProjectMetadata& metadata) {
     if (!engineInfo_.available) {
-        setStatus(true, "Cannot launch Editor: Hikari executable not found.");
+        setStatus(true, "Cannot launch Editor: ANTERAY executable not found.");
         return;
     }
     const auto args = EngineLauncher::buildProjectLaunchArgs(projectDir, metadata);
@@ -779,7 +779,7 @@ void HubApp::launchProjectInEditor(const std::filesystem::path& projectDir,
         engineInfo_.repositoryRoot.empty() ? projectDir : engineInfo_.repositoryRoot;
     auto launchRes = EngineLauncher::launchDetached(engineInfo_.executablePath, args, workDir);
     if (launchRes.hasValue()) {
-        setStatus(false, "Launched Hikari Editor (PID " + std::to_string(launchRes.value()) +
+        setStatus(false, "Launched ANTERAY Editor (PID " + std::to_string(launchRes.value()) +
                              ") for '" + metadata.projectName + "'.");
     } else {
         setStatus(true, "Failed to launch Editor: " + std::string(launchRes.error().message));
@@ -788,7 +788,7 @@ void HubApp::launchProjectInEditor(const std::filesystem::path& projectDir,
 
 void HubApp::launchSampleInEditor(const SampleEntry& sample) {
     if (!engineInfo_.available || engineInfo_.repositoryRoot.empty()) {
-        setStatus(true, "Cannot launch sample: Hikari executable or repository root unavailable.");
+        setStatus(true, "Cannot launch sample: ANTERAY executable or repository root unavailable.");
         return;
     }
     const std::filesystem::path sceneAbs = engineInfo_.repositoryRoot / sample.sceneRelativePath;
@@ -796,7 +796,7 @@ void HubApp::launchSampleInEditor(const SampleEntry& sample) {
     auto launchRes = EngineLauncher::launchDetached(engineInfo_.executablePath, args,
                                                     engineInfo_.repositoryRoot);
     if (launchRes.hasValue()) {
-        setStatus(false, "Launched sample '" + sample.name + "' in Hikari Editor (PID " +
+        setStatus(false, "Launched sample '" + sample.name + "' in ANTERAY Editor (PID " +
                              std::to_string(launchRes.value()) + ").");
     } else {
         setStatus(true, "Failed to launch sample: " + std::string(launchRes.error().message));

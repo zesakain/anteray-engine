@@ -472,13 +472,13 @@ void testThirdPersonCharacterTemplateGeneration() {
 } // namespace
 
 int main() {
-    std::cout << "Running Hikari Machine Hub core unit tests...\n";
+    std::cout << "Running ANTERAY Hub core unit tests...\n";
     testMetadataSerializationAndValidation();
     testTemplateInstantiationProtectionAndRollback();
     testProjectValidationStates();
     testRecentProjectsPersistenceAndDeduplication();
     testEngineDiscoveryLaunchArgsAndSamples();
     testThirdPersonCharacterTemplateGeneration();
-    std::cout << "All Hikari Machine Hub core tests PASSED!\n";
+    std::cout << "All ANTERAY Hub core tests PASSED!\n";
     return 0;
 }

@@ -43,14 +43,14 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--engine" && i + 1 < argc) {
             customEngine = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "Hikari Machine Hub 0.1.0\n"
+            std::cout << "ANTERAY Hub 0.1.0\n"
                       << "Usage: hikari_hub [options]\n"
                       << "  --headless         Run without OS window (Null RHI)\n"
                       << "  --frames <N>       Exit cleanly after N frames\n"
                       << "  --width <W>        Window width (default 1120)\n"
                       << "  --height <H>       Window height (default 720)\n"
                       << "  --recents <path>   Override recent-projects JSON path\n"
-                      << "  --engine <path>    Override Hikari executable path\n";
+                      << "  --engine <path>    Override ANTERAY executable path\n";
             return 0;
         }
     }
@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
 
     if (!headless) {
         eng::platform::WindowDesc winDesc{
-            .title = "Hikari Machine Hub",
+            .title = "ANTERAY Hub",
             .width = windowWidth,
             .height = windowHeight,
             .resizable = true,
