@@ -4,7 +4,7 @@ An experimental C++20 3D game engine targeting fast-paced action games, architec
 
 Repository: [https://github.com/zesakain/hikari-machine](https://github.com/zesakain/hikari-machine)  
 License: [Apache 2.0](LICENSE)
-
+Discord: https://discord.gg/b2rhWTj5FE
 ---
 
 ## 1. Project Overview
