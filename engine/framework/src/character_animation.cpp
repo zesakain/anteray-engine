@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -49,6 +50,21 @@ findClipByName(const std::vector<anim::AnimationClip>& clips, std::string_view n
     return nullptr;
 }
 
+[[nodiscard]] std::string resolveAssetPath(std::string_view path) {
+    std::filesystem::path p(path);
+    std::error_code ec;
+    if (std::filesystem::exists(p, ec)) {
+        return p.string();
+    }
+    for (int d = 0; d < 4; ++d) {
+        p = std::filesystem::path("..") / p;
+        if (std::filesystem::exists(p, ec)) {
+            return p.string();
+        }
+    }
+    return std::string(path);
+}
+
 [[nodiscard]] const LoadedAnimationBundle* getOrLoadBundle(CharacterAnimationAssetCache& cache,
                                                            const CharacterAnimationComponent& cfg) {
     if (cfg.skeletonMeshPath.empty()) {
@@ -63,7 +79,8 @@ findClipByName(const std::vector<anim::AnimationClip>& clips, std::string_view n
     auto [insertedIt, _] = cache.bundles.emplace(key, LoadedAnimationBundle{});
     LoadedAnimationBundle& bundle = insertedIt->second;
 
-    auto meshRes = render::GltfImporter::importFromFile(cfg.skeletonMeshPath);
+    const std::string resolvedMeshPath = resolveAssetPath(cfg.skeletonMeshPath);
+    auto meshRes = render::GltfImporter::importFromFile(resolvedMeshPath);
     if (!meshRes.hasValue() || !meshRes.value().skeleton.has_value()) {
         ENG_LOG_WARN("Animation", "Failed to load character skeleton from glTF asset");
         return nullptr;
@@ -72,8 +89,9 @@ findClipByName(const std::vector<anim::AnimationClip>& clips, std::string_view n
     bundle.skeleton = std::move(*meshRes.value().skeleton);
 
     if (!cfg.animationLibraryPath.empty()) {
-        auto animRes = render::GltfImporter::importAnimationsFromFile(cfg.animationLibraryPath,
-                                                                      bundle.skeleton);
+        const std::string resolvedAnimPath = resolveAssetPath(cfg.animationLibraryPath);
+        auto animRes =
+            render::GltfImporter::importAnimationsFromFile(resolvedAnimPath, bundle.skeleton);
         if (animRes.hasValue()) {
             bundle.clips = std::move(animRes.value());
         } else {
@@ -114,8 +132,7 @@ findClipByName(const std::vector<anim::AnimationClip>& clips, std::string_view n
     return bundle.idle;
 }
 
-void bindEntityAnimation(flecs::entity e, CharacterAnimationComponent& charAnim,
-                         const LoadedAnimationBundle& bundle) {
+void bindEntityAnimation(flecs::entity e, const LoadedAnimationBundle& bundle) {
     if (!e.has<anim::SkeletonComponent>()) {
         e.set<anim::SkeletonComponent>(anim::SkeletonComponent{.skeleton = &bundle.skeleton});
     } else {
@@ -129,15 +146,18 @@ void bindEntityAnimation(flecs::entity e, CharacterAnimationComponent& charAnim,
         e.set<anim::SkinningPaletteComponent>({});
     }
 
-    auto* animComp = e.get_mut<anim::AnimationComponent>();
-    if (animComp != nullptr && bundle.idle != nullptr) {
-        animComp->controller.play(bundle.idle, true, 1.0F);
+    if (auto* animComp = e.get_mut<anim::AnimationComponent>()) {
+        if (bundle.idle != nullptr) {
+            animComp->controller.play(bundle.idle, true, 1.0F);
+        }
     }
-    charAnim.currentState = LocomotionAnimState::Idle;
-    charAnim.landingTimerSeconds = 0.0F;
-    charAnim.wasGrounded = true;
-    charAnim.initialized = true;
-    charAnim.cachedBundle = &bundle;
+    if (auto* charAnim = e.get_mut<CharacterAnimationComponent>()) {
+        charAnim->currentState = LocomotionAnimState::Idle;
+        charAnim->landingTimerSeconds = 0.0F;
+        charAnim->wasGrounded = true;
+        charAnim->initialized = true;
+        charAnim->cachedBundle = &bundle;
+    }
 }
 
 } // namespace
@@ -157,14 +177,23 @@ void resolveCharacterAnimationAssets(world::World& world) {
         return;
     }
 
+    struct PendingBind {
+        flecs::entity entity;
+        const LoadedAnimationBundle* bundle{nullptr};
+    };
+    std::vector<PendingBind> pending;
     ecs.each<CharacterAnimationComponent>(
-        [cache](flecs::entity e, CharacterAnimationComponent& ca) {
+        [cache, &pending](flecs::entity e, CharacterAnimationComponent& ca) {
             if (!ca.initialized) {
                 if (const auto* bundle = getOrLoadBundle(*cache, ca)) {
-                    bindEntityAnimation(e, ca, *bundle);
+                    pending.push_back(PendingBind{.entity = e, .bundle = bundle});
                 }
             }
         });
+
+    for (const auto& item : pending) {
+        bindEntityAnimation(item.entity, *item.bundle);
+    }
 }
 
 void registerCharacterAnimationSystems(world::World& world) {

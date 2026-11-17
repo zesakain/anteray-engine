@@ -443,9 +443,11 @@ void ScriptEngine::setupSandbox() {
                                         {LUA_DBLIBNAME, nullptr}, // debug stripped
                                         {nullptr, nullptr}};
 
-    for (const luaL_Reg* lib = safeLibs; lib->func != nullptr; ++lib) {
-        luaL_requiref(luaState_, lib->name, lib->func, 1);
-        lua_pop(luaState_, 1);
+    for (const luaL_Reg* lib = safeLibs; lib->name != nullptr; ++lib) {
+        if (lib->func != nullptr) {
+            luaL_requiref(luaState_, lib->name, lib->func, 1);
+            lua_pop(luaState_, 1);
+        }
     }
 
     // Explicitly purge hazardous base globals
@@ -581,6 +583,14 @@ void ScriptEngine::registerWorldBindings() {
         if (engine == nullptr || engine->boundWorld() == nullptr || name == nullptr) {
             lua_pushnil(L);
             return 1;
+        }
+        const std::string_view targetName(name);
+        for (const auto h : engine->boundWorld()->getAllEntities()) {
+            if (engine->boundWorld()->isAlive(h) &&
+                engine->boundWorld()->getEntityName(h) == targetName) {
+                pushScriptValue(L, h);
+                return 1;
+            }
         }
         flecs::entity found = engine->boundWorld()->getRawWorld().lookup(name);
         if (!found.is_valid() || !found.is_alive()) {

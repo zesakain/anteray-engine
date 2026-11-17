@@ -93,7 +93,7 @@ int32_t luaCharRequestJump(script::ScriptCallContext& ctx, void* /*ud*/) {
     }
     if (auto* intent =
             gBindingCtx.world->getMutableComponent<CharacterMovementIntentComponent>(ent)) {
-        intent->jumpRequested = true;
+        intent->scriptJumpRequested = true;
         ctx.pushBool(true);
     } else {
         ctx.pushBool(false);

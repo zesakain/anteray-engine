@@ -35,7 +35,12 @@ void registerScriptSystems(world::World& world, ScriptEngine& scriptEngine,
                 }
 
                 world::EntityHandle handle{e.id()};
-                auto result = scriptEngine.callEntityUpdate(comp.scriptName, handle, dt);
+                const std::string_view scriptView(comp.scriptName);
+                const std::string_view funcName =
+                    (scriptView.find(".lua") != std::string_view::npos)
+                        ? std::string_view("on_update")
+                        : scriptView;
+                auto result = scriptEngine.callEntityUpdate(funcName, handle, dt);
                 if (!result.hasValue()) {
                     // Isolate failure: log error once and disable component to prevent frame log
                     // spam

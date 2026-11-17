@@ -245,9 +245,13 @@ end
         for (auto h : entities) {
             const auto* sc = runtimeWorld->getComponent<script::ScriptComponent>(h);
             if (sc != nullptr && sc->enabled && sc->scriptName[0] != '\0') {
+                std::filesystem::path scriptPath(sc->scriptName);
                 std::error_code ec;
-                if (std::filesystem::exists(sc->scriptName, ec)) {
-                    auto loadRes = runtimeScriptEngine->loadScriptFile(sc->scriptName);
+                for (int d = 0; d < 4 && !std::filesystem::exists(scriptPath, ec); ++d) {
+                    scriptPath = std::filesystem::path("..") / scriptPath;
+                }
+                if (std::filesystem::exists(scriptPath, ec)) {
+                    auto loadRes = runtimeScriptEngine->loadScriptFile(scriptPath.string());
                     if (loadRes.hasValue()) {
                         (void)runtimeScriptEngine->callEntityHook("on_init", h);
                     } else {

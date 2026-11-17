@@ -255,8 +255,10 @@ void stepCharacterFixed(physics::PhysicsWorld& physicsWorld, const CharacterConf
             (std::abs(deltaYaw) <= maxStep ? deltaYaw : (deltaYaw > 0.0F ? maxStep : -maxStep)));
     }
 
-    // 4. Jump (edge-triggered when grounded)
-    if (intent.jumpRequested && !state.wasJumpPressed && state.isGrounded) {
+    // 4. Jump (edge-triggered when grounded, or one-shot script jump request)
+    const bool wantJump =
+        (intent.jumpRequested && !state.wasJumpPressed) || intent.scriptJumpRequested;
+    if (wantJump && state.isGrounded) {
         state.velocityMetersPerSec.y = cfg.jumpSpeedMetersPerSec;
         state.isGrounded = false;
     }
@@ -491,6 +493,9 @@ void registerCharacterControllerSystems(world::World& world, physics::PhysicsWor
                         for (uint32_t s = 0; s < substeps; ++s) {
                             stepCharacterFixed(physicsWorld, cfgCol[i], st, intent, shape,
                                                bodyHandle, fixedDt);
+                        }
+                        if (auto* intentMut = e.get_mut<CharacterMovementIntentComponent>()) {
+                            intentMut->scriptJumpRequested = false;
                         }
 
                         const Quat facingQuat =

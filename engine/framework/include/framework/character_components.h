@@ -92,6 +92,7 @@ struct CharacterMovementIntentComponent {
     /// Horizontal movement axis in camera space: x = right [-1, 1], y = forward [-1, 1].
     Vec2 moveAxis{0.0F, 0.0F};
     bool jumpRequested{false};
+    bool scriptJumpRequested{false};
     float cameraYawRadians{0.0F};
     bool hasCameraYaw{false};
 };
