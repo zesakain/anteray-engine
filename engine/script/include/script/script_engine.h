@@ -86,6 +86,11 @@ public:
     /// Safely reloads a .lua script file from disk (non-hot path).
     [[nodiscard]] Result<void, ScriptError> reloadScriptFile(std::string_view filePath);
 
+    /// Checks whether a global Lua function with the given name exists and is callable.
+    ///
+    /// Cost: Zero heap allocations for names shorter than 128 bytes; safe in the hot path.
+    [[nodiscard]] bool hasFunction(std::string_view funcName) const noexcept;
+
     /// Calls a global Lua function by name with typed arguments.
     ///
     /// @param funcName Name of the global function to invoke.

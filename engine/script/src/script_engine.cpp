@@ -726,6 +726,24 @@ Result<void, ScriptError> ScriptEngine::loadScript(std::string_view scriptName,
     return Result<void, ScriptError>::success();
 }
 
+bool ScriptEngine::hasFunction(std::string_view funcName) const noexcept {
+    if (luaState_ == nullptr || funcName.empty()) {
+        return false;
+    }
+    if (funcName.size() < 128) {
+        char buf[128];
+        std::memcpy(buf, funcName.data(), funcName.size());
+        buf[funcName.size()] = '\0';
+        const int type = lua_getglobal(luaState_, buf);
+        lua_pop(luaState_, 1);
+        return type == LUA_TFUNCTION;
+    }
+    const std::string nameStr(funcName);
+    const int type = lua_getglobal(luaState_, nameStr.c_str());
+    lua_pop(luaState_, 1);
+    return type == LUA_TFUNCTION;
+}
+
 Result<ScriptValue, ScriptError> ScriptEngine::callFunction(std::string_view funcName,
                                                             std::span<const ScriptValue> args) {
     if (luaState_ == nullptr) {
