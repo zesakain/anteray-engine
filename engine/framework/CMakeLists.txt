@@ -8,6 +8,7 @@ add_library(engine_framework STATIC
     src/character_components.cpp
     src/character_controller.cpp
     src/conductor.cpp
+    src/framework_script_bindings.cpp
     src/gameplay_input.cpp
     src/prefab.cpp
     src/runtime_session.cpp

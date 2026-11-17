@@ -9,6 +9,7 @@
 #include "framework/character_components.h"
 #include "framework/character_controller.h"
 #include "framework/conductor.h"
+#include "framework/framework_script_bindings.h"
 #include "framework/scene_serializer.h"
 #include "framework/third_person_camera.h"
 #include "physics/physics_components.h"
@@ -17,6 +18,8 @@
 #include "script/script_engine.h"
 #include "world/hierarchy_systems.h"
 #include "world/world.h"
+
+#include <filesystem>
 
 namespace eng::framework {
 
@@ -237,6 +240,23 @@ end
             return Result<void>::failure(condRes.error());
         }
 
+        (void)registerFrameworkScriptBindings(*runtimeScriptEngine, *runtimeWorld,
+                                              runtimeConductor.get());
+        for (auto h : entities) {
+            const auto* sc = runtimeWorld->getComponent<script::ScriptComponent>(h);
+            if (sc != nullptr && sc->enabled && sc->scriptName[0] != '\0') {
+                std::error_code ec;
+                if (std::filesystem::exists(sc->scriptName, ec)) {
+                    auto loadRes = runtimeScriptEngine->loadScriptFile(sc->scriptName);
+                    if (loadRes.hasValue()) {
+                        (void)runtimeScriptEngine->callEntityHook("on_init", h);
+                    } else {
+                        ENG_LOG_WARN("RuntimeSession", "Failed to load Lua script file");
+                    }
+                }
+            }
+        }
+
         state = SimulationState::Playing;
         ENG_LOG_INFO("RuntimeSession",
                      "Runtime simulation started successfully in isolated Runtime World");
@@ -324,6 +344,9 @@ end
                 runtimeWorld->progress(static_cast<float>(delta.toSeconds()));
             } else if (editWorld) {
                 editWorld->progress(static_cast<float>(delta.toSeconds()));
+            }
+            if (runtimeScriptEngine && runtimeScriptEngine->isInitialized()) {
+                runtimeScriptEngine->stepGarbageCollector(50);
             }
         }
     }
