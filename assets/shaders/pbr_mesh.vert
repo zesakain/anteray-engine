@@ -13,10 +13,6 @@ layout(push_constant) uniform PushConstants {
     mat4 model;
 } pc;
 
-layout(std140, set = 1, binding = 0) uniform LightingData {
-    mat4 cascadeLightSpaceMatrices[4];
-} uLighting;
-
 layout(std140, set = 2, binding = 0) uniform SkinningData {
     uint boneCount;
     uint pad0;
@@ -30,7 +26,6 @@ layout(location = 1) out vec3 outNormal;
 layout(location = 2) out vec2 outUV;
 layout(location = 3) out vec4 outColor;
 layout(location = 4) out vec4 outTangent;
-layout(location = 5) out vec3 outShadowCoord;
 
 mat4 computeSkinMatrix() {
     if (uSkin.boneCount == 0u) {
@@ -60,22 +55,24 @@ void main() {
 
     mat3 m = mat3(pc.model);
     float det = determinant(m);
-    mat3 normalMatrix = (abs(det) > 1e-7) ? transpose(inverse(m)) : m;
+    // Cofactor matrix avoids 3x3 inverse() division; worldNorm is normalized below.
+    mat3 cofactorM = mat3(
+        cross(m[1], m[2]),
+        cross(m[2], m[0]),
+        cross(m[0], m[1])
+    );
+    mat3 normalMatrix = (abs(det) > 1e-7) ? (cofactorM * (det < 0.0 ? -1.0 : 1.0)) : m;
 
     outWorldPos = worldPos.xyz;
     vec3 worldNorm = normalMatrix * skinnedNormal;
-    float normLen = length(worldNorm);
-    outNormal = (normLen > 1e-6) ? (worldNorm / normLen) : vec3(0.0, 1.0, 0.0);
+    float normLenSq = dot(worldNorm, worldNorm);
+    outNormal = (normLenSq > 1e-12) ? (worldNorm * inversesqrt(normLenSq)) : vec3(0.0, 1.0, 0.0);
     outUV = inUV;
     outColor = inColor;
 
     // Transform surface tangent vectors via model linear transform
     vec3 worldTan = m * skinnedTangent;
-    float tanLen = length(worldTan);
-    outTangent = vec4(tanLen > 1e-6 ? (worldTan / tanLen) : vec3(1.0, 0.0, 0.0),
+    float tanLenSq = dot(worldTan, worldTan);
+    outTangent = vec4(tanLenSq > 1e-12 ? (worldTan * inversesqrt(tanLenSq)) : vec3(1.0, 0.0, 0.0),
                       inTangent.w * (det < 0.0 ? -1.0 : 1.0));
-
-    // Compute light-space coordinates for primary directional cascade
-    vec4 lpos = uLighting.cascadeLightSpaceMatrices[0] * worldPos;
-    outShadowCoord = lpos.xyz;
 }

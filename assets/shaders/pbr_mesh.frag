@@ -5,7 +5,6 @@ layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUV;
 layout(location = 3) in vec4 inColor;
 layout(location = 4) in vec4 inTangent;
-layout(location = 5) in vec3 inShadowCoord;
 
 layout(location = 0) out vec4 outColor;
 
@@ -615,13 +614,14 @@ void main() {
             vec3 lightPos = uLighting.pointLights[i].positionAndRange.xyz;
             float range = uLighting.pointLights[i].positionAndRange.w;
             vec3 toLight = lightPos - inWorldPos;
-            float dist = length(toLight);
-            if (dist < range && dist > 0.0001) {
-                vec3 L = toLight / dist;
+            float distSq = dot(toLight, toLight);
+            if (distSq < range * range && distSq > 1e-8) {
+                float invDist = inversesqrt(distSq);
+                float dist = distSq * invDist;
+                vec3 L = toLight * invDist;
                 float NdotL = max(dot(N, L), 0.0);
                 if (NdotL > 0.0) {
-                    float distSq = max(dist * dist, 0.0001);
-                    float atten = 1.0 / distSq;
+                    float atten = 1.0 / max(distSq, 0.0001);
                     float factor = dist / range;
                     float window = clamp(1.0 - factor * factor * factor * factor, 0.0, 1.0);
                     atten *= (window * window);
@@ -645,9 +645,11 @@ void main() {
             vec3 lightPos = uLighting.spotLights[i].positionAndRange.xyz;
             float range = uLighting.spotLights[i].positionAndRange.w;
             vec3 toLight = lightPos - inWorldPos;
-            float dist = length(toLight);
-            if (dist < range && dist > 0.0001) {
-                vec3 L = toLight / dist;
+            float distSq = dot(toLight, toLight);
+            if (distSq < range * range && distSq > 1e-8) {
+                float invDist = inversesqrt(distSq);
+                float dist = distSq * invDist;
+                vec3 L = toLight * invDist;
                 float NdotL = max(dot(N, L), 0.0);
                 if (NdotL > 0.0) {
                     vec3 spotDir = normalize(uLighting.spotLights[i].directionAndIntensity.xyz);
@@ -660,8 +662,7 @@ void main() {
                     spotAtten = spotAtten * spotAtten;
 
                     if (spotAtten > 0.0) {
-                        float distSq = max(dist * dist, 0.0001);
-                        float distAtten = 1.0 / distSq;
+                        float distAtten = 1.0 / max(distSq, 0.0001);
                         float factor = dist / range;
                         float window = clamp(1.0 - factor * factor * factor * factor, 0.0, 1.0);
                         distAtten *= (window * window);
@@ -686,9 +687,12 @@ void main() {
     if (material.hasOcclusionTex != 0u) {
         materialOcclusion = mix(1.0, texture(uOcclusionMap, inUV).r, material.occlusionStrength);
     }
-    vec2 screenSize = vec2(textureSize(uAoMap, 0));
-    vec2 screenUV = gl_FragCoord.xy / max(screenSize, vec2(1.0));
-    float screenAo = texture(uAoMap, screenUV).r;
+    vec2 screenUV = vec2(0.0);
+    if (uLighting.giParams.w > 0.001 || uLighting.giParams.x > 0.5 || uLighting.ssrParams.x > 0.5) {
+        vec2 screenSize = vec2(textureSize(uAoMap, 0));
+        screenUV = gl_FragCoord.xy / max(screenSize, vec2(1.0));
+    }
+    float screenAo = (uLighting.giParams.w > 0.001) ? texture(uAoMap, screenUV).r : 1.0;
     float finalOcclusion = materialOcclusion * mix(1.0, screenAo, uLighting.giParams.w);
 
     // 7. Ambient / Image-Based Lighting (IBL) & Screen-Space Indirect GI Term
