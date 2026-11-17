@@ -153,6 +153,13 @@ std::string buildReadme(const ProjectCreateRequest& req, const ProjectTemplateDe
         text += "Hikari's `Conductor` manages two standby/active time states (`StateA` and "
                 "`StateB`) over a single shared Flecs `World`. Use the Editor toolbar's "
                 "`Switch to State B` / `Play` controls to inspect transitions.\n";
+    } else if (tmpl.id == "third_person_character") {
+        text += "\n## Third-Person Character Template\n\n";
+        text +=
+            "Includes a reusable character prefab (`Assets/Prefabs/third_person_character."
+            "hikari_prefab`) separating Character Core (`CharacterConfig`, `CharacterState`, "
+            "`RigidBody`, `Collider`), Input/Movement (`CharacterMovementIntent`), Camera "
+            "(`ThirdPersonCamera`), Animation (`CharacterAnimation`), and Appearance (`Mesh`).\n";
     }
     return text;
 }
@@ -255,7 +262,8 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
             .defaultStartupScene = "Scenes/ThirdPersonTest.hikari",
             .capabilities = {"Physics-based CharacterController",
                              "ThirdPersonCamera follow & raycast",
-                             "GameplayInputSystem WASD/Space/Mouse orbit"},
+                             "GameplayInputSystem WASD/Space/Mouse orbit",
+                             "Reusable third_person_character.hikari_prefab"},
             .requirements = {"Hikari Engine 0.1.0", "Jolt Physics"},
         },
     };
@@ -413,6 +421,36 @@ Result<ProjectCreateResult> TemplateRegistry::createProject(const ProjectCreateR
             return writeRes.error();
         }
         result.createdPaths.push_back(cfgPath);
+    } else if (tmpl.id == "third_person_character") {
+        std::filesystem::path prefabProbe =
+            std::filesystem::path("assets/prefabs/third_person_character.hikari_prefab");
+        std::string prefabContent;
+        for (int depth = 0; depth < 4; ++depth) {
+            std::ifstream pIn(prefabProbe, std::ios::in | std::ios::binary);
+            if (pIn.is_open()) {
+                prefabContent.assign(std::istreambuf_iterator<char>(pIn),
+                                     std::istreambuf_iterator<char>());
+                break;
+            }
+            prefabProbe = std::filesystem::path("..") / prefabProbe;
+        }
+        if (!prefabContent.empty()) {
+            const std::filesystem::path prefabsDir = projectDir / "Assets" / "Prefabs";
+            if (!std::filesystem::create_directories(prefabsDir, ec) && ec) {
+                rollback();
+                return Error{.code = ErrorCode::InvalidState,
+                             .message = "Failed to create Assets/Prefabs directory"};
+            }
+            result.createdPaths.push_back(prefabsDir);
+            const std::filesystem::path prefabOut =
+                prefabsDir / "third_person_character.hikari_prefab";
+            auto writeRes = writeTextFile(prefabOut, prefabContent);
+            if (!writeRes.hasValue()) {
+                rollback();
+                return writeRes.error();
+            }
+            result.createdPaths.push_back(prefabOut);
+        }
     } else if (tmpl.id == "two_state_conductor") {
         core::JsonValue condCfg = core::JsonValue::makeObject();
         condCfg.set("architecture", "Two-State Conductor (StateA / StateB over shared World)");
@@ -426,6 +464,36 @@ Result<ProjectCreateResult> TemplateRegistry::createProject(const ProjectCreateR
             return writeRes.error();
         }
         result.createdPaths.push_back(cfgPath);
+    } else if (tmpl.id == "third_person_character") {
+        std::filesystem::path prefabProbe =
+            std::filesystem::path("assets/prefabs/third_person_character.hikari_prefab");
+        std::string prefabContent;
+        for (int depth = 0; depth < 4; ++depth) {
+            std::ifstream pIn(prefabProbe, std::ios::in | std::ios::binary);
+            if (pIn.is_open()) {
+                prefabContent.assign(std::istreambuf_iterator<char>(pIn),
+                                     std::istreambuf_iterator<char>());
+                break;
+            }
+            prefabProbe = std::filesystem::path("..") / prefabProbe;
+        }
+        if (!prefabContent.empty()) {
+            const std::filesystem::path prefabsDir = projectDir / "Assets" / "Prefabs";
+            if (!std::filesystem::create_directories(prefabsDir, ec) && ec) {
+                rollback();
+                return Error{.code = ErrorCode::InvalidState,
+                             .message = "Failed to create Assets/Prefabs directory"};
+            }
+            result.createdPaths.push_back(prefabsDir);
+            const std::filesystem::path prefabOut =
+                prefabsDir / "third_person_character.hikari_prefab";
+            auto writeRes = writeTextFile(prefabOut, prefabContent);
+            if (!writeRes.hasValue()) {
+                rollback();
+                return writeRes.error();
+            }
+            result.createdPaths.push_back(prefabOut);
+        }
     }
 
     // Write <ProjectName>.hikari-project manifest last
