@@ -45,6 +45,16 @@ bool pathsMatch(const std::filesystem::path& a, const std::filesystem::path& b) 
 
 std::filesystem::path RecentProjectsStore::defaultStoragePath() {
     if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg != nullptr && xdg[0] != '\0') {
+        return std::filesystem::path(xdg) / "anteray" / "hub_recent_projects.json";
+    }
+    if (const char* home = std::getenv("HOME"); home != nullptr && home[0] != '\0') {
+        return std::filesystem::path(home) / ".config" / "anteray" / "hub_recent_projects.json";
+    }
+    return std::filesystem::current_path() / "hub_recent_projects.json";
+}
+
+std::filesystem::path RecentProjectsStore::legacyStoragePath() {
+    if (const char* xdg = std::getenv("XDG_CONFIG_HOME"); xdg != nullptr && xdg[0] != '\0') {
         return std::filesystem::path(xdg) / "hikari" / "hub_recent_projects.json";
     }
     if (const char* home = std::getenv("HOME"); home != nullptr && home[0] != '\0') {
@@ -57,11 +67,20 @@ Result<void> RecentProjectsStore::load(const std::filesystem::path& storagePath)
     entries_.clear();
 
     std::error_code ec;
-    if (!std::filesystem::exists(storagePath, ec)) {
-        return Result<void>::success();
+    std::filesystem::path effectivePath = storagePath;
+    if (!std::filesystem::exists(effectivePath, ec)) {
+        // Non-destructive fallback: read legacy Hikari recents only when the ANTERAY file does
+        // not yet exist.
+        const std::filesystem::path legacyPath = legacyStoragePath();
+        if (pathsMatch(storagePath, defaultStoragePath()) &&
+            std::filesystem::exists(legacyPath, ec)) {
+            effectivePath = legacyPath;
+        } else {
+            return Result<void>::success();
+        }
     }
 
-    std::ifstream file(storagePath, std::ios::in | std::ios::binary);
+    std::ifstream file(effectivePath, std::ios::in | std::ios::binary);
     if (!file.is_open()) {
         return Error{.code = ErrorCode::InvalidState,
                      .message = "Unable to open recent projects file"};

@@ -39,7 +39,7 @@ std::string buildSceneJson(std::string_view sceneName, bool includeGround, bool 
 
     core::JsonValue meta = core::JsonValue::makeObject();
     meta.set("name", sceneName);
-    meta.set("generator", "Hikari Machine Hub 0.1.0");
+    meta.set("generator", "ANTERAY Hub 0.1.0");
     meta.set("timestamp", currentUnixTimestamp());
     root.set("metadata", std::move(meta));
 
@@ -139,7 +139,7 @@ std::string buildCleanTppSceneJson(std::string_view sceneName) {
 
     core::JsonValue meta = core::JsonValue::makeObject();
     meta.set("name", sceneName);
-    meta.set("generator", "Hikari Machine Hub 0.1.0");
+    meta.set("generator", "ANTERAY Hub 0.1.0");
     meta.set("timestamp", currentUnixTimestamp());
     root.set("metadata", std::move(meta));
 
@@ -598,9 +598,9 @@ std::string buildReadme(const ProjectCreateRequest& req, const ProjectTemplateDe
         text += "\n## Third-Person Character Template\n\n";
         text +=
             "Self-contained third-person character starter project:\n"
-            "- `Scenes/ThirdPersonTest.hikari`: clean ground + practice step + `PlayerCharacter` "
+            "- `Scenes/ThirdPersonTest.anteray`: clean ground + practice step + `PlayerCharacter` "
             "with `ThirdPersonCamera`\n"
-            "- `Assets/Prefabs/third_person_character.hikari_prefab`: reusable character prefab "
+            "- `Assets/Prefabs/third_person_character.anteray_prefab`: reusable character prefab "
             "separating Character Core, Movement Intent, Camera, Animation, and Appearance\n"
             "- `Config/input_bindings.json`: editable default WASD / Space / Mouse bindings\n"
             "- `Assets/Characters/Player/` & `Assets/Animations/Player/`: copied CC0 1.0 example "
@@ -637,7 +637,7 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
             .description =
                 "Minimal valid ANTERAY project layout with no sample assets or startup scene.",
             .defaultStartupScene = "",
-            .capabilities = {"Valid .hikari-project manifest",
+            .capabilities = {"Valid .anteray-project manifest",
                              "Standard Assets/Scenes/Scripts/Config folders"},
             .requirements = {"ANTERAY ENGINE 0.1.0"},
         },
@@ -648,7 +648,7 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
             .description =
                 "Minimal 3D scene with a camera rig, static ground plane, and box collider ready "
                 "for the Editor.",
-            .defaultStartupScene = "Scenes/Main.hikari",
+            .defaultStartupScene = "Scenes/Main.anteray",
             .capabilities = {"Transform hierarchy", "Static GroundPlane with Box Collider"},
             .requirements = {"ANTERAY ENGINE 0.1.0", "Vulkan or Null RHI"},
         },
@@ -659,7 +659,7 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
             .description =
                 "Entry point for rendering experiments with benchmark references to shared "
                 "repository scenes without copying large assets.",
-            .defaultStartupScene = "Scenes/BenchmarkEntry.hikari",
+            .defaultStartupScene = "Scenes/BenchmarkEntry.anteray",
             .capabilities = {"Lightweight entry scene", "Shared benchmark catalog references"},
             .requirements = {"ANTERAY ENGINE 0.1.0",
                              "Optional repository test-assets/benchmark/ for full scenes"},
@@ -671,7 +671,7 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
             .description =
                 "Minimal Jolt Physics sandbox containing a static ground plane and dynamic rigid "
                 "body cube.",
-            .defaultStartupScene = "Scenes/PhysicsSandbox.hikari",
+            .defaultStartupScene = "Scenes/PhysicsSandbox.anteray",
             .capabilities = {"Static & Dynamic RigidBody", "Box Collider simulation"},
             .requirements = {"ANTERAY ENGINE 0.1.0", "Jolt Physics"},
         },
@@ -682,7 +682,7 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
             .description =
                 "Minimal Lua 5.4 scripting setup using verified on_init/on_update callbacks and "
                 "Vec3 math bindings.",
-            .defaultStartupScene = "Scenes/ScriptingPlayground.hikari",
+            .defaultStartupScene = "Scenes/ScriptingPlayground.anteray",
             .capabilities = {"Lua 5.4 ScriptComponent", "Vec3 math & print() bindings"},
             .requirements = {"ANTERAY ENGINE 0.1.0", "Lua 5.4 runtime"},
         },
@@ -693,7 +693,7 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
             .description = "Starter project configured to explore ANTERAY's Two-State Conductor "
                            "(StateA/StateB) "
                            "over a shared ECS World in the Editor.",
-            .defaultStartupScene = "Scenes/ConductorDemo.hikari",
+            .defaultStartupScene = "Scenes/ConductorDemo.anteray",
             .capabilities = {"Shared World scene", "StateA / StateB transition inspection"},
             .requirements = {"ANTERAY ENGINE 0.1.0", "Conductor framework"},
         },
@@ -705,11 +705,11 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
                 "Clean, self-contained third-person character starter with CharacterController, "
                 "ThirdPersonCamera, GameplayInputSystem defaults, skeletal locomotion, and "
                 "replaceable character appearance.",
-            .defaultStartupScene = "Scenes/ThirdPersonTest.hikari",
+            .defaultStartupScene = "Scenes/ThirdPersonTest.anteray",
             .capabilities = {"Physics-based CharacterController",
                              "ThirdPersonCamera follow & raycast",
                              "GameplayInputSystem WASD/Space/Mouse orbit",
-                             "Reusable third_person_character.hikari_prefab",
+                             "Reusable third_person_character.anteray_prefab",
                              "Self-contained CC0 character & animation assets"},
             .requirements = {"ANTERAY ENGINE 0.1.0", "Jolt Physics"},
         },
@@ -866,7 +866,8 @@ Result<ProjectCreateResult> TemplateRegistry::createProject(const ProjectCreateR
                          .message = "Failed to create Assets/Prefabs directory"};
         }
         result.createdPaths.push_back(prefabsDir);
-        const std::filesystem::path prefabOut = prefabsDir / "third_person_character.hikari_prefab";
+        const std::filesystem::path prefabOut =
+            prefabsDir / "third_person_character.anteray_prefab";
         auto writePrefabRes = writeTextFile(prefabOut, buildProjectTppPrefabJson());
         if (!writePrefabRes.hasValue()) {
             rollback();
@@ -944,7 +945,8 @@ Result<ProjectCreateResult> TemplateRegistry::createProject(const ProjectCreateR
                          .message = "Failed to create Assets/Prefabs directory"};
         }
         result.createdPaths.push_back(prefabsDir);
-        const std::filesystem::path prefabOut = prefabsDir / "third_person_character.hikari_prefab";
+        const std::filesystem::path prefabOut =
+            prefabsDir / "third_person_character.anteray_prefab";
         auto writePrefabRes = writeTextFile(prefabOut, buildProjectTppPrefabJson());
         if (!writePrefabRes.hasValue()) {
             rollback();
@@ -1002,7 +1004,7 @@ Result<ProjectCreateResult> TemplateRegistry::createProject(const ProjectCreateR
         }
     }
 
-    // Write <ProjectName>.hikari-project manifest last
+    // Write <ProjectName>.anteray-project manifest last
     const int64_t nowTs = currentUnixTimestamp();
     ProjectMetadata metadata{};
     metadata.formatVersion = kCurrentProjectFormatVersion;

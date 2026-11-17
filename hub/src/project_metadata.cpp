@@ -301,18 +301,20 @@ findProjectManifestInDirectory(const std::filesystem::path& projectDir) {
             return Error{.code = ErrorCode::InvalidState,
                          .message = "Failed to scan project directory"};
         }
-        if (entry.is_regular_file(ec) && entry.path().extension() == kProjectFileExtension) {
+        if (entry.is_regular_file(ec) &&
+            isSupportedProjectManifestExtension(entry.path().extension().string())) {
             found.push_back(entry.path());
         }
     }
 
     if (found.empty()) {
         return Error{.code = ErrorCode::InvalidState,
-                     .message = "No .hikari-project manifest found in directory"};
+                     .message =
+                         "No .anteray-project or .hikari-project manifest found in directory"};
     }
     if (found.size() > 1U) {
         return Error{.code = ErrorCode::InvalidArgument,
-                     .message = "Multiple .hikari-project manifests found in directory"};
+                     .message = "Multiple project manifests found in directory"};
     }
     return found.front();
 }

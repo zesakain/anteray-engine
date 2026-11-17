@@ -31,8 +31,11 @@ struct RecentProjectEntry {
 /// @brief Manages loading, deduplication, availability checking, and atomic saving of recents.
 class RecentProjectsStore {
 public:
-    /// Resolves the default user-config path for `hub_recent_projects.json`.
+    /// Resolves the default user-config path for `hub_recent_projects.json` (`~/.config/anteray/`).
     [[nodiscard]] static std::filesystem::path defaultStoragePath();
+
+    /// Resolves the legacy Hikari user-config path (`~/.config/hikari/hub_recent_projects.json`).
+    [[nodiscard]] static std::filesystem::path legacyStoragePath();
 
     /// Loads recent projects from `storagePath`. Missing file is treated as an empty list.
     [[nodiscard]] Result<void> load(const std::filesystem::path& storagePath);

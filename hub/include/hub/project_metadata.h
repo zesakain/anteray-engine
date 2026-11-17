@@ -30,8 +30,16 @@ inline constexpr uint32_t kCurrentProjectFormatVersion = 1U;
 /// Current engine version string advertised by this Hub build.
 inline constexpr std::string_view kCurrentEngineVersion = "0.1.0";
 
-/// Standard file extension for Hikari project manifests.
-inline constexpr std::string_view kProjectFileExtension = ".hikari-project";
+/// Standard file extension for ANTERAY project manifests.
+inline constexpr std::string_view kProjectFileExtension = ".anteray-project";
+
+/// Legacy Hikari project manifest extension kept readable for backward compatibility.
+inline constexpr std::string_view kLegacyProjectFileExtension = ".hikari-project";
+
+/// Returns true if `ext` is either `.anteray-project` or legacy `.hikari-project`.
+[[nodiscard]] constexpr bool isSupportedProjectManifestExtension(std::string_view ext) noexcept {
+    return ext == kProjectFileExtension || ext == kLegacyProjectFileExtension;
+}
 
 /// @struct ProjectMetadata
 /// @brief Deserialized representation of a `.hikari-project` manifest.

@@ -66,7 +66,7 @@ void testMetadataSerializationAndValidation() {
     meta.formatVersion = kCurrentProjectFormatVersion;
     meta.projectName = "AlphaProject";
     meta.engineVersion = "0.1.0";
-    meta.startupScene = "Scenes/Main.hikari";
+    meta.startupScene = "Scenes/Main.anteray";
     meta.assetDirectories = {"Assets", "Scenes", "Scripts", "Config"};
     meta.templateOrigin = "basic_3d";
     meta.createdTimestamp = 1731000000;
@@ -81,7 +81,7 @@ void testMetadataSerializationAndValidation() {
     TEST_CHECK(parsed.formatVersion == kCurrentProjectFormatVersion);
     TEST_CHECK(parsed.projectName == "AlphaProject");
     TEST_CHECK(parsed.engineVersion == "0.1.0");
-    TEST_CHECK(parsed.startupScene == "Scenes/Main.hikari");
+    TEST_CHECK(parsed.startupScene == "Scenes/Main.anteray");
     TEST_CHECK(parsed.templateOrigin == "basic_3d");
     TEST_CHECK(parsed.assetDirectories.size() == 4U);
     TEST_CHECK(parsed.createdTimestamp == 1731000000);
@@ -178,7 +178,7 @@ void testTemplateInstantiationProtectionAndRollback() {
     };
     const auto dupRes = TemplateRegistry::createProjectFromBuiltin(duplicateReq);
     TEST_CHECK(!dupRes.hasValue());
-    TEST_CHECK(std::filesystem::exists(tmp.path() / "Proj_empty" / "Proj_empty.hikari-project"));
+    TEST_CHECK(std::filesystem::exists(tmp.path() / "Proj_empty" / "Proj_empty.anteray-project"));
 
     // Invalid template definition rejected cleanly without creating directory
     ProjectTemplateDesc badTmpl{
@@ -275,7 +275,7 @@ void testProjectValidationStates() {
         };
         auto res = TemplateRegistry::createProjectFromBuiltin(req);
         TEST_CHECK(res.hasValue());
-        std::filesystem::remove(res.value().projectDirectory / "Scenes" / "Main.hikari");
+        std::filesystem::remove(res.value().projectDirectory / "Scenes" / "Main.anteray");
 
         const auto rep = validateProjectDirectory(res.value().projectDirectory);
         TEST_CHECK(rep.status == ProjectValidationStatus::Invalid);
@@ -369,11 +369,11 @@ void testEngineDiscoveryLaunchArgsAndSamples() {
     // Launch args with startupScene
     ProjectMetadata withScene{};
     withScene.projectName = "SceneProj";
-    withScene.startupScene = "Scenes/Main.hikari";
+    withScene.startupScene = "Scenes/Main.anteray";
     const auto argsWithScene = EngineLauncher::buildProjectLaunchArgs(tmp.path(), withScene);
     TEST_CHECK(argsWithScene.size() == 2U);
     TEST_CHECK(argsWithScene[0] == "--scene");
-    TEST_CHECK(argsWithScene[1].find("Main.hikari") != std::string::npos);
+    TEST_CHECK(argsWithScene[1].find("Main.anteray") != std::string::npos);
 
     // Launch args without startupScene (Empty project)
     ProjectMetadata emptyMeta{};
@@ -432,13 +432,13 @@ void testThirdPersonCharacterTemplateGeneration() {
     const auto& projDir = res.value().projectDirectory;
     const auto& meta = res.value().metadata;
     TEST_CHECK(meta.templateOrigin == "third_person_character");
-    TEST_CHECK(meta.startupScene == "Scenes/ThirdPersonTest.hikari");
+    TEST_CHECK(meta.startupScene == "Scenes/ThirdPersonTest.anteray");
 
     // Verify all expected template files & copied CC0 assets exist
     TEST_CHECK(std::filesystem::exists(res.value().manifestPath));
-    TEST_CHECK(std::filesystem::exists(projDir / "Scenes/ThirdPersonTest.hikari"));
+    TEST_CHECK(std::filesystem::exists(projDir / "Scenes/ThirdPersonTest.anteray"));
     TEST_CHECK(
-        std::filesystem::exists(projDir / "Assets/Prefabs/third_person_character.hikari_prefab"));
+        std::filesystem::exists(projDir / "Assets/Prefabs/third_person_character.anteray_prefab"));
     TEST_CHECK(std::filesystem::exists(projDir / "Config/input_bindings.json"));
     TEST_CHECK(std::filesystem::exists(projDir / "Assets/Models/cube.glb"));
     TEST_CHECK(
@@ -448,7 +448,7 @@ void testThirdPersonCharacterTemplateGeneration() {
     TEST_CHECK(std::filesystem::exists(projDir / "Assets/Animations/Player/LICENSE_CC0.txt"));
 
     // Verify generated scene is self-contained and never references Bistro or demo scene
-    std::ifstream sceneIn(projDir / "Scenes/ThirdPersonTest.hikari", std::ios::binary);
+    std::ifstream sceneIn(projDir / "Scenes/ThirdPersonTest.anteray", std::ios::binary);
     TEST_CHECK(sceneIn.is_open());
     const std::string sceneContent((std::istreambuf_iterator<char>(sceneIn)),
                                    std::istreambuf_iterator<char>());
@@ -469,6 +469,44 @@ void testThirdPersonCharacterTemplateGeneration() {
     std::cout << "[PASS] testThirdPersonCharacterTemplateGeneration\n";
 }
 
+void testLegacyHikariProjectCompatibility() {
+    TempDirGuard tmp("anteray_hub_legacy_compat");
+    const std::filesystem::path legacyDir = tmp.path() / "LegacyHikariProj";
+    std::filesystem::create_directories(legacyDir / "Assets");
+    std::filesystem::create_directories(legacyDir / "Scenes");
+    std::filesystem::create_directories(legacyDir / "Scripts");
+    std::filesystem::create_directories(legacyDir / "Config");
+
+    writeRawFile(legacyDir / "Scenes" / "Legacy.hikari",
+                 R"({"formatVersion": 1, "metadata": {"name": "Legacy"}, "entities": []})");
+
+    ProjectMetadata meta{};
+    meta.projectName = "LegacyHikariProj";
+    meta.startupScene = "Scenes/Legacy.hikari";
+    const std::filesystem::path manifestPath = legacyDir / "LegacyHikariProj.hikari-project";
+    TEST_CHECK(saveProjectMetadataFile(manifestPath, meta).hasValue());
+
+    auto foundRes = findProjectManifestInDirectory(legacyDir);
+    TEST_CHECK(foundRes.hasValue());
+    TEST_CHECK(foundRes.value().filename() == "LegacyHikariProj.hikari-project");
+
+    const auto report = validateProjectDirectory(legacyDir);
+    TEST_CHECK(report.isValid());
+    TEST_CHECK(report.metadata.has_value());
+    TEST_CHECK(report.metadata->projectName == "LegacyHikariProj");
+
+    const auto launchArgs = EngineLauncher::buildProjectLaunchArgs(legacyDir, *report.metadata);
+    TEST_CHECK(launchArgs.size() == 2U);
+    TEST_CHECK(launchArgs[0] == "--scene");
+    TEST_CHECK(launchArgs[1].find("Legacy.hikari") != std::string::npos);
+
+    // Verify new ANTERAY config path and legacy Hikari fallback path are distinct
+    TEST_CHECK(RecentProjectsStore::defaultStoragePath() !=
+               RecentProjectsStore::legacyStoragePath());
+
+    std::cout << "[PASS] testLegacyHikariProjectCompatibility\n";
+}
+
 } // namespace
 
 int main() {
@@ -479,6 +517,7 @@ int main() {
     testRecentProjectsPersistenceAndDeduplication();
     testEngineDiscoveryLaunchArgsAndSamples();
     testThirdPersonCharacterTemplateGeneration();
+    testLegacyHikariProjectCompatibility();
     std::cout << "All ANTERAY Hub core tests PASSED!\n";
     return 0;
 }
