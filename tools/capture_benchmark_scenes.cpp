@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
     std::filesystem::create_directories(outDir);
 
     std::cout << "========================================================================\n";
-    std::cout << "  Hikari Machine | Milestone 11F Phase 6 Visual & Benchmark Harness     \n";
+    std::cout << "  ANTERAY ENGINE | Milestone 11F Phase 6 Visual & Benchmark Harness     \n";
     std::cout << "  NVIDIA Pascal Tier 0 Baseline Evaluation (1920x1080)                  \n";
     std::cout << "========================================================================\n\n";
 

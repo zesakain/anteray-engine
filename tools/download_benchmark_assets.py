@@ -141,7 +141,7 @@ def download_file(url: str, dest_path: str, max_retries: int = 3) -> bool:
         return True
 
     temp_path = dest_path + ".tmp"
-    headers = {"User-Agent": "HikariBenchmarkDownloader/1.0"}
+    headers = {"User-Agent": "AnterayBenchmarkDownloader/1.0"}
 
     for attempt in range(1, max_retries + 1):
         try:

@@ -294,7 +294,7 @@ static WorkloadBenchmarkResult runWorkload(platform::Platform& platform, platfor
 
 int main(int, char**) {
     std::cout << "=========================================================================\n";
-    std::cout << " Hikari Machine: GPU Utilization, Frame Latency & Synchronization Profiler\n";
+    std::cout << " ANTERAY ENGINE: GPU Utilization, Frame Latency & Synchronization Profiler\n";
     std::cout << "=========================================================================\n";
 
     platform::PlatformConfig platConfig{.headless = false};
@@ -306,7 +306,7 @@ int main(int, char**) {
     auto platform = std::move(platRes.value());
 
     auto winRes = platform->createWindow(platform::WindowDesc{
-        .title = "Hikari Benchmark Profiler",
+        .title = "ANTERAY Benchmark Profiler",
         .width = 1280,
         .height = 720,
         .vulkan = true,

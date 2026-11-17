@@ -92,7 +92,7 @@ static bool generateSponza(const std::filesystem::path& outDir) {
 
     framework::SceneMetadata meta{
         .name = "Sponza Benchmark",
-        .generator = "Hikari Machine 10G Benchmark Certification",
+        .generator = "ANTERAY ENGINE 10G Benchmark Certification",
         .timestamp = 20261112,
     };
 
@@ -162,7 +162,7 @@ static bool generateFlightHelmet(const std::filesystem::path& outDir) {
 
     framework::SceneMetadata meta{
         .name = "Flight Helmet Benchmark",
-        .generator = "Hikari Machine 10G Benchmark Certification",
+        .generator = "ANTERAY ENGINE 10G Benchmark Certification",
         .timestamp = 20261112,
     };
 
@@ -233,7 +233,7 @@ static bool generateDamagedHelmet(const std::filesystem::path& outDir) {
 
     framework::SceneMetadata meta{
         .name = "Damaged Helmet Benchmark",
-        .generator = "Hikari Machine 10G Benchmark Certification",
+        .generator = "ANTERAY ENGINE 10G Benchmark Certification",
         .timestamp = 20261112,
     };
 
@@ -344,7 +344,7 @@ static bool generateBistro(const std::filesystem::path& outDir) {
 
     framework::SceneMetadata meta{
         .name = "Amazon Lumberyard Bistro Benchmark",
-        .generator = "Hikari Machine Benchmark Certification",
+        .generator = "ANTERAY ENGINE Benchmark Certification",
         .timestamp = 20261114,
     };
 
@@ -512,7 +512,7 @@ static bool generateMaterialLabGltf(const std::filesystem::path& outDir) {
 
     std::ostringstream ss;
     ss << "{\n"
-       << "  \"asset\": { \"version\": \"2.0\", \"generator\": \"Hikari MaterialLab Generator\" "
+       << "  \"asset\": { \"version\": \"2.0\", \"generator\": \"ANTERAY MaterialLab Generator\" "
           "},\n"
        << "  \"extensionsUsed\": [\n"
        << "    \"KHR_materials_clearcoat\",\n"
@@ -770,7 +770,7 @@ static bool generateMaterialLab(const std::filesystem::path& outDir) {
 
     framework::SceneMetadata meta{
         .name = "MaterialLab Benchmark",
-        .generator = "Hikari Machine Milestone 11F Phase 6 Visual Certification",
+        .generator = "ANTERAY ENGINE Milestone 11F Phase 6 Visual Certification",
         .timestamp = 20261115,
     };
 

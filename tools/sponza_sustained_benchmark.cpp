@@ -35,7 +35,7 @@ static constexpr float toRadians(float deg) noexcept {
 
 int main() {
     std::cout << "======================================================================\n";
-    std::cout << "  Hikari Machine | Sustained 1,000-Frame 60 FPS Certification Benchmark\n";
+    std::cout << "  ANTERAY ENGINE | Sustained 1,000-Frame 60 FPS Certification Benchmark\n";
     std::cout << "======================================================================\n\n";
 
     rhi::VulkanDeviceDesc vkDesc{

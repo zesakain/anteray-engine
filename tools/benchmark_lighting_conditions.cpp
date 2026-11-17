@@ -1,7 +1,7 @@
 /// @file benchmark_lighting_conditions.cpp
 /// @brief Multi-scene, multi-condition lighting benchmark certification tool (Milestone 11C).
 ///
-/// Evaluates Hikari Machine's lighting fidelity across:
+/// Evaluates ANTERAY ENGINE's lighting fidelity across:
 /// 1. Beautiful Natural Daylight
 /// 2. Majestic Cinematic Sunset
 /// 3. Deep Atmospheric Night
@@ -85,7 +85,7 @@ int main(int argc, char** argv) {
     std::filesystem::create_directories(outDir);
 
     std::cout << "======================================================================\n";
-    std::cout << "  Hikari Machine | Milestone 11C: Premium Lighting Quality Benchmark   \n";
+    std::cout << "  ANTERAY ENGINE | Milestone 11C: Premium Lighting Quality Benchmark   \n";
     std::cout << "  Daylight · Majestic Sunset · Atmospheric Night (Native 1080p)       \n";
     std::cout << "======================================================================\n\n";
 

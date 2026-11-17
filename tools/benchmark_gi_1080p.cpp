@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
     std::filesystem::create_directories(outDir);
 
     std::cout << "========================================================================\n";
-    std::cout << "  Hikari Machine | Milestone 11D Global Illumination 1080p Benchmark    \n";
+    std::cout << "  ANTERAY ENGINE | Milestone 11D Global Illumination 1080p Benchmark    \n";
     std::cout << "  NVIDIA Pascal Tier 0 Baseline Evaluation: Bistro & Sponza             \n";
     std::cout << "========================================================================\n\n";
 

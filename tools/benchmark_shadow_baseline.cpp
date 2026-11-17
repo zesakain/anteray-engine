@@ -24,7 +24,7 @@ using namespace eng;
 
 int main() {
     std::cout << "========================================================================\n";
-    std::cout << "  Hikari Machine | Milestone 11E Shadow Architecture Baseline Audit    \n";
+    std::cout << "  ANTERAY ENGINE | Milestone 11E Shadow Architecture Baseline Audit    \n";
     std::cout << "========================================================================\n\n";
 
     rhi::VulkanDeviceDesc devDesc{
