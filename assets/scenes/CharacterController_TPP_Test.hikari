@@ -101,17 +101,17 @@
     },
     {
       "id": 101,
-      "parentId": 100,
+      "parent": 100,
       "name": "PlayerVisual",
       "components": {
         "Transform": {
-          "position": [0.0, 1.05, 0.0],
-          "rotation": [0.0, 0.0, 0.0, 1.0],
-          "scale": [0.6, 1.8, 0.6]
+          "position": [0.0, 0.0, 0.0],
+          "rotation": [0.0, 1.0, 0.0, 0.0],
+          "scale": [1.0, 1.0, 1.0]
         },
         "Mesh": {
-          "assetPath": "assets/models/cube.glb",
-          "submeshIndex": 0,
+          "assetPath": "assets/characters/player/Superhero_Male_FullBody.gltf",
+          "submeshIndex": -1,
           "visible": true,
           "castShadows": true
         }

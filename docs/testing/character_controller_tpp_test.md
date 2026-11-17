@@ -8,6 +8,8 @@ Dedicated engineering test scene for validating Milestone 12B's physics-based th
 
 - **Scene:** `assets/scenes/CharacterController_TPP_Test.hikari`
 - **Character Prefab:** `assets/prefabs/third_person_character.hikari_prefab`
+- **Character Model (CC0):** `assets/characters/player/Superhero_Male_FullBody.gltf` (Quaternius Universal Base Characters; license: `assets/characters/player/LICENSE_CC0.txt`)
+- **Animation Library (CC0):** `assets/animations/player/UAL1_Standard.glb` (Quaternius Universal Animation Library; license: `assets/animations/player/LICENSE_CC0.txt`)
 
 ## How to Load & Test
 
@@ -63,6 +65,5 @@ Dedicated engineering test scene for validating Milestone 12B's physics-based th
 
 ## Known Unsupported Behavior (Deferred to Later Milestones)
 
-- Gamepad / rebindable input actions (Milestone 12C).
+- GPU vertex skinning and glTF `skins`/`animations` playback in `SceneRenderer` (the humanoid model renders as a static multi-submesh glTF mesh following the physics capsule; `UAL1_Standard.glb` is staged for future renderer skinning support).
 - Lua gameplay scripting hooks on character state (Milestone 12D).
-- Skeletal animation / montage blending on `PlayerVisual` (beyond 12B).
