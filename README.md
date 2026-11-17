@@ -1,8 +1,8 @@
-# Hikari-Machine
+# ANTERAY ENGINE
 
-An experimental C++20 3D game engine targeting fast-paced action games, architected around a **Two-State Conductor over a Shared World**.
+An experimental C++20 3D game engine targeting fast-paced action games, architected around a **Two-State Conductor over a Shared World** (formerly Hikari Machine).
 
-Repository: [https://github.com/zesakain/hikari-machine](https://github.com/zesakain/hikari-machine)  
+Repository: [https://github.com/zesakain/anteray-engine](https://github.com/zesakain/anteray-engine)  
 License: [Apache 2.0](LICENSE)
 
 
@@ -11,14 +11,14 @@ Discord: https://discord.gg/b2rhWTj5FE
 
 ## 1. Project Overview
 
-Hikari-Machine is an experimental, mode-based 3D game engine under active development. Its defining architectural concept is the **Two-State Conductor operating over a single Shared World**:
+ANTERAY ENGINE is an experimental, mode-based 3D game engine under active development. Its defining architectural concept is the **Two-State Conductor operating over a single Shared World**:
 
 - **Single Shared World:** All entities, components, and physics states reside in a unified Flecs ECS world. Switching gameplay modes does not require duplicating, reconstructing, or serializing the world state. Continuous simulation systems operate independently of gameplay mode transitions.
 - **Two Time States (A and B):** The Conductor maintains exactly two alternating execution states (e.g., fast-paced combat and tactical precision). Exactly one state is active and authoritative at any given instant.
 - **Asynchronous Standby Preparation:** The non-active state incrementally prepares its entry data, such as camera parameters, target queries, UI layouts, and resource requirements, within a configurable per-frame time budget.
 - **Validated State Transitions:** Before switching roles, the Conductor validates the prepared state. Successful transitions commit the prepared state and support controlled slow-motion dilation during the transition curve. Failed validation preserves the currently active state.
 
-> **Note on Project Scope:** Hikari-Machine is an experimental engine and architecture testbed. It is not a commercial, production-ready replacement for mature engines like Unreal Engine or Unity.
+> **Note on Project Scope:** ANTERAY ENGINE is an experimental engine and architecture testbed. It is not a commercial, production-ready replacement for mature engines like Unreal Engine or Unity.
 
 ---
 
@@ -59,7 +59,7 @@ The engine contains functional implementations across core systems, rendering, p
   - Central `AssetManager` with 64-bit `AssetId` hashing, `SamplerCache`, and GPU mesh/texture upload deduplication.
 - **Developer Visual Editor & IDE** (`HIKARI_BUILD_EDITOR=ON`):
   - Dear ImGui docking workspace with layout persistence (`hikari_editor_layout.ini`) and persisted `EditorPreferences`.
-  - Centralized UI design tokens and theme palettes (Hikari Dark, Midnight, Light) with live runtime switching.
+  - Centralized UI design tokens and theme palettes (ANTERAY Dark, Midnight, Light) with live runtime switching.
   - Viewport GPU scene rendering: Vulkan 1.3 offscreen dynamic rendering target sampled directly by Dear ImGui (zero CPU readback) with debug view mode switching.
   - 6-DOF fly camera navigation (WASD + QE + Shift boost) and orbit camera mode with mouse look and pitch clamping.
   - Interactive viewport tools: 3D perspective ground grid, orientation tripod, ray-picking entity selection, 3D transform gizmos (Translate, Rotate, Scale), and asset drag-and-drop spawning.
