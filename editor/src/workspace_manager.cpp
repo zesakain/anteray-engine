@@ -1260,6 +1260,11 @@ struct WorkspaceManager::Impl {
                 std::snprintf(openPathBuffer, sizeof(openPathBuffer),
                               "assets/scenes/sample.hikari");
             }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("TPP Character")) {
+                std::snprintf(openPathBuffer, sizeof(openPathBuffer),
+                              "assets/scenes/CharacterController_TPP_Test.hikari");
+            }
             ImGui::Separator();
             if (ImGui::Button("Open", ImVec2(120.0F, 0.0F))) {
                 if (ctx.world != nullptr) {

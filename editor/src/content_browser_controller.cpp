@@ -40,7 +40,7 @@ ContentItemType determineItemType(const std::filesystem::path& path, bool isDir)
     if (lowerExt == ".lua") {
         return ContentItemType::Script;
     }
-    if (lowerExt == ".hikari") {
+    if (lowerExt == ".hikari" || lowerExt == ".hikari_prefab") {
         return ContentItemType::Scene;
     }
     if (lowerExt == ".json" || lowerExt == ".toml" || lowerExt == ".txt" || lowerExt == ".ini" ||
@@ -69,6 +69,9 @@ const char* getTypeBadge(ContentItemType type, const std::string& ext) noexcept 
     case ContentItemType::Script:
         return "[LUA]";
     case ContentItemType::Scene:
+        if (ext == ".hikari_prefab") {
+            return "[PREFAB]";
+        }
         return "[SCENE]";
     case ContentItemType::Data:
         return "[DATA]";

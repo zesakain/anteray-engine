@@ -244,6 +244,20 @@ const std::vector<ProjectTemplateDesc>& TemplateRegistry::builtinTemplates() {
             .capabilities = {"Shared World scene", "StateA / StateB transition inspection"},
             .requirements = {"Hikari Engine 0.1.0", "Conductor framework"},
         },
+        ProjectTemplateDesc{
+            .id = "third_person_character",
+            .name = "Third-Person Character (TPP)",
+            .category = "Gameplay",
+            .description =
+                "Playable third-person character controller starter with CharacterTag, "
+                "ThirdPersonCamera, GameplayInputSystem bindings, ramps, stairs, and dynamic "
+                "physics objects.",
+            .defaultStartupScene = "Scenes/ThirdPersonTest.hikari",
+            .capabilities = {"Physics-based CharacterController",
+                             "ThirdPersonCamera follow & raycast",
+                             "GameplayInputSystem WASD/Space/Mouse orbit"},
+            .requirements = {"Hikari Engine 0.1.0", "Jolt Physics"},
+        },
     };
     return kTemplates;
 }
@@ -333,9 +347,22 @@ Result<ProjectCreateResult> TemplateRegistry::createProject(const ProjectCreateR
     // Write template-specific scene and config/script assets
     if (!tmpl.defaultStartupScene.empty()) {
         const std::filesystem::path scenePath = projectDir / tmpl.defaultStartupScene;
-        const bool includeDynamic = (tmpl.id == "physics_test");
-        const std::string sceneContent =
-            buildSceneJson(request.projectName + " - " + tmpl.name, true, includeDynamic, true);
+        std::string sceneContent;
+        if (tmpl.id == "third_person_character") {
+            const std::filesystem::path repoTppScene =
+                std::filesystem::path("assets/scenes/CharacterController_TPP_Test.hikari");
+            std::ifstream tppIn(repoTppScene, std::ios::in | std::ios::binary);
+            if (tppIn.is_open()) {
+                sceneContent.assign(std::istreambuf_iterator<char>(tppIn),
+                                    std::istreambuf_iterator<char>());
+            }
+        }
+        if (sceneContent.empty()) {
+            const bool includeDynamic =
+                (tmpl.id == "physics_test" || tmpl.id == "third_person_character");
+            sceneContent =
+                buildSceneJson(request.projectName + " - " + tmpl.name, true, includeDynamic, true);
+        }
         auto writeRes = writeTextFile(scenePath, sceneContent);
         if (!writeRes.hasValue()) {
             rollback();

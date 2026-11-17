@@ -125,9 +125,10 @@ void testMetadataSerializationAndValidation() {
 void testTemplateInstantiationProtectionAndRollback() {
     TempDirGuard tmp("hikari_hub_templates");
 
-    // Verify all 6 built-in templates instantiate validly and produce parseable scenes
+    // Verify all 7 built-in templates instantiate validly and produce parseable scenes
     const auto& builtins = TemplateRegistry::builtinTemplates();
-    TEST_CHECK(builtins.size() == 6U);
+    TEST_CHECK(builtins.size() == 7U);
+    TEST_CHECK(TemplateRegistry::findById("third_person_character") != nullptr);
 
     for (const auto& tmpl : builtins) {
         TEST_CHECK(validateTemplateDesc(tmpl).hasValue());
@@ -380,11 +381,13 @@ void testEngineDiscoveryLaunchArgsAndSamples() {
     const auto repoRoot = EngineLauncher::findRepositoryRoot(std::filesystem::current_path());
     if (!repoRoot.empty()) {
         const auto samples = SampleCatalog::discoverSamples(repoRoot);
-        TEST_CHECK(samples.size() == 4U);
-        TEST_CHECK(samples[0].name == "Sponza");
-        TEST_CHECK(samples[1].name == "DamagedHelmet");
-        TEST_CHECK(samples[2].name == "Bistro");
-        TEST_CHECK(samples[3].name == "MaterialLab");
+        TEST_CHECK(samples.size() == 5U);
+        TEST_CHECK(samples[0].name == "CharacterController TPP Test");
+        TEST_CHECK(samples[0].canOpenInEditor);
+        TEST_CHECK(samples[1].name == "Sponza");
+        TEST_CHECK(samples[2].name == "DamagedHelmet");
+        TEST_CHECK(samples[3].name == "Bistro");
+        TEST_CHECK(samples[4].name == "MaterialLab");
     }
 
     std::cout << "[PASS] testEngineDiscoveryLaunchArgsAndSamples\n";

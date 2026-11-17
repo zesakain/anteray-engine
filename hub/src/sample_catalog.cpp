@@ -75,7 +75,15 @@ SampleEntry inspectSample(const std::filesystem::path& repoRoot, std::string id,
 std::vector<SampleEntry>
 SampleCatalog::discoverSamples(const std::filesystem::path& repositoryRoot) {
     std::vector<SampleEntry> samples;
-    samples.reserve(4);
+    samples.reserve(5);
+
+    samples.push_back(inspectSample(
+        repositoryRoot, "character_tpp_test", "CharacterController TPP Test",
+        "Physics-based third-person character controller test scene (ramps, stairs, walls, "
+        "dynamic boxes, precision ledges, and camera occlusion).",
+        "assets/scenes/CharacterController_TPP_Test.hikari",
+        {"assets/prefabs/third_person_character.hikari_prefab", "assets/models/cube.glb"},
+        "Uses GameplayInputSystem defaults (WASD, Space, Q/E, Right Mouse + Drag) in PIE."));
 
     samples.push_back(inspectSample(
         repositoryRoot, "sponza", "Sponza",
