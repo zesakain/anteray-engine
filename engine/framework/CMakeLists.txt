@@ -7,6 +7,7 @@ add_library(engine_framework STATIC
     src/character_components.cpp
     src/character_controller.cpp
     src/conductor.cpp
+    src/gameplay_input.cpp
     src/prefab.cpp
     src/runtime_session.cpp
     src/scene.cpp
@@ -27,6 +28,7 @@ target_link_libraries(engine_framework
     PUBLIC
         hikari::engine_flags
         hikari::engine_core
+        hikari::engine_platform
         hikari::engine_world
         hikari::engine_physics
         hikari::engine_render
