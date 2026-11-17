@@ -49,7 +49,7 @@ public:
     /// Returns all registered panels.
     [[nodiscard]] const std::vector<std::unique_ptr<EditorPanel>>& getPanels() const noexcept;
 
-    /// Sets the layout file path (default: "hikari_editor_layout.ini").
+    /// Sets the layout file path (default: "anteray_editor_layout.ini").
     void setLayoutFilePath(std::string_view path);
 
     /// Returns the active layout file path.
@@ -79,7 +79,8 @@ public:
     bool openScene(world::World& world, const char* filepath, SelectionModel* selection = nullptr,
                    EditorCamera* camera = nullptr, render::SceneRenderer* renderer = nullptr);
 
-    /// Loads a glTF or persistent .hikari benchmark scene into the world. Returns true on success.
+    /// Loads a glTF or persistent .anteray/.hikari benchmark scene into the world. Returns true on
+    /// success.
     bool loadBenchmarkScene(world::World& world, const char* filepath,
                             SelectionModel* selection = nullptr,
                             render::AssetManager* assetManager = nullptr,

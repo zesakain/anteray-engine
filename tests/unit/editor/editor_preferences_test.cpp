@@ -304,6 +304,10 @@ static void testThemeStateSynchronization() {
     TEST_CHECK(prefs.appearance.themeName == "ANTERAY Dark");
     TEST_CHECK(themeTypeFromName(prefs.appearance.themeName) == ThemeType::Dark);
 
+    // 6. Verify ANTERAY default path and legacy Hikari fallback path are distinct
+    TEST_CHECK(EditorPreferencesSerializer::getDefaultPreferencesPath() !=
+               EditorPreferencesSerializer::getLegacyPreferencesPath());
+
     std::cout << "[PASS] testThemeStateSynchronization\n";
 }
 

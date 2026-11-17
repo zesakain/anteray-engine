@@ -40,7 +40,8 @@ ContentItemType determineItemType(const std::filesystem::path& path, bool isDir)
     if (lowerExt == ".lua") {
         return ContentItemType::Script;
     }
-    if (lowerExt == ".hikari" || lowerExt == ".hikari_prefab") {
+    if (lowerExt == ".anteray" || lowerExt == ".anteray_prefab" || lowerExt == ".hikari" ||
+        lowerExt == ".hikari_prefab") {
         return ContentItemType::Scene;
     }
     if (lowerExt == ".json" || lowerExt == ".toml" || lowerExt == ".txt" || lowerExt == ".ini" ||
@@ -69,7 +70,7 @@ const char* getTypeBadge(ContentItemType type, const std::string& ext) noexcept 
     case ContentItemType::Script:
         return "[LUA]";
     case ContentItemType::Scene:
-        if (ext == ".hikari_prefab") {
+        if (ext == ".anteray_prefab" || ext == ".hikari_prefab") {
             return "[PREFAB]";
         }
         return "[SCENE]";
@@ -549,7 +550,7 @@ ContentBrowserController::createFile(std::string_view fileName, ContentFileTempl
             finalName = "NewScript.lua";
             break;
         case ContentFileTemplate::AnterayScene:
-            finalName = "NewScene.hikari";
+            finalName = "NewScene.anteray";
             break;
         }
     } else {
@@ -566,8 +567,9 @@ ContentBrowserController::createFile(std::string_view fileName, ContentFileTempl
             }
             break;
         case ContentFileTemplate::AnterayScene:
-            if (finalName.rfind(".hikari") == std::string::npos) {
-                finalName += ".hikari";
+            if (finalName.rfind(".anteray") == std::string::npos &&
+                finalName.rfind(".hikari") == std::string::npos) {
+                finalName += ".anteray";
             }
             break;
         case ContentFileTemplate::EmptyFile:
@@ -604,7 +606,7 @@ ContentBrowserController::createFile(std::string_view fileName, ContentFileTempl
         break;
     case ContentFileTemplate::LuaScript: {
         out << "-- " << finalName << "\n";
-        out << "-- Hikari Lua Script Component\n\n";
+        out << "-- ANTERAY Lua Script Component\n\n";
         out << "function on_init()\n";
         out << "end\n\n";
         out << "function on_update(dt)\n";
@@ -618,7 +620,7 @@ ContentBrowserController::createFile(std::string_view fileName, ContentFileTempl
         out << "  \"formatVersion\": 1,\n";
         out << "  \"metadata\": {\n";
         out << "    \"name\": \"" << sceneStem << "\",\n";
-        out << "    \"generator\": \"Hikari Machine\",\n";
+        out << "    \"generator\": \"ANTERAY ENGINE\",\n";
         out << "    \"timestamp\": 0\n";
         out << "  },\n";
         out << "  \"entities\": []\n";
@@ -819,7 +821,7 @@ bool ContentBrowserController::isSupportedImportExtension(std::string_view exten
         return true;
     }
     // Scenes
-    if (ext == ".hikari") {
+    if (ext == ".anteray" || ext == ".hikari") {
         return true;
     }
     // Materials & Data

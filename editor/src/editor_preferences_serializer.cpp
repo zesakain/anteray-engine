@@ -22,6 +22,37 @@ std::filesystem::path EditorPreferencesSerializer::getDefaultPreferencesPath() {
 #if defined(_WIN32)
     const char* appData = std::getenv("APPDATA");
     if (appData != nullptr && *appData != '\0') {
+        return std::filesystem::path(appData) / "ANTERAY" / "editor_preferences.json";
+    }
+    const char* userProfile = std::getenv("USERPROFILE");
+    if (userProfile != nullptr && *userProfile != '\0') {
+        return std::filesystem::path(userProfile) / "AppData" / "Roaming" / "ANTERAY" /
+               "editor_preferences.json";
+    }
+#elif defined(__APPLE__)
+    const char* home = std::getenv("HOME");
+    if (home != nullptr && *home != '\0') {
+        return std::filesystem::path(home) / "Library" / "Application Support" / "ANTERAY" /
+               "editor_preferences.json";
+    }
+#else
+    // Linux and BSD: XDG_CONFIG_HOME or ~/.config
+    const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
+    if (xdgConfig != nullptr && *xdgConfig != '\0') {
+        return std::filesystem::path(xdgConfig) / "anteray" / "editor_preferences.json";
+    }
+    const char* home = std::getenv("HOME");
+    if (home != nullptr && *home != '\0') {
+        return std::filesystem::path(home) / ".config" / "anteray" / "editor_preferences.json";
+    }
+#endif
+    return std::filesystem::current_path() / "editor_preferences.json";
+}
+
+std::filesystem::path EditorPreferencesSerializer::getLegacyPreferencesPath() {
+#if defined(_WIN32)
+    const char* appData = std::getenv("APPDATA");
+    if (appData != nullptr && *appData != '\0') {
         return std::filesystem::path(appData) / "Hikari" / "editor_preferences.json";
     }
     const char* userProfile = std::getenv("USERPROFILE");
@@ -36,7 +67,6 @@ std::filesystem::path EditorPreferencesSerializer::getDefaultPreferencesPath() {
                "editor_preferences.json";
     }
 #else
-    // Linux and BSD: XDG_CONFIG_HOME or ~/.config
     const char* xdgConfig = std::getenv("XDG_CONFIG_HOME");
     if (xdgConfig != nullptr && *xdgConfig != '\0') {
         return std::filesystem::path(xdgConfig) / "hikari" / "editor_preferences.json";

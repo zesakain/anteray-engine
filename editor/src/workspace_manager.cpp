@@ -42,7 +42,7 @@ namespace eng::editor {
 
 struct WorkspaceManager::Impl {
     std::vector<std::unique_ptr<EditorPanel>> panels;
-    std::string layoutFilePath{"hikari_editor_layout.ini"};
+    std::string layoutFilePath{"anteray_editor_layout.ini"};
     bool layoutResetPending{false};
     int activeLayoutPreset{0}; // 0 = Default, 1 = Wide Viewport, 2 = Inspector Focus
     bool showAboutModal{false};
@@ -63,7 +63,7 @@ struct WorkspaceManager::Impl {
     std::string lastSceneError{""};
 
     char openPathBuffer[512]{"assets/benchmark-scenes/Sponza_Benchmark.hikari"};
-    char savePathBuffer[512]{"assets/scenes/my_scene.hikari"};
+    char savePathBuffer[512]{"assets/scenes/my_scene.anteray"};
 
     // Asynchronous Scene Loading State
     framework::AsyncSceneLoader asyncLoader{};
@@ -223,9 +223,10 @@ struct WorkspaceManager::Impl {
             return false;
         }
 
-        // Check if a persistent .hikari scene exists for this benchmark
+        // Check if a persistent native scene (.anteray or .hikari) exists for this benchmark
         std::string pathStr(filepath);
-        if (pathStr.ends_with(".hikari") && std::filesystem::exists(pathStr)) {
+        if ((pathStr.ends_with(".anteray") || pathStr.ends_with(".hikari")) &&
+            std::filesystem::exists(pathStr)) {
             return openScene(world, filepath, selection, camera, renderer);
         }
 
@@ -1231,7 +1232,7 @@ struct WorkspaceManager::Impl {
             showOpenDialogModal = false;
         }
         if (ImGui::BeginPopupModal("Open Scene", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("Enter .hikari scene file path:");
+            ImGui::Text("Enter .anteray or .hikari scene file path:");
             ImGui::InputText("##OpenPath", openPathBuffer, sizeof(openPathBuffer));
             ImGui::Spacing();
             ImGui::TextDisabled("Quick Benchmarks:");
@@ -1287,7 +1288,7 @@ struct WorkspaceManager::Impl {
             showSaveAsDialogModal = false;
         }
         if (ImGui::BeginPopupModal("Save Scene As", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("Enter destination .hikari file path:");
+            ImGui::Text("Enter destination .anteray scene file path:");
             ImGui::InputText("##SaveAsPath", savePathBuffer, sizeof(savePathBuffer));
             ImGui::Separator();
             if (ImGui::Button("Save", ImVec2(120.0F, 0.0F))) {
@@ -1773,8 +1774,16 @@ bool WorkspaceManager::saveLayout(const char* customPath) {
 }
 
 bool WorkspaceManager::loadLayout(const char* customPath) {
-    return impl_->loadLayoutFromFile(customPath != nullptr ? customPath
-                                                           : impl_->layoutFilePath.c_str());
+    if (customPath != nullptr) {
+        return impl_->loadLayoutFromFile(customPath);
+    }
+    std::error_code ec;
+    if (impl_->layoutFilePath == "anteray_editor_layout.ini" &&
+        !std::filesystem::exists(impl_->layoutFilePath, ec) &&
+        std::filesystem::exists("hikari_editor_layout.ini", ec)) {
+        return impl_->loadLayoutFromFile("hikari_editor_layout.ini");
+    }
+    return impl_->loadLayoutFromFile(impl_->layoutFilePath.c_str());
 }
 
 bool WorkspaceManager::newScene(world::World& world, SelectionModel* selection) {

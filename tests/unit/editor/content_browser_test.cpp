@@ -148,10 +148,10 @@ static void testFolderAndFileManagement() {
                            std::istreambuf_iterator<char>());
     TEST_CHECK(luaContent.find("on_update") != std::string::npos);
 
-    // 3. Create Hikari Scene Template and verify SceneSerializer compatibility
+    // 3. Create ANTERAY Scene Template and verify SceneSerializer compatibility
     auto sceneRes = controller.createFile("MainLevel", ContentFileTemplate::AnterayScene);
     TEST_CHECK(sceneRes.hasValue());
-    TEST_CHECK(sceneRes.value().extension() == ".hikari");
+    TEST_CHECK(sceneRes.value().extension() == ".anteray");
     TEST_CHECK(std::filesystem::exists(sceneRes.value()));
 
     // CRITICAL REQUIREMENT: Verify valid minimal scene parses with SceneSerializer
@@ -324,6 +324,7 @@ static void testAssetImportPipeline() {
     TEST_CHECK(ContentBrowserController::isSupportedImportExtension(".png"));
     TEST_CHECK(ContentBrowserController::isSupportedImportExtension(".wav"));
     TEST_CHECK(ContentBrowserController::isSupportedImportExtension(".lua"));
+    TEST_CHECK(ContentBrowserController::isSupportedImportExtension(".anteray"));
     TEST_CHECK(ContentBrowserController::isSupportedImportExtension(".hikari"));
     TEST_CHECK(ContentBrowserController::isSupportedImportExtension(".mtl"));
     TEST_CHECK(!ContentBrowserController::isSupportedImportExtension(".exe"));

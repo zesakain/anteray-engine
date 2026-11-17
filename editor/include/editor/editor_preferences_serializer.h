@@ -38,10 +38,13 @@ public:
 
     /// Returns the OS-standard path for editor preferences JSON.
     ///
-    /// Linux:   $XDG_CONFIG_HOME/hikari/editor_preferences.json (fallback: ~/.config/hikari/...)
-    /// Windows: %APPDATA%/Hikari/editor_preferences.json
-    /// macOS:   ~/Library/Application Support/Hikari/editor_preferences.json
+    /// Linux:   $XDG_CONFIG_HOME/anteray/editor_preferences.json (fallback: ~/.config/anteray/...)
+    /// Windows: %APPDATA%/ANTERAY/editor_preferences.json
+    /// macOS:   ~/Library/Application Support/ANTERAY/editor_preferences.json
     [[nodiscard]] static std::filesystem::path getDefaultPreferencesPath();
+
+    /// Returns the legacy Hikari preferences path (`~/.config/hikari/editor_preferences.json`).
+    [[nodiscard]] static std::filesystem::path getLegacyPreferencesPath();
 
     /// Serializes EditorPreferences into formatted JSON text.
     [[nodiscard]] static Result<std::string> serializeToString(const EditorPreferences& prefs,

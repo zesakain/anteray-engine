@@ -162,9 +162,9 @@ void ContentBrowserPanel::drawToolbar(EditorContext& ctx) {
             pendingFileTemplate_ = ContentFileTemplate::LuaScript;
             showCreateFileModal_ = true;
         }
-        if (ImGui::MenuItem("Hikari Scene (.hikari)")) {
+        if (ImGui::MenuItem("ANTERAY Scene (.anteray)")) {
             fileNameBuffer_.fill('\0');
-            std::snprintf(fileNameBuffer_.data(), fileNameBuffer_.size(), "NewScene.hikari");
+            std::snprintf(fileNameBuffer_.data(), fileNameBuffer_.size(), "NewScene.anteray");
             pendingFileTemplate_ = ContentFileTemplate::AnterayScene;
             showCreateFileModal_ = true;
         }
@@ -442,9 +442,9 @@ void ContentBrowserPanel::drawAssetItems(EditorContext& ctx) {
                 pendingFileTemplate_ = ContentFileTemplate::LuaScript;
                 showCreateFileModal_ = true;
             }
-            if (ImGui::MenuItem("Hikari Scene (.hikari)")) {
+            if (ImGui::MenuItem("ANTERAY Scene (.anteray)")) {
                 fileNameBuffer_.fill('\0');
-                std::snprintf(fileNameBuffer_.data(), fileNameBuffer_.size(), "NewScene.hikari");
+                std::snprintf(fileNameBuffer_.data(), fileNameBuffer_.size(), "NewScene.anteray");
                 pendingFileTemplate_ = ContentFileTemplate::AnterayScene;
                 showCreateFileModal_ = true;
             }
@@ -1196,13 +1196,13 @@ void ContentBrowserPanel::openNativeImportDialog(EditorContext& ctx) {
     (void)ctx;
     static const SDL_DialogFileFilter filters[] = {
         {"All Supported Assets (*.obj, *.gltf, *.glb, *.png, *.jpg, ...)",
-         "obj;gltf;glb;png;jpg;jpeg;tga;bmp;wav;ogg;mp3;flac;lua;hikari;json;toml;txt;mtl"},
+         "obj;gltf;glb;png;jpg;jpeg;tga;bmp;wav;ogg;mp3;flac;lua;anteray;hikari;json;toml;txt;mtl"},
         {"3D Models (*.obj, *.gltf, *.glb)", "obj;gltf;glb"},
         {"Wavefront OBJ (*.obj)", "obj"},
         {"glTF / GLB (*.gltf, *.glb)", "gltf;glb"},
         {"Textures (*.png, *.jpg, *.jpeg, *.tga, *.bmp)", "png;jpg;jpeg;tga;bmp"},
         {"Audio (*.wav, *.ogg, *.mp3, *.flac)", "wav;ogg;mp3;flac"},
-        {"Scripts & Scenes (*.lua, *.hikari)", "lua;hikari"},
+        {"Scripts & Scenes (*.lua, *.anteray, *.hikari)", "lua;anteray;hikari"},
         {"All Files (*.*)", "*"}};
 
     const std::filesystem::path currentDir = controller_.getCurrentDirectory();

@@ -67,8 +67,8 @@ class WorkspaceManager;
 /// @struct EditorConfig
 /// @brief Initial panel visibility and layout configuration for EditorEngine.
 struct EditorConfig {
-    /// Path to the workspace layout file (default: "hikari_editor_layout.ini").
-    std::string_view layoutFilePath{"hikari_editor_layout.ini"};
+    /// Path to the workspace layout file (default: "anteray_editor_layout.ini").
+    std::string_view layoutFilePath{"anteray_editor_layout.ini"};
 
     /// Global UI font scale factor (default: 1.0).
     float fontScale{1.0F};

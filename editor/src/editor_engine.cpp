@@ -1071,6 +1071,15 @@ bool EditorEngine::saveEditorPreferences() {
 
 bool EditorEngine::loadEditorPreferences() {
     auto path = EditorPreferencesSerializer::getDefaultPreferencesPath();
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        // Non-destructive fallback: read legacy Hikari preferences only when ANTERAY
+        // preferences do not yet exist.
+        auto legacyPath = EditorPreferencesSerializer::getLegacyPreferencesPath();
+        if (std::filesystem::exists(legacyPath, ec)) {
+            path = legacyPath;
+        }
+    }
     auto res = EditorPreferencesSerializer::deserializeFromFile(path);
     if (!res.hasValue()) {
         ENG_LOG_WARN("Editor", "Failed to load editor preferences from " + path.string() + ": " +
