@@ -6,8 +6,11 @@
 #include "core/log.h"
 #include "core/time.h"
 #include "core/time/cpu_profiler.h"
+#include "framework/character_animation.h"
+#include "framework/character_components.h"
 #include "framework/conductor.h"
 #include "framework/mode.h"
+#include "framework/third_person_camera.h"
 #include "physics/physics_components.h"
 #include "physics/physics_world.h"
 #include "platform/platform.h"
@@ -287,6 +290,10 @@ int main(int argc, char* argv[]) {
 
         anim::registerAnimationComponents(world);
         render::registerRenderComponents(world);
+        framework::registerCharacterComponents(world);
+        framework::registerCharacterAnimationComponents(world);
+        world.getRawWorld().component<framework::ThirdPersonCameraComponent>(
+            "ThirdPersonCameraComponent");
 
         (void)scriptEngine.initialize();
         scriptEngine.bindWorld(&world);

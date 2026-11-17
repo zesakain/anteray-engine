@@ -7,7 +7,10 @@
 #include "anim/animation_components.h"
 #include "core/assert.h"
 #include "core/log.h"
+#include "framework/character_animation.h"
+#include "framework/character_components.h"
 #include "framework/scene_serializer.h"
+#include "framework/third_person_camera.h"
 #include "physics/physics_components.h"
 #include "render/asset_manager.h"
 #include "render/asset_types.h"
@@ -121,6 +124,35 @@ struct StagedEntityData {
         bool present{false};
         render::IrradianceProbeComponent probe{};
     } irradianceProbe;
+
+    bool hasCharacterTag{false};
+    bool hasPlayerControlledTag{false};
+
+    struct {
+        bool present{false};
+        CharacterConfigComponent config{};
+    } characterConfig;
+
+    struct {
+        bool present{false};
+        CharacterStateComponent state{};
+    } characterState;
+
+    struct {
+        bool present{false};
+        CharacterMovementIntentComponent intent{};
+    } characterMovementIntent;
+
+    struct {
+        bool present{false};
+        CharacterAnimationComponent anim{};
+    } characterAnimation;
+
+    struct {
+        bool present{false};
+        ThirdPersonCameraComponent cam{};
+        uint64_t targetStableId{0};
+    } thirdPersonCamera;
 };
 
 } // namespace
@@ -297,6 +329,11 @@ struct AsyncSceneLoader::Impl {
                 p.overallProgress = 0.10F;
             });
 
+            registerCharacterComponents(stagingWorld);
+            registerCharacterAnimationComponents(stagingWorld);
+            stagingWorld.getRawWorld().component<ThirdPersonCameraComponent>(
+                "ThirdPersonCameraComponent");
+
             auto deserRes = SceneSerializer::deserializeFromString(stagingWorld, content, false);
             if (!deserRes.hasValue()) {
                 setFailure("Scene deserialization failed: " +
@@ -459,6 +496,39 @@ struct AsyncSceneLoader::Impl {
             if (e.has<render::IrradianceProbeComponent>()) {
                 staged.irradianceProbe.present = true;
                 staged.irradianceProbe.probe = *e.get<render::IrradianceProbeComponent>();
+            }
+
+            staged.hasCharacterTag = e.has<CharacterTag>();
+            staged.hasPlayerControlledTag = e.has<PlayerControlledTag>();
+
+            if (e.has<CharacterConfigComponent>()) {
+                staged.characterConfig.present = true;
+                staged.characterConfig.config = *e.get<CharacterConfigComponent>();
+            }
+            if (e.has<CharacterStateComponent>()) {
+                staged.characterState.present = true;
+                staged.characterState.state = *e.get<CharacterStateComponent>();
+            }
+            if (e.has<CharacterMovementIntentComponent>()) {
+                staged.characterMovementIntent.present = true;
+                staged.characterMovementIntent.intent = *e.get<CharacterMovementIntentComponent>();
+            }
+            if (e.has<CharacterAnimationComponent>()) {
+                staged.characterAnimation.present = true;
+                staged.characterAnimation.anim = *e.get<CharacterAnimationComponent>();
+            }
+            if (e.has<ThirdPersonCameraComponent>()) {
+                const auto* tpc = e.get<ThirdPersonCameraComponent>();
+                staged.thirdPersonCamera.present = true;
+                staged.thirdPersonCamera.cam = *tpc;
+                if (tpc->targetEntityId != 0) {
+                    flecs::entity targetEnt =
+                        stagingWorld.getRawWorld().entity(tpc->targetEntityId);
+                    if (targetEnt.is_valid() && targetEnt.has<StableIdComponent>()) {
+                        staged.thirdPersonCamera.targetStableId =
+                            targetEnt.get<StableIdComponent>()->id;
+                    }
+                }
             }
 
             auto parent = e.parent();
@@ -996,15 +1066,47 @@ struct AsyncSceneLoader::Impl {
             if (staged.irradianceProbe.present) {
                 world.setComponent(h, staged.irradianceProbe.probe);
             }
+
+            if (staged.hasCharacterTag) {
+                world.addTag<CharacterTag>(h);
+            }
+            if (staged.hasPlayerControlledTag) {
+                world.addTag<PlayerControlledTag>(h);
+            }
+            if (staged.characterConfig.present) {
+                world.setComponent(h, staged.characterConfig.config);
+            }
+            if (staged.characterState.present) {
+                world.setComponent(h, staged.characterState.state);
+            }
+            if (staged.characterMovementIntent.present) {
+                world.setComponent(h, staged.characterMovementIntent.intent);
+            }
+            if (staged.characterAnimation.present) {
+                world.setComponent(h, staged.characterAnimation.anim);
+            }
+            if (staged.thirdPersonCamera.present) {
+                world.setComponent(h, staged.thirdPersonCamera.cam);
+            }
         }
 
-        // 3. Establish parent-child hierarchy
+        // 3. Establish parent-child hierarchy & remap entity references
         for (const auto& staged : stagedEntities) {
             if (staged.parentStableId != 0) {
                 auto it = stableIdToHandle.find(staged.parentStableId);
                 if (it != stableIdToHandle.end()) {
                     world::EntityHandle child = stableIdToHandle[staged.stableId];
                     world.setParent(child, it->second, false);
+                }
+            }
+            if (staged.thirdPersonCamera.present && staged.thirdPersonCamera.targetStableId != 0) {
+                auto it = stableIdToHandle.find(staged.thirdPersonCamera.targetStableId);
+                if (it != stableIdToHandle.end()) {
+                    world::EntityHandle camHandle = stableIdToHandle[staged.stableId];
+                    if (auto* tpc =
+                            world.getMutableComponent<ThirdPersonCameraComponent>(camHandle)) {
+                        tpc->targetEntityId = it->second.id;
+                    }
                 }
             }
         }
