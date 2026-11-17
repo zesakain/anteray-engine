@@ -305,10 +305,10 @@ struct AsyncSceneLoader::Impl {
         world::World stagingWorld;
         std::unordered_set<std::string> referencedGltfFiles;
 
-        if (path.ends_with(".hikari")) {
+        if (path.ends_with(".anteray") || path.ends_with(".hikari")) {
             std::ifstream file(path, std::ios::in | std::ios::binary);
             if (!file.is_open()) {
-                setFailure("Failed to open .hikari scene file for reading: " + path);
+                setFailure("Failed to open scene file for reading: " + path);
                 return;
             }
 
@@ -400,7 +400,7 @@ struct AsyncSceneLoader::Impl {
                 reqId != currentRequestId.load(std::memory_order_acquire)) {
                 return;
             }
-            if (path.ends_with(".hikari")) {
+            if (path.ends_with(".anteray") || path.ends_with(".hikari")) {
                 world::World dummyGltfWorld;
                 (void)render::GltfSceneImporter::importScene(gltfPath, dummyGltfWorld,
                                                              &stagingAssetManager);
@@ -1189,8 +1189,8 @@ Result<uint64_t, Error> AsyncSceneLoader::startLoad(std::string_view filepath) {
                   "Scene file does not exist on disk: " + std::string(filepath)));
     }
 
-    if (!filepath.ends_with(".hikari") && !filepath.ends_with(".gltf") &&
-        !filepath.ends_with(".glb")) {
+    if (!filepath.ends_with(".anteray") && !filepath.ends_with(".hikari") &&
+        !filepath.ends_with(".gltf") && !filepath.ends_with(".glb")) {
         impl_->setFailure("Unsupported scene format: " + std::string(filepath));
         return Result<uint64_t, Error>::failure(Error(
             ErrorCode::InvalidArgument, "Unsupported scene format: " + std::string(filepath)));

@@ -371,7 +371,7 @@ Result<std::string> SceneSerializer::serializeToString(
 
     JsonValue metaObj = JsonValue::makeObject();
     metaObj.set("name", metadata.name.empty() ? "Untitled" : metadata.name);
-    metaObj.set("generator", metadata.generator.empty() ? "Hikari Machine" : metadata.generator);
+    metaObj.set("generator", metadata.generator.empty() ? "ANTERAY ENGINE" : metadata.generator);
     metaObj.set("timestamp", metadata.timestamp);
     root.set("metadata", std::move(metaObj));
 
@@ -800,7 +800,7 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
     SceneMetadata metadata{};
     if (const auto* metaVal = root.getObject("metadata")) {
         metadata.name = std::string(metaVal->getString("name", "Untitled"));
-        metadata.generator = std::string(metaVal->getString("generator", "Hikari Machine"));
+        metadata.generator = std::string(metaVal->getString("generator", "ANTERAY ENGINE"));
         metadata.timestamp = metaVal->getUInt64("timestamp", 0);
     }
 

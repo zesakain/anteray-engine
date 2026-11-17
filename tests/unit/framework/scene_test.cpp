@@ -571,6 +571,32 @@ static int testSceneGraphicsSettingsPersistenceRoundTrip() {
     return 0;
 }
 
+int testAnteraySceneExtensionRoundTrip() {
+    World worldA;
+    EntityHandle e = worldA.createEntity("AnterayEntity");
+    worldA.setComponent(e, TransformComponent{});
+
+    const std::filesystem::path tmpFile =
+        std::filesystem::temp_directory_path() / "anteray_scene_ext_test.anteray";
+    std::error_code ec;
+    std::filesystem::remove(tmpFile, ec);
+
+    SceneMetadata meta;
+    meta.name = "AnterayTestScene";
+    auto saveRes = SceneSerializer::serializeToFile(worldA, tmpFile, meta);
+    TEST_CHECK(saveRes.hasValue());
+    TEST_CHECK(std::filesystem::exists(tmpFile));
+
+    World worldB;
+    auto loadRes = SceneSerializer::deserializeFromFile(worldB, tmpFile);
+    TEST_CHECK(loadRes.hasValue());
+    TEST_CHECK(loadRes.value().entitiesLoaded == 1);
+    TEST_CHECK(loadRes.value().metadata.generator == "ANTERAY ENGINE 0.1.0");
+
+    std::filesystem::remove(tmpFile, ec);
+    return 0;
+}
+
 } // namespace
 
 int main() {
@@ -591,6 +617,8 @@ int main() {
     if (testLightAndCameraSerializationRoundTrip() != 0)
         return 1;
     if (testSceneGraphicsSettingsPersistenceRoundTrip() != 0)
+        return 1;
+    if (testAnteraySceneExtensionRoundTrip() != 0)
         return 1;
 
     std::cout << "All SceneSerializer unit tests passed successfully.\n";
