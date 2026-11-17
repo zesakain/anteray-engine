@@ -53,6 +53,8 @@ public:
     void stopTextInput() override;
     [[nodiscard]] bool isTextInputActive() const noexcept override;
     void setTextInputArea(int32_t x, int32_t y, int32_t width, int32_t height) override;
+    void setRelativeMouseMode(bool enabled) noexcept override;
+    [[nodiscard]] bool isRelativeMouseMode() const noexcept override;
 
 private:
     SDL_Window* window_{nullptr};

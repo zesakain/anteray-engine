@@ -151,4 +151,17 @@ void SdlWindow::setTextInputArea(int32_t x, int32_t y, int32_t width, int32_t he
     }
 }
 
+void SdlWindow::setRelativeMouseMode(bool enabled) noexcept {
+    if (window_ != nullptr) {
+        SDL_SetWindowRelativeMouseMode(window_, enabled);
+    }
+}
+
+bool SdlWindow::isRelativeMouseMode() const noexcept {
+    if (window_ == nullptr) {
+        return false;
+    }
+    return SDL_GetWindowRelativeMouseMode(window_);
+}
+
 } // namespace eng::platform

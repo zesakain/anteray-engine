@@ -104,6 +104,12 @@ public:
     /// @param width Width in pixels.
     /// @param height Height in pixels.
     virtual void setTextInputArea(int32_t x, int32_t y, int32_t width, int32_t height) = 0;
+
+    /// Enables or disables relative mouse mode (cursor hidden/locked, unbounded deltas).
+    virtual void setRelativeMouseMode(bool /*enabled*/) noexcept {}
+
+    /// Returns true if relative mouse mode is currently active on this window.
+    [[nodiscard]] virtual bool isRelativeMouseMode() const noexcept { return false; }
 };
 
 } // namespace eng::platform

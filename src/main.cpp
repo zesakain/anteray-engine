@@ -518,10 +518,14 @@ body {
                     ENG_CPU_PROFILE_SCOPE(EcsSystemsAndQueries);
 #if defined(HIKARI_BUILD_EDITOR)
                     if (editorEngine.isInitialized()) {
+                        const bool captureGameplayMouse = editorEngine.isGameplayInputActive();
+                        if (window != nullptr &&
+                            window->isRelativeMouseMode() != captureGameplayMouse) {
+                            window->setRelativeMouseMode(captureGameplayMouse);
+                        }
                         if (editorEngine.getRuntimeSession().isSimulating()) {
                             editorEngine.getRuntimeSession().setInputSnapshot(
-                                editorEngine.isGameplayInputActive() ? input
-                                                                     : platform::InputSnapshot{});
+                                captureGameplayMouse ? input : platform::InputSnapshot{});
                         }
                         editorEngine.getRuntimeSession().update(fixedStep);
                         if (!editorEngine.getRuntimeSession().isSimulating() &&
