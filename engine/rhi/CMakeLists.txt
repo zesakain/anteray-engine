@@ -15,7 +15,7 @@ add_library(engine_rhi STATIC
     src/vulkan/vulkan_physical_device.cpp
     src/vulkan/vulkan_swapchain.cpp
 )
-add_library(hikari::engine_rhi ALIAS engine_rhi)
+add_library(anteray::engine_rhi ALIAS engine_rhi)
 
 target_include_directories(engine_rhi
     PUBLIC
@@ -27,8 +27,8 @@ target_include_directories(engine_rhi
 
 target_link_libraries(engine_rhi
     PUBLIC
-        hikari::engine_flags
-        hikari::engine_core
+        anteray::engine_flags
+        anteray::engine_core
     PRIVATE
         Vulkan::Vulkan
         SDL3::SDL3

@@ -28,7 +28,7 @@
 #include "ui/ui_system.h"
 #include "world/world.h"
 
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
 #include "editor/editor_camera.h"
 #include "editor/editor_engine.h"
 #include "editor/editor_panel.h"
@@ -172,7 +172,7 @@ int main(int argc, char* argv[]) {
             return 0;
         } else if (arg == "--help") {
             std::cout << "ANTERAY ENGINE\n";
-            std::cout << "Usage: hikari [options]\n\n";
+            std::cout << "Usage: anteray [options]\n\n";
             std::cout << "Options:\n";
             std::cout << "  --headless         Run continuous headless simulation without window\n";
             std::cout << "  --frames <count>   Execute for <count> simulation frames then exit\n";
@@ -360,7 +360,7 @@ body {
             return 1;
         }
 
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
         framework::RuntimeSessionConfig sessionConfig{};
         sessionConfig.modeFactory = []() {
             return std::make_pair(std::make_unique<StateAMode>(), std::make_unique<StateBMode>());
@@ -413,11 +413,11 @@ body {
 
         if (profileFrames > 0) {
             CpuProfiler::instance().configure(profileFrames);
-#if !defined(HIKARI_BUILD_EDITOR)
+#if !defined(ANTERAY_BUILD_EDITOR)
             CpuProfiler::instance().setRecording(true);
 #endif
         }
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
         uint32_t warmupFramesRemaining = 120;
         bool scenarioConfigured = false;
         bool profilingStarted = false;
@@ -432,7 +432,7 @@ body {
             {
                 ENG_CPU_PROFILE_SCOPE(MainFrameLoop);
 
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
                 if (profileFrames > 0 && editorEngine.isInitialized() &&
                     !editorEngine.getWorkspaceManager().isAsyncLoading()) {
                     if (!scenarioConfigured) {
@@ -515,7 +515,7 @@ body {
 
                 // 1. Process Input for UI and Editor
                 uiSystem.processInput(input, prevInput);
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
                 if (editorEngine.isInitialized()) {
                     std::optional<Duration> gpuDur = std::nullopt;
                     const auto& gpuTimings = editorEngine.getGpuPassTimings();
@@ -533,7 +533,7 @@ body {
                 // 3. Update Conductor, World, and UI clocks
                 {
                     ENG_CPU_PROFILE_SCOPE(EcsSystemsAndQueries);
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
                     if (editorEngine.isInitialized()) {
                         const bool captureGameplayMouse = editorEngine.isGameplayInputActive();
                         if (window != nullptr &&
@@ -575,7 +575,7 @@ body {
                     ENG_CPU_PROFILE_SCOPE(RhiCommandRecordAndSubmit);
                     mainCmd->begin();
 
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
                     if (editorEngine.isInitialized()) {
                         editorEngine.renderScene(*mainCmd);
                     }
@@ -606,7 +606,7 @@ body {
                     // Render runtime UI
                     uiSystem.render(*mainCmd);
 
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
                     if (editorEngine.isInitialized()) {
                         editorEngine.endFrame(*mainCmd);
                     }
@@ -638,7 +638,7 @@ body {
                         (void)rhiDevice->present();
                     }
 
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
                     if (editorEngine.isInitialized()) {
                         uint32_t fpsCap =
                             editorEngine.getGraphicsSettings().performance.frameRateLimit;
@@ -664,7 +664,7 @@ body {
                     uint32_t editorVerts = 0;
                     uint32_t editorIdxs = 0;
                     uint64_t editorPasses = 0;
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
                     if (editorEngine.isInitialized()) {
                         editorDraws = editorEngine.lastDrawCallCount();
                         editorVerts = editorEngine.lastVertexCount();
@@ -737,7 +737,7 @@ body {
             "=== Simulation loop ended after %u frames. Tearing down... ===", frameCount);
 
         // 8. Graceful Reverse Shutdown
-#if defined(HIKARI_BUILD_EDITOR)
+#if defined(ANTERAY_BUILD_EDITOR)
         editorEngine.shutdown();
 #endif
         conductor.shutdown();

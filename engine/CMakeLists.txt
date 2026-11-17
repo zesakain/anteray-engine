@@ -1,7 +1,7 @@
 # engine/CMakeLists.txt
 #
 # Engine root CMake configuration.
-# Subsystems link against `hikari::engine_flags` which enforces:
+# Subsystems link against `anteray::engine_flags` which enforces:
 # - C++20 standard
 # - Strict warnings (-Wall -Wextra -Wconversion -Wshadow -Wpedantic)
 # - No exceptions (-fno-exceptions, _HAS_EXCEPTIONS=0)
@@ -19,19 +19,19 @@ add_subdirectory(script)
 add_subdirectory(ui)
 
 add_library(engine_base INTERFACE)
-add_library(hikari::engine_base ALIAS engine_base)
+add_library(anteray::engine_base ALIAS engine_base)
 
 target_link_libraries(engine_base
     INTERFACE
-        hikari::engine_flags
-        hikari::engine_core
-        hikari::engine_platform
-        hikari::engine_rhi
-        hikari::engine_world
-        hikari::engine_framework
-        hikari::engine_render
-        hikari::engine_physics
-        hikari::engine_anim
-        hikari::engine_script
-        hikari::engine_ui
+        anteray::engine_flags
+        anteray::engine_core
+        anteray::engine_platform
+        anteray::engine_rhi
+        anteray::engine_world
+        anteray::engine_framework
+        anteray::engine_render
+        anteray::engine_physics
+        anteray::engine_anim
+        anteray::engine_script
+        anteray::engine_ui
 )

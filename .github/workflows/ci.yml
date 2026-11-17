@@ -99,7 +99,7 @@ jobs:
 
       - name: Execute Headless Engine Verification
         if: matrix.preset == 'debug' || matrix.preset == 'release'
-        run: ./build/${{ matrix.preset }}/bin/hikari --headless --frames 60
+        run: ./build/${{ matrix.preset }}/bin/anteray --headless --frames 60
 
       - name: Package Release Binary (CPack)
         if: matrix.preset == 'release'
@@ -111,6 +111,6 @@ jobs:
         if: matrix.preset == 'release'
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
-          name: hikari-linux-x86_64-release
+          name: anteray-linux-x86_64-release
           path: build/release/*.tar.gz
           retention-days: 7

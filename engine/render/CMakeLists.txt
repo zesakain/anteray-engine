@@ -21,7 +21,7 @@ add_library(engine_render STATIC
     src/sampler_cache.cpp
     src/scene_renderer.cpp
 )
-add_library(hikari::engine_render ALIAS engine_render)
+add_library(anteray::engine_render ALIAS engine_render)
 
 target_include_directories(engine_render
     PUBLIC
@@ -36,10 +36,10 @@ target_include_directories(engine_render
 
 target_link_libraries(engine_render
     PUBLIC
-        hikari::engine_flags
-        hikari::engine_core
-        hikari::engine_rhi
-        hikari::engine_world
-        hikari::engine_physics
-        hikari::engine_anim
+        anteray::engine_flags
+        anteray::engine_core
+        anteray::engine_rhi
+        anteray::engine_world
+        anteray::engine_physics
+        anteray::engine_anim
 )

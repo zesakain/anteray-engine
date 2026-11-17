@@ -44,7 +44,7 @@ int main(int argc, char* argv[]) {
             customEngine = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
             std::cout << "ANTERAY Hub 0.1.0\n"
-                      << "Usage: hikari_hub [options]\n"
+                      << "Usage: anteray_hub [options]\n"
                       << "  --headless         Run without OS window (Null RHI)\n"
                       << "  --frames <N>       Exit cleanly after N frames\n"
                       << "  --width <W>        Window width (default 1120)\n"

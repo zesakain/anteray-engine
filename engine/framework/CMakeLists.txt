@@ -17,7 +17,7 @@ add_library(engine_framework STATIC
     src/third_person_camera.cpp
     src/third_person_character_template.cpp
 )
-add_library(hikari::engine_framework ALIAS engine_framework)
+add_library(anteray::engine_framework ALIAS engine_framework)
 
 target_include_directories(engine_framework
     PUBLIC
@@ -29,12 +29,12 @@ target_include_directories(engine_framework
 
 target_link_libraries(engine_framework
     PUBLIC
-        hikari::engine_flags
-        hikari::engine_core
-        hikari::engine_platform
-        hikari::engine_world
-        hikari::engine_physics
-        hikari::engine_render
-        hikari::engine_anim
-        hikari::engine_script
+        anteray::engine_flags
+        anteray::engine_core
+        anteray::engine_platform
+        anteray::engine_world
+        anteray::engine_physics
+        anteray::engine_render
+        anteray::engine_anim
+        anteray::engine_script
 )

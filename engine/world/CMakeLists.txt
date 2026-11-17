@@ -19,7 +19,7 @@ add_library(engine_world STATIC
     src/world.cpp
     src/hierarchy_systems.cpp
 )
-add_library(hikari::engine_world ALIAS engine_world)
+add_library(anteray::engine_world ALIAS engine_world)
 
 target_include_directories(engine_world
     PUBLIC
@@ -31,7 +31,7 @@ target_include_directories(engine_world
 
 target_link_libraries(engine_world
     PUBLIC
-        hikari::engine_flags
-        hikari::engine_core
+        anteray::engine_flags
+        anteray::engine_core
         flecs_static
 )

@@ -33,7 +33,7 @@ add_library(engine_ui STATIC
     src/rmlui_render_backend.cpp
     src/rmlui_system_backend.cpp
 )
-add_library(hikari::engine_ui ALIAS engine_ui)
+add_library(anteray::engine_ui ALIAS engine_ui)
 
 target_include_directories(engine_ui
     PUBLIC
@@ -47,11 +47,11 @@ target_include_directories(engine_ui
 
 target_link_libraries(engine_ui
     PUBLIC
-        hikari::engine_flags
-        hikari::engine_core
-        hikari::engine_platform
-        hikari::engine_rhi
-        hikari::engine_render
+        anteray::engine_flags
+        anteray::engine_core
+        anteray::engine_platform
+        anteray::engine_rhi
+        anteray::engine_render
     PRIVATE
         rmlui_core
 )

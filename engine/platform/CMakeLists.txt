@@ -8,7 +8,7 @@ add_library(engine_platform STATIC
     src/sdl_platform.cpp
     src/sdl_window.cpp
 )
-add_library(hikari::engine_platform ALIAS engine_platform)
+add_library(anteray::engine_platform ALIAS engine_platform)
 
 target_include_directories(engine_platform
     PUBLIC
@@ -20,8 +20,8 @@ target_include_directories(engine_platform
 
 target_link_libraries(engine_platform
     PUBLIC
-        hikari::engine_flags
-        hikari::engine_core
+        anteray::engine_flags
+        anteray::engine_core
     PRIVATE
         SDL3::SDL3
 )

@@ -2,7 +2,7 @@
 #
 # Dear ImGui editor tooling subsystem, guarded by EDITOR flag.
 
-if(NOT HIKARI_BUILD_EDITOR)
+if(NOT ANTERAY_BUILD_EDITOR)
     return()
 endif()
 
@@ -57,7 +57,7 @@ add_library(editor_lib STATIC
     src/panels/content_browser_panel.cpp
     src/panels/settings_panel.cpp
 )
-add_library(hikari::editor_lib ALIAS editor_lib)
+add_library(anteray::editor_lib ALIAS editor_lib)
 
 target_include_directories(editor_lib
     PUBLIC
@@ -72,16 +72,16 @@ target_include_directories(editor_lib
 
 target_link_libraries(editor_lib
     PUBLIC
-        hikari::engine_flags
-        hikari::engine_core
-        hikari::engine_platform
-        hikari::engine_rhi
-        hikari::engine_world
-        hikari::engine_framework
-        hikari::engine_physics
-        hikari::engine_render
-        hikari::engine_anim
-        hikari::engine_script
+        anteray::engine_flags
+        anteray::engine_core
+        anteray::engine_platform
+        anteray::engine_rhi
+        anteray::engine_world
+        anteray::engine_framework
+        anteray::engine_physics
+        anteray::engine_render
+        anteray::engine_anim
+        anteray::engine_script
     PRIVATE
         imgui_static
         SDL3::SDL3

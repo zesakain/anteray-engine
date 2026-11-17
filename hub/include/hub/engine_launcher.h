@@ -2,7 +2,7 @@
 /// @brief Engine/Editor executable discovery, launch argument construction, and process spawning.
 ///
 /// Purpose:
-/// Discovers the Hikari Engine/Editor executable associated with the current build or repository
+/// Discovers the ANTERAY Engine/Editor executable associated with the current build or repository
 /// without hardcoding machine-specific paths, constructs verified CLI arguments, and launches
 /// detached Editor processes.
 
@@ -19,7 +19,7 @@
 namespace eng::hub {
 
 /// @struct EngineInstallation
-/// @brief Discovered Hikari Engine/Editor executable and repository context.
+/// @brief Discovered ANTERAY Engine/Editor executable and repository context.
 struct EngineInstallation {
     std::filesystem::path executablePath{};
     std::filesystem::path repositoryRoot{};
@@ -29,17 +29,17 @@ struct EngineInstallation {
 };
 
 /// @class EngineLauncher
-/// @brief Discovers Hikari executables and launches projects/scenes in the Editor.
+/// @brief Discovers ANTERAY executables and launches projects/scenes in the Editor.
 class EngineLauncher {
 public:
-    /// Discovers the Hikari executable and repository root.
+    /// Discovers the ANTERAY executable and repository root.
     /// Search order:
     /// 1. `overrideExecutable` (if non-empty and valid executable)
-    /// 2. Sibling `hikari` next to `hubExecutablePath`
+    /// 2. Sibling `anteray` next to `hubExecutablePath`
     /// 3. Repository preset build directories (`build/editor/bin`, `build/release/bin`,
     ///    `build/debug/bin`, `build/profile/bin`) relative to `searchStartDir` /
     ///    `hubExecutablePath`
-    /// 4. `PATH` lookup for `hikari`
+    /// 4. `PATH` lookup for `anteray`
     [[nodiscard]] static EngineInstallation
     discover(const std::filesystem::path& hubExecutablePath = {},
              const std::filesystem::path& overrideExecutable = {},

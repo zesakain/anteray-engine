@@ -33,16 +33,16 @@ FetchContent_MakeAvailable(JoltPhysics)
 
 if(TARGET Jolt)
     target_compile_options(Jolt PRIVATE -w)
-    if(HIKARI_SANITIZER)
+    if(ANTERAY_SANITIZER)
         if(NOT MSVC)
             target_compile_options(Jolt PRIVATE
-                -fsanitize=${HIKARI_SANITIZER}
+                -fsanitize=${ANTERAY_SANITIZER}
                 -fno-omit-frame-pointer
             )
             target_link_options(Jolt PRIVATE
-                -fsanitize=${HIKARI_SANITIZER}
+                -fsanitize=${ANTERAY_SANITIZER}
             )
-            if(HIKARI_SANITIZER MATCHES "thread")
+            if(ANTERAY_SANITIZER MATCHES "thread")
                 target_compile_options(Jolt PUBLIC
                     $<$<CXX_COMPILER_ID:GNU>:-Wno-tsan>
                 )
@@ -57,7 +57,7 @@ add_library(engine_physics STATIC
     src/physics_world.cpp
     src/physics_components.cpp
 )
-add_library(hikari::engine_physics ALIAS engine_physics)
+add_library(anteray::engine_physics ALIAS engine_physics)
 
 target_include_directories(engine_physics
     PUBLIC
@@ -72,9 +72,9 @@ target_include_directories(engine_physics SYSTEM PRIVATE
 
 target_link_libraries(engine_physics
     PUBLIC
-        hikari::engine_flags
-        hikari::engine_core
-        hikari::engine_world
+        anteray::engine_flags
+        anteray::engine_core
+        anteray::engine_world
     PRIVATE
         Jolt
 )

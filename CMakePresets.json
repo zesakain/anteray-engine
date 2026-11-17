@@ -13,7 +13,7 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "HIKARI_WARNINGS_AS_ERRORS": "ON"
+        "ANTERAY_WARNINGS_AS_ERRORS": "ON"
       }
     },
     {
@@ -50,7 +50,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "HIKARI_BUILD_EDITOR": "ON"
+        "ANTERAY_BUILD_EDITOR": "ON"
       }
     },
     {
@@ -60,7 +60,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "HIKARI_SANITIZER": "address,undefined"
+        "ANTERAY_SANITIZER": "address,undefined"
       }
     },
     {
@@ -70,7 +70,7 @@
       "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "HIKARI_SANITIZER": "thread"
+        "ANTERAY_SANITIZER": "thread"
       }
     }
   ],

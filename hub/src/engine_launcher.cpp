@@ -100,9 +100,9 @@ EngineInstallation EngineLauncher::discover(const std::filesystem::path& hubExec
     }
 
 #if defined(_WIN32)
-    constexpr const char* kExeName = "hikari.exe";
+    constexpr const char* kExeName = "anteray.exe";
 #else
-    constexpr const char* kExeName = "hikari";
+    constexpr const char* kExeName = "anteray";
 #endif
 
     std::vector<std::filesystem::path> candidates;
@@ -200,7 +200,7 @@ Result<uint64_t> EngineLauncher::launchDetached(const std::filesystem::path& exe
                                                 const std::filesystem::path& workingDir) {
     if (!isExecutableFile(executablePath)) {
         return Error{.code = ErrorCode::InvalidState,
-                     .message = "Hikari executable not found or not executable"};
+                     .message = "ANTERAY executable not found or not executable"};
     }
 
     std::error_code ec;

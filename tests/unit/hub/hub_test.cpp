@@ -356,7 +356,7 @@ void testEngineDiscoveryLaunchArgsAndSamples() {
     TempDirGuard tmp("hikari_hub_engine");
 
     // Create a fake executable inside tmp to test discovery without machine-specific paths
-    const std::filesystem::path fakeExe = tmp.path() / "hikari";
+    const std::filesystem::path fakeExe = tmp.path() / "anteray";
     writeRawFile(fakeExe, "#!/bin/sh\nexit 0\n");
 #if !defined(_WIN32)
     std::filesystem::permissions(fakeExe, std::filesystem::perms::owner_all);
@@ -384,7 +384,7 @@ void testEngineDiscoveryLaunchArgsAndSamples() {
 
     // Launch failure on missing executable
     const auto failLaunch =
-        EngineLauncher::launchDetached(tmp.path() / "missing_hikari", {}, tmp.path());
+        EngineLauncher::launchDetached(tmp.path() / "missing_anteray", {}, tmp.path());
     TEST_CHECK(!failLaunch.hasValue());
 
     // Sample catalog discovery against repository root (if running from repo)
@@ -399,9 +399,9 @@ void testEngineDiscoveryLaunchArgsAndSamples() {
         TEST_CHECK(samples[3].name == "Bistro");
         TEST_CHECK(samples[4].name == "MaterialLab");
 
-        // Regression check: when build/editor/bin/hikari exists, Hub must prefer it over
-        // non-editor build/release/bin/hikari.
-        const auto editorExe = repoRoot / "build/editor/bin/hikari";
+        // Regression check: when build/editor/bin/anteray exists, Hub must prefer it over
+        // non-editor build/release/bin/anteray.
+        const auto editorExe = repoRoot / "build/editor/bin/anteray";
         if (std::filesystem::exists(editorExe)) {
             const auto editorDiscovered = EngineLauncher::discover({}, {}, repoRoot);
             TEST_CHECK(editorDiscovered.available);

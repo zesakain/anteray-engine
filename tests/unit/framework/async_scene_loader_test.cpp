@@ -38,12 +38,12 @@ using namespace eng;
 using namespace eng::framework;
 using namespace eng::world;
 
-#ifndef HIKARI_SAMPLE_SCENE_PATH
-#define HIKARI_SAMPLE_SCENE_PATH "assets/scenes/sample.hikari"
+#ifndef ANTERAY_SAMPLE_SCENE_PATH
+#define ANTERAY_SAMPLE_SCENE_PATH "assets/scenes/sample.hikari"
 #endif
 
-#ifndef HIKARI_DAMAGED_HELMET_PATH
-#define HIKARI_DAMAGED_HELMET_PATH "test-assets/DamagedHelmet.glb"
+#ifndef ANTERAY_DAMAGED_HELMET_PATH
+#define ANTERAY_DAMAGED_HELMET_PATH "test-assets/DamagedHelmet.glb"
 #endif
 
 int testInitialState() {
@@ -92,8 +92,8 @@ int testInvalidFileHandling() {
 }
 
 int testSampleSceneLoadAndActivation() {
-    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
-        std::cout << "[SKIP] Sample scene not found: " << HIKARI_SAMPLE_SCENE_PATH << '\n';
+    if (!std::filesystem::exists(ANTERAY_SAMPLE_SCENE_PATH)) {
+        std::cout << "[SKIP] Sample scene not found: " << ANTERAY_SAMPLE_SCENE_PATH << '\n';
         return 0;
     }
 
@@ -106,7 +106,7 @@ int testSampleSceneLoadAndActivation() {
     AsyncSceneLoader loader;
     loader.bindAssetManager(&assetManager);
 
-    auto startRes = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    auto startRes = loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
     TEST_CHECK(startRes.hasValue());
     TEST_CHECK(loader.isLoading());
 
@@ -133,7 +133,7 @@ int testSampleSceneLoadAndActivation() {
 }
 
 int testJobSystemIntegration() {
-    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+    if (!std::filesystem::exists(ANTERAY_SAMPLE_SCENE_PATH)) {
         return 0;
     }
 
@@ -152,7 +152,7 @@ int testJobSystemIntegration() {
     loader.bindJobSystem(&jobSystem);
     loader.bindAssetManager(&assetManager);
 
-    auto startRes = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    auto startRes = loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
     TEST_CHECK(startRes.hasValue());
 
     int maxFrames = 1000;
@@ -172,7 +172,7 @@ int testJobSystemIntegration() {
 }
 
 int testCancellationSafety() {
-    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+    if (!std::filesystem::exists(ANTERAY_SAMPLE_SCENE_PATH)) {
         return 0;
     }
 
@@ -181,7 +181,7 @@ int testCancellationSafety() {
     auto nullDevice = std::move(nullDevRes.value());
 
     AsyncSceneLoader loader;
-    auto startRes = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    auto startRes = loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
     TEST_CHECK(startRes.hasValue());
 
     // Immediately cancel before processing
@@ -207,7 +207,7 @@ int testCancellationSafety() {
 }
 
 int testResetAndReuse() {
-    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+    if (!std::filesystem::exists(ANTERAY_SAMPLE_SCENE_PATH)) {
         return 0;
     }
 
@@ -218,7 +218,7 @@ int testResetAndReuse() {
     AsyncSceneLoader loader;
 
     // Cycle 1: Load and cancel
-    (void)loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    (void)loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
     loader.cancel();
     loader.update(*nullDevice, 5.0F);
     TEST_CHECK(loader.isCancelled());
@@ -228,7 +228,7 @@ int testResetAndReuse() {
     TEST_CHECK(loader.getState() == AsyncLoadState::Idle);
 
     // Cycle 2: Load to completion
-    auto startRes = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    auto startRes = loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
     TEST_CHECK(startRes.hasValue());
 
     int maxFrames = 1000;
@@ -247,8 +247,8 @@ int testResetAndReuse() {
 }
 
 int testGlbImportProgress() {
-    if (!std::filesystem::exists(HIKARI_DAMAGED_HELMET_PATH)) {
-        std::cout << "[SKIP] DamagedHelmet.glb not found: " << HIKARI_DAMAGED_HELMET_PATH << '\n';
+    if (!std::filesystem::exists(ANTERAY_DAMAGED_HELMET_PATH)) {
+        std::cout << "[SKIP] DamagedHelmet.glb not found: " << ANTERAY_DAMAGED_HELMET_PATH << '\n';
         return 0;
     }
 
@@ -261,7 +261,7 @@ int testGlbImportProgress() {
     AsyncSceneLoader loader;
     loader.bindAssetManager(&assetManager);
 
-    auto startRes = loader.startLoad(HIKARI_DAMAGED_HELMET_PATH);
+    auto startRes = loader.startLoad(ANTERAY_DAMAGED_HELMET_PATH);
     TEST_CHECK(startRes.hasValue());
 
     int maxFrames = 1000;
@@ -313,7 +313,7 @@ int testStrict10PhasePipelineAndTelemetry() {
                "Phase 9/10: Viewport Preparation");
     TEST_CHECK(toPhaseDisplayName(AsyncLoadState::SceneReady) == "Phase 10/10: Scene Ready");
 
-    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+    if (!std::filesystem::exists(ANTERAY_SAMPLE_SCENE_PATH)) {
         return 0;
     }
 
@@ -325,7 +325,7 @@ int testStrict10PhasePipelineAndTelemetry() {
     AsyncSceneLoader loader;
     loader.bindAssetManager(&assetManager);
 
-    auto startRes = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    auto startRes = loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
     TEST_CHECK(startRes.hasValue());
 
     int maxFrames = 1000;
@@ -358,7 +358,7 @@ int testStrict10PhasePipelineAndTelemetry() {
 }
 
 int testRamAndVramTracking() {
-    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+    if (!std::filesystem::exists(ANTERAY_SAMPLE_SCENE_PATH)) {
         return 0;
     }
 
@@ -370,7 +370,7 @@ int testRamAndVramTracking() {
     AsyncSceneLoader loader;
     loader.bindAssetManager(&assetManager);
 
-    auto startRes = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    auto startRes = loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
     TEST_CHECK(startRes.hasValue());
 
     int maxFrames = 1000;
@@ -460,7 +460,7 @@ int testBistroBenchmarkSceneLoading() {
 }
 
 int testPhaseCancellationSafety() {
-    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+    if (!std::filesystem::exists(ANTERAY_SAMPLE_SCENE_PATH)) {
         return 0;
     }
 
@@ -475,7 +475,7 @@ int testPhaseCancellationSafety() {
     // Cancellation test 1: Immediate cancel upon startLoad
     {
         AsyncSceneLoader loader;
-        (void)loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+        (void)loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
         loader.cancel();
         loader.update(*nullDevice, 3.0F);
         TEST_CHECK(loader.isCancelled());
@@ -486,7 +486,7 @@ int testPhaseCancellationSafety() {
     // Cancellation test 2: Cancel mid-load during GPU tick
     {
         AsyncSceneLoader loader;
-        (void)loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+        (void)loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
         loader.update(*nullDevice, 1.0F);
         loader.cancel();
         loader.update(*nullDevice, 3.0F);
@@ -499,7 +499,7 @@ int testPhaseCancellationSafety() {
 }
 
 int testRapidCancelRestartWithJobSystem() {
-    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+    if (!std::filesystem::exists(ANTERAY_SAMPLE_SCENE_PATH)) {
         return 0;
     }
 
@@ -524,7 +524,7 @@ int testRapidCancelRestartWithJobSystem() {
     // Rapidly start, tick briefly, and cancel across multiple cycles to exercise
     // worker-local staging cleanup and cancellation safety under JobSystem concurrency.
     for (int cycle = 0; cycle < 5; ++cycle) {
-        auto startRes = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+        auto startRes = loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
         TEST_CHECK(startRes.hasValue());
 
         for (int tick = 0; tick < (cycle % 3) + 1; ++tick) {
@@ -546,7 +546,7 @@ int testRapidCancelRestartWithJobSystem() {
     }
 
     // Verify a subsequent full load completes and activates cleanly.
-    auto finalStart = loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+    auto finalStart = loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
     TEST_CHECK(finalStart.hasValue());
     int maxFrames = 1000;
     while (loader.isLoading() && maxFrames-- > 0) {
@@ -562,7 +562,7 @@ int testRapidCancelRestartWithJobSystem() {
 }
 
 int testConcurrentInquiryThreadSafety() {
-    if (!std::filesystem::exists(HIKARI_SAMPLE_SCENE_PATH)) {
+    if (!std::filesystem::exists(ANTERAY_SAMPLE_SCENE_PATH)) {
         return 0;
     }
 
@@ -606,7 +606,7 @@ int testConcurrentInquiryThreadSafety() {
 
     // Run valid loads, cancellations, and invalid-file failures concurrently with reader inquiries.
     for (int i = 0; i < 3; ++i) {
-        (void)loader.startLoad(HIKARI_SAMPLE_SCENE_PATH);
+        (void)loader.startLoad(ANTERAY_SAMPLE_SCENE_PATH);
         int frames = 1000;
         while (loader.isLoading() && frames-- > 0) {
             loader.update(*nullDevice, 2.0F);

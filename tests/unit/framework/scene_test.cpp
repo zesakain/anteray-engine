@@ -330,8 +330,8 @@ int testUnknownComponentWarning() {
 }
 
 int testSampleSceneFileLoads() {
-#if defined(HIKARI_SAMPLE_SCENE_PATH)
-    std::filesystem::path samplePath = HIKARI_SAMPLE_SCENE_PATH;
+#if defined(ANTERAY_SAMPLE_SCENE_PATH)
+    std::filesystem::path samplePath = ANTERAY_SAMPLE_SCENE_PATH;
 #else
     std::filesystem::path samplePath = "assets/scenes/sample.hikari";
 #endif

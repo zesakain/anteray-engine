@@ -18,7 +18,7 @@ add_library(engine_core STATIC
     src/log.cpp
     src/pool_allocator.cpp
 )
-add_library(hikari::engine_core ALIAS engine_core)
+add_library(anteray::engine_core ALIAS engine_core)
 
 target_include_directories(engine_core
     PUBLIC
@@ -28,6 +28,6 @@ target_include_directories(engine_core
 
 target_link_libraries(engine_core
     PUBLIC
-        hikari::engine_flags
+        anteray::engine_flags
         Threads::Threads
 )

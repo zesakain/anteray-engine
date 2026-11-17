@@ -27,7 +27,7 @@ add_library(engine_script STATIC
     src/script_engine.cpp
     src/script_components.cpp
 )
-add_library(hikari::engine_script ALIAS engine_script)
+add_library(anteray::engine_script ALIAS engine_script)
 
 target_include_directories(engine_script
     PUBLIC
@@ -40,8 +40,8 @@ target_include_directories(engine_script
 
 target_link_libraries(engine_script
     PUBLIC
-        hikari::engine_flags
-        hikari::engine_core
-        hikari::engine_world
+        anteray::engine_flags
+        anteray::engine_core
+        anteray::engine_world
         lua_static
 )

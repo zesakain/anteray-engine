@@ -9,7 +9,7 @@ add_library(engine_anim STATIC
     src/animation_controller.cpp
     src/animation_components.cpp
 )
-add_library(hikari::engine_anim ALIAS engine_anim)
+add_library(anteray::engine_anim ALIAS engine_anim)
 
 target_include_directories(engine_anim
     PUBLIC
@@ -21,7 +21,7 @@ target_include_directories(engine_anim
 
 target_link_libraries(engine_anim
     PUBLIC
-        hikari::engine_flags
-        hikari::engine_core
-        hikari::engine_world
+        anteray::engine_flags
+        anteray::engine_core
+        anteray::engine_world
 )

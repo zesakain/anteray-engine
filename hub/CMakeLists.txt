@@ -1,6 +1,6 @@
-# Hikari Machine Hub — Standalone Project Management Application
+# ANTERAY Hub — Standalone Project Management Application
 
-add_library(hikari_hub_core STATIC
+add_library(anteray_hub_core STATIC
     src/project_metadata.cpp
     src/project_validator.cpp
     src/recent_projects.cpp
@@ -8,21 +8,21 @@ add_library(hikari_hub_core STATIC
     src/sample_catalog.cpp
     src/engine_launcher.cpp
 )
-add_library(hikari::hub_core ALIAS hikari_hub_core)
+add_library(anteray::hub_core ALIAS anteray_hub_core)
 
-target_include_directories(hikari_hub_core
+target_include_directories(anteray_hub_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(hikari_hub_core
+target_link_libraries(anteray_hub_core
     PUBLIC
-        hikari::engine_core
+        anteray::engine_core
     PRIVATE
-        hikari::engine_flags
+        anteray::engine_flags
 )
 
-if(HIKARI_BUILD_HUB OR HIKARI_BUILD_EDITOR)
+if(ANTERAY_BUILD_HUB OR ANTERAY_BUILD_EDITOR)
     find_package(SDL3 CONFIG REQUIRED)
 
     if(NOT TARGET imgui_static)
@@ -49,25 +49,25 @@ if(HIKARI_BUILD_HUB OR HIKARI_BUILD_EDITOR)
         target_compile_definitions(imgui_static PUBLIC ImDrawIdx="unsigned int")
     endif()
 
-    add_executable(hikari_hub
+    add_executable(anteray_hub
         src/hub_imgui_backend.cpp
         src/hub_app.cpp
         src/main.cpp
     )
 
-    target_link_libraries(hikari_hub
+    target_link_libraries(anteray_hub
         PRIVATE
-            hikari::hub_core
-            hikari::engine_flags
-            hikari::engine_core
-            hikari::engine_platform
-            hikari::engine_rhi
-            hikari::engine_render
+            anteray::hub_core
+            anteray::engine_flags
+            anteray::engine_core
+            anteray::engine_platform
+            anteray::engine_rhi
+            anteray::engine_render
             imgui_static
             SDL3::SDL3
     )
 
-    set_target_properties(hikari_hub PROPERTIES
+    set_target_properties(anteray_hub PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     )
 endif()
