@@ -143,6 +143,10 @@ add_executable(conductor_script_test unit/framework/conductor_script_test.cpp)
 target_link_libraries(conductor_script_test PRIVATE hikari::engine_framework)
 add_test(NAME conductor_script_test COMMAND conductor_script_test)
 
+add_executable(third_person_character_template_test unit/framework/third_person_character_template_test.cpp)
+target_link_libraries(third_person_character_template_test PRIVATE hikari::engine_framework)
+add_test(NAME third_person_character_template_test COMMAND third_person_character_template_test)
+
 # Headless Integration / Stress Tests
 add_executable(conductor_stress_test headless/conductor_stress_test.cpp)
 target_link_libraries(conductor_stress_test PRIVATE hikari::engine_framework)
