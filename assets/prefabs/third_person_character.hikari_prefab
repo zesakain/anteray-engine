@@ -36,6 +36,12 @@
           "facingYawRadians": 0.0,
           "isGrounded": false
         },
+        "CharacterMovementIntent": {
+          "moveAxis": [0.0, 0.0],
+          "jumpRequested": false,
+          "cameraYawRadians": 0.0,
+          "hasCameraYaw": false
+        },
         "CharacterAnimation": {
           "skeletonMeshPath": "assets/characters/player/Superhero_Male_FullBody.gltf",
           "animationLibraryPath": "assets/animations/player/UAL1_Standard.glb",
