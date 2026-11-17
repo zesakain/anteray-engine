@@ -349,12 +349,16 @@ Result<ProjectCreateResult> TemplateRegistry::createProject(const ProjectCreateR
         const std::filesystem::path scenePath = projectDir / tmpl.defaultStartupScene;
         std::string sceneContent;
         if (tmpl.id == "third_person_character") {
-            const std::filesystem::path repoTppScene =
+            std::filesystem::path probe =
                 std::filesystem::path("assets/scenes/CharacterController_TPP_Test.hikari");
-            std::ifstream tppIn(repoTppScene, std::ios::in | std::ios::binary);
-            if (tppIn.is_open()) {
-                sceneContent.assign(std::istreambuf_iterator<char>(tppIn),
-                                    std::istreambuf_iterator<char>());
+            for (int depth = 0; depth < 4; ++depth) {
+                std::ifstream tppIn(probe, std::ios::in | std::ios::binary);
+                if (tppIn.is_open()) {
+                    sceneContent.assign(std::istreambuf_iterator<char>(tppIn),
+                                        std::istreambuf_iterator<char>());
+                    break;
+                }
+                probe = std::filesystem::path("..") / probe;
             }
         }
         if (sceneContent.empty()) {

@@ -144,6 +144,16 @@ void testTemplateInstantiationProtectionAndRollback() {
 
         const auto report = validateProjectDirectory(createRes.value().projectDirectory);
         TEST_CHECK(report.status == ProjectValidationStatus::Valid);
+
+        if (tmpl.id == "third_person_character") {
+            const auto startupScene = createRes.value().projectDirectory / tmpl.defaultStartupScene;
+            std::ifstream sceneIn(startupScene);
+            TEST_CHECK(sceneIn.is_open());
+            const std::string content((std::istreambuf_iterator<char>(sceneIn)),
+                                      std::istreambuf_iterator<char>());
+            TEST_CHECK(content.find("PlayerCharacter") != std::string::npos);
+            TEST_CHECK(content.find("Superhero_Male_FullBody.gltf") != std::string::npos);
+        }
         TEST_CHECK(report.metadata.has_value());
         TEST_CHECK(report.metadata->templateOrigin == tmpl.id);
 
