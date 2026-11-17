@@ -597,10 +597,10 @@ void testDedicatedScenePrefabAndRuntimeSessionPIE() {
     TEST_CHECK(rtWorld->getComponent<physics::RigidBodyComponent>(rtChar) != nullptr);
     TEST_CHECK(rtWorld->getComponent<physics::ColliderComponent>(rtChar) != nullptr);
 
-    rtWorld->setComponent(rtChar, CharacterMovementIntentComponent{
-                                      .moveAxis = Vec2{0.0F, 1.0F},
-                                      .jumpRequested = true,
-                                  });
+    platform::InputSnapshot snap{};
+    snap.addKeyEvent(platform::KeyCode::W, true);
+    snap.addKeyEvent(platform::KeyCode::Space, true);
+    session.setInputSnapshot(snap);
     for (int i = 0; i < 30; ++i) {
         session.update(Duration::fromMilliseconds(16));
     }

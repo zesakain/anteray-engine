@@ -67,8 +67,12 @@ struct RuntimeSession::Impl {
     std::unique_ptr<script::ScriptEngine> runtimeScriptEngine;
     std::unique_ptr<world::World> runtimeWorld;
     std::unique_ptr<Conductor> runtimeConductor;
+    GameplayInputSystem gameplayInput;
+    platform::InputSnapshot currentInputSnapshot;
 
-    explicit Impl(const RuntimeSessionConfig& cfg) : config(cfg) {}
+    explicit Impl(const RuntimeSessionConfig& cfg) : config(cfg) {
+        gameplayInput.installDefaultThirdPersonBindings();
+    }
 
     ~Impl() { teardownRuntime(); }
 
@@ -138,6 +142,7 @@ struct RuntimeSession::Impl {
         // 6. Initialize runtime render and character components
         render::registerRenderComponents(*runtimeWorld);
         registerCharacterComponents(*runtimeWorld);
+        registerCharacterInputSystem(*runtimeWorld, gameplayInput);
         registerCharacterControllerSystems(*runtimeWorld, *runtimePhysicsWorld);
         registerThirdPersonCameraSystems(*runtimeWorld, *runtimePhysicsWorld);
 
@@ -290,16 +295,21 @@ end
                              "Simulation stopped on Shared World; returned to Edit Mode");
             }
             state = SimulationState::Edit;
+            gameplayInput.resetStates();
+            currentInputSnapshot.reset();
             return Result<void>::success();
         }
 
         // Idempotent stop
         state = SimulationState::Edit;
+        gameplayInput.resetStates();
+        currentInputSnapshot.reset();
         return Result<void>::success();
     }
 
     void update(Duration delta) {
         if (state == SimulationState::Playing) {
+            gameplayInput.update(currentInputSnapshot);
             if (runtimeConductor) {
                 runtimeConductor->update(delta);
             } else if (editConductor) {
@@ -407,6 +417,18 @@ Result<void> RuntimeSession::stop() {
 
 void RuntimeSession::update(Duration delta) {
     impl_->update(delta);
+}
+
+void RuntimeSession::setInputSnapshot(const platform::InputSnapshot& snapshot) noexcept {
+    impl_->currentInputSnapshot = snapshot;
+}
+
+GameplayInputSystem& RuntimeSession::getGameplayInput() noexcept {
+    return impl_->gameplayInput;
+}
+
+const GameplayInputSystem& RuntimeSession::getGameplayInput() const noexcept {
+    return impl_->gameplayInput;
 }
 
 } // namespace eng::framework

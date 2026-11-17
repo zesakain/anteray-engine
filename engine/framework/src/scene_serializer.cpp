@@ -1147,6 +1147,9 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
 
         if (staged.hasCharacterTag) {
             world.addTag<CharacterTag>(h);
+            if (world.getComponent<CharacterMovementIntentComponent>(h) == nullptr) {
+                world.setComponent(h, CharacterMovementIntentComponent{});
+            }
         }
 
         if (staged.characterConfig.present) {

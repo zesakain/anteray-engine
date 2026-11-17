@@ -5,6 +5,7 @@
 
 #include "core/math.h"
 #include "framework/character_components.h"
+#include "framework/third_person_camera.h"
 #include "physics/physics_components.h"
 #include "world/components.h"
 
@@ -397,6 +398,35 @@ struct ControllerAccumulator {
 };
 
 } // namespace
+
+void registerCharacterInputSystem(world::World& world, const GameplayInputSystem& inputSystem) {
+    auto& ecs = world.getRawWorld();
+
+    auto camInputSys =
+        ecs.system<ThirdPersonCameraComponent>("CharacterCameraInputSync")
+            .kind(flecs::OnUpdate)
+            .each(
+                [&inputSystem](flecs::iter& it, size_t /*index*/, ThirdPersonCameraComponent& cam) {
+                    const float dt = it.delta_time();
+                    const float orbitInput = inputSystem.getActionValue("CameraOrbitLeft") -
+                                             inputSystem.getActionValue("CameraOrbitRight");
+                    const float lookX = inputSystem.getActionValue("CameraLookX");
+                    const float lookY = inputSystem.getActionValue("CameraLookY");
+                    cam.yawRadians += (orbitInput * 1.8F * dt) + lookX;
+                    cam.pitchRadians += lookY;
+                });
+    world.registerSystem(world::SystemGroup::Continuous, camInputSys);
+
+    auto charInputSys = ecs.system<CharacterMovementIntentComponent>("CharacterInputSync")
+                            .kind(flecs::OnUpdate)
+                            .with<CharacterTag>()
+                            .each([&inputSystem](CharacterMovementIntentComponent& intent) {
+                                intent.moveAxis = inputSystem.getAxis2D(
+                                    "MoveLeft", "MoveRight", "MoveBackward", "MoveForward");
+                                intent.jumpRequested = inputSystem.isActionHeld("Jump");
+                            });
+    world.registerSystem(world::SystemGroup::Continuous, charInputSys);
+}
 
 void registerCharacterControllerSystems(world::World& world, physics::PhysicsWorld& physicsWorld) {
     auto& ecs = world.getRawWorld();

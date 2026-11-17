@@ -23,10 +23,18 @@
 
 #pragma once
 
+#include "framework/gameplay_input.h"
 #include "physics/physics_world.h"
 #include "world/world.h"
 
 namespace eng::framework {
+
+/// @brief Registers GameplayInputSystem -> CharacterMovementIntentComponent & ThirdPersonCamera
+///        input binding system under SystemGroup::Continuous (flecs::OnUpdate).
+///
+/// Must be registered before registerCharacterControllerSystems() so intent is populated on
+/// the same frame before CharacterControllerStep integrates it.
+void registerCharacterInputSystem(world::World& world, const GameplayInputSystem& inputSystem);
 
 /// @brief Registers fixed-step character controller and render-interpolation systems.
 ///

@@ -50,9 +50,11 @@
 #include "core/time.h"
 #include "framework/conductor.h"
 #include "framework/conductor_types.h"
+#include "framework/gameplay_input.h"
 #include "framework/mode.h"
 #include "framework/simulation_state.h"
 #include "physics/physics_world.h"
+#include "platform/input_snapshot.h"
 
 #include <functional>
 #include <memory>
@@ -164,6 +166,13 @@ public:
     /// Frame update called each frame: if Playing, ticks Conductor and steps World simulation.
     /// Performs zero allocations in the hot path.
     void update(Duration delta);
+
+    /// Provides the current frame's platform input snapshot for GameplayInputSystem evaluation.
+    void setInputSnapshot(const platform::InputSnapshot& snapshot) noexcept;
+
+    /// Returns the GameplayInputSystem owned by this session for binding/context configuration.
+    [[nodiscard]] GameplayInputSystem& getGameplayInput() noexcept;
+    [[nodiscard]] const GameplayInputSystem& getGameplayInput() const noexcept;
 
 private:
     struct Impl;
