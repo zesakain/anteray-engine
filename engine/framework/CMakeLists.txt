@@ -15,6 +15,7 @@ add_library(engine_framework STATIC
     src/scene.cpp
     src/scene_serializer.cpp
     src/third_person_camera.cpp
+    src/third_person_character_template.cpp
 )
 add_library(hikari::engine_framework ALIAS engine_framework)
 
