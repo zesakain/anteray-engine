@@ -73,6 +73,16 @@ Result<void> Skeleton::finalize() {
     return Result<void>::success();
 }
 
+Result<void> Skeleton::setInverseBindMatrix(uint16_t index,
+                                            const Mat4& inverseBindMatrix) noexcept {
+    if (index >= bones_.size()) {
+        return Error{.code = ErrorCode::InvalidArgument,
+                     .message = "Bone index out of range in setInverseBindMatrix"};
+    }
+    bones_[index].inverseBindMatrix = inverseBindMatrix;
+    return Result<void>::success();
+}
+
 Result<void> Skeleton::evaluateModelPose(std::span<const Transform> localTransforms,
                                          std::span<Transform> outModelTransforms) const noexcept {
     if (localTransforms.size() < bones_.size() || outModelTransforms.size() < bones_.size()) {

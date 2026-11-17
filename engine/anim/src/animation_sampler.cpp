@@ -100,7 +100,39 @@ void AnimationSampler::sampleClip(const AnimationClip& clip, float timeSeconds,
                                   std::span<Transform> inOutLocalTransforms) noexcept {
     for (const auto& track : clip.getTracks()) {
         if (track.boneIndex < inOutLocalTransforms.size()) {
-            inOutLocalTransforms[track.boneIndex] = sampleTrack(track, timeSeconds);
+            Transform& dst = inOutLocalTransforms[track.boneIndex];
+            if (!track.translationKeys.empty()) {
+                if (track.translationInterpolation == InterpolationMode::Step) {
+                    const size_t idx =
+                        findKeyframeIndex(std::span{track.translationKeys}, timeSeconds);
+                    dst.position = (timeSeconds <= track.translationKeys.front().timeSeconds)
+                                       ? track.translationKeys.front().value
+                                       : track.translationKeys[idx].value;
+                } else {
+                    dst.position = sampleTranslation(track.translationKeys, timeSeconds);
+                }
+            }
+            if (!track.rotationKeys.empty()) {
+                if (track.rotationInterpolation == InterpolationMode::Step) {
+                    const size_t idx =
+                        findKeyframeIndex(std::span{track.rotationKeys}, timeSeconds);
+                    dst.rotation = (timeSeconds <= track.rotationKeys.front().timeSeconds)
+                                       ? track.rotationKeys.front().value
+                                       : track.rotationKeys[idx].value;
+                } else {
+                    dst.rotation = sampleRotation(track.rotationKeys, timeSeconds);
+                }
+            }
+            if (!track.scaleKeys.empty()) {
+                if (track.scaleInterpolation == InterpolationMode::Step) {
+                    const size_t idx = findKeyframeIndex(std::span{track.scaleKeys}, timeSeconds);
+                    dst.scale = (timeSeconds <= track.scaleKeys.front().timeSeconds)
+                                    ? track.scaleKeys.front().value
+                                    : track.scaleKeys[idx].value;
+                } else {
+                    dst.scale = sampleScale(track.scaleKeys, timeSeconds);
+                }
+            }
         }
     }
 }

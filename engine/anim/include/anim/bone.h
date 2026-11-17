@@ -21,6 +21,9 @@ namespace eng::anim {
 /// @brief Sentinel value indicating no parent (root bone) or invalid index.
 constexpr uint16_t kInvalidBoneIndex = 0xFFFF;
 
+/// @brief Maximum number of bones supported in GPU skinning palettes.
+constexpr uint16_t kMaxSkinningBones = 128;
+
 /// @struct Bone
 /// @brief Hierarchy node representing an articulated skeletal segment.
 struct Bone {

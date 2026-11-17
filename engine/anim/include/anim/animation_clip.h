@@ -25,10 +25,17 @@ template <typename T> struct Keyframe {
     T value{};
 };
 
+/// @enum InterpolationMode
+/// @brief Keyframe interpolation mode matching glTF 2.0 sampler modes.
+enum class InterpolationMode : uint8_t { Linear = 0, Step = 1 };
+
 /// @struct BoneTrack
 /// @brief Animation channels for a single bone.
 struct BoneTrack {
     uint16_t boneIndex{kInvalidBoneIndex};
+    InterpolationMode translationInterpolation{InterpolationMode::Linear};
+    InterpolationMode rotationInterpolation{InterpolationMode::Linear};
+    InterpolationMode scaleInterpolation{InterpolationMode::Linear};
     std::vector<Keyframe<Vec3>> translationKeys;
     std::vector<Keyframe<Quat>> rotationKeys;
     std::vector<Keyframe<Vec3>> scaleKeys;

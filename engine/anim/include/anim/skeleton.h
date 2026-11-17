@@ -58,6 +58,12 @@ public:
     /// Must be called once after all bones are added via addBone().
     Result<void> finalize();
 
+    /// Sets an explicit inverse bind matrix (e.g., imported from glTF skin) for a bone.
+    Result<void> setInverseBindMatrix(uint16_t index, const Mat4& inverseBindMatrix) noexcept;
+
+    /// Marks the skeleton finalized when all inverse bind matrices were supplied explicitly.
+    void markFinalized() noexcept { isFinalized_ = true; }
+
     /// Evaluates forward kinematics from local-space bone transforms into model-space transforms.
     ///
     /// Preconditions: localTransforms and outModelTransforms must have size >= getBoneCount().
