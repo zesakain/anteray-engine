@@ -276,7 +276,7 @@ static void testWorkspacePersistenceAndRecovery() {
 
 static void testThemeTokens() {
     // 1. Test Dark Theme
-    ThemeColors dark = ThemeColors::hikariDark();
+    ThemeColors dark = ThemeColors::anterayDark();
     TEST_CHECK(dark.backgroundApp.a == 1.0F);
     TEST_CHECK(dark.accentPrimary.r > 0.0F);
     TEST_CHECK(dark.colorAxisX.r > 0.9F);
@@ -287,14 +287,14 @@ static void testThemeTokens() {
     TEST_CHECK(dark.textPrimary.luminance() > 0.8F);
 
     // 2. Test Midnight Theme
-    ThemeColors midnight = ThemeColors::hikariMidnight();
+    ThemeColors midnight = ThemeColors::anterayMidnight();
     TEST_CHECK(midnight.backgroundDarkest.r < dark.backgroundDarkest.r);
     TEST_CHECK(midnight.accentPrimary.b > 0.9F);
     TEST_CHECK(!midnight.backgroundPanel.isLight());
     TEST_CHECK(midnight.textPrimary.isLight());
 
     // 3. Test Light Theme
-    ThemeColors light = ThemeColors::hikariLight();
+    ThemeColors light = ThemeColors::anterayLight();
     TEST_CHECK(light.backgroundPanel.isLight());
     TEST_CHECK(!light.textPrimary.isLight());
     TEST_CHECK(light.textPrimary.luminance() < 0.2F);

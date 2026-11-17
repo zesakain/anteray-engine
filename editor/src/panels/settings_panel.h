@@ -7,7 +7,7 @@
 /// and project-specific Graphics & Scalability configuration.
 ///
 /// Invariants & Rules:
-/// - Built ONLY when HIKARI_BUILD_EDITOR=ON (EDITOR=1).
+/// - Built ONLY when ANTERAY_BUILD_EDITOR=ON (EDITOR=1).
 /// - Inherits from EditorPanel contract.
 /// - Does not spawn independent OS windows; docks into Dear ImGui workspace.
 /// - Exception-free and RTTI-free.

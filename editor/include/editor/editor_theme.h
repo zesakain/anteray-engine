@@ -6,7 +6,7 @@
 /// and applies the official dark graphite visual identity to Dear ImGui.
 ///
 /// Invariants & Rules:
-/// - Built ONLY when HIKARI_BUILD_EDITOR=ON.
+/// - Built ONLY when ANTERAY_BUILD_EDITOR=ON.
 /// - Encapsulates ImGui types within private implementation; public API uses POD color structs.
 /// - Exception-free and RTTI-free.
 ///
@@ -173,9 +173,9 @@ struct ThemeColors {
     Color4f badgeStandby{0.961F, 0.620F, 0.043F, 1.0F};
 
     // Theme Preset Factories
-    [[nodiscard]] static constexpr ThemeColors hikariDark() noexcept { return ThemeColors{}; }
+    [[nodiscard]] static constexpr ThemeColors anterayDark() noexcept { return ThemeColors{}; }
 
-    [[nodiscard]] static constexpr ThemeColors hikariMidnight() noexcept {
+    [[nodiscard]] static constexpr ThemeColors anterayMidnight() noexcept {
         ThemeColors c{};
         c.backgroundDarkest = Color4f{0.020F, 0.024F, 0.031F, 1.0F};
         c.backgroundApp = Color4f{0.035F, 0.043F, 0.055F, 1.0F};
@@ -214,7 +214,7 @@ struct ThemeColors {
         return c;
     }
 
-    [[nodiscard]] static constexpr ThemeColors hikariLight() noexcept {
+    [[nodiscard]] static constexpr ThemeColors anterayLight() noexcept {
         ThemeColors c{};
         c.backgroundDarkest = Color4f{0.886F, 0.894F, 0.910F, 1.0F};   // #e2e4e8
         c.backgroundApp = Color4f{0.918F, 0.922F, 0.937F, 1.0F};       // #eaebef
@@ -265,7 +265,7 @@ struct ThemeColors {
     }
 
     /// Returns the default dark graphite theme tokens.
-    [[nodiscard]] static constexpr ThemeColors defaultDark() noexcept { return hikariDark(); }
+    [[nodiscard]] static constexpr ThemeColors defaultDark() noexcept { return anterayDark(); }
 };
 
 /// Applies the given theme preset to the active ImGui context.

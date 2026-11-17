@@ -6,7 +6,7 @@
 /// dockable panels in the Hikari Editor.
 ///
 /// Invariants & Rules:
-/// - Built ONLY when HIKARI_BUILD_EDITOR=ON.
+/// - Built ONLY when ANTERAY_BUILD_EDITOR=ON.
 /// - Exception-free and RTTI-free.
 /// - Does not own World or Conductor.
 ///

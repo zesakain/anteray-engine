@@ -373,11 +373,11 @@ Result<void> ExternalEditorService::openFile(const std::filesystem::path& filePa
 Result<void> ExternalEditorService::testLaunch(const ScriptingPreferences& prefs) {
     std::error_code ec;
     std::filesystem::path tempPath =
-        std::filesystem::temp_directory_path() / "hikari_editor_test.lua";
+        std::filesystem::temp_directory_path() / "anteray_editor_test.lua";
     {
         std::ofstream out(tempPath, std::ios::out | std::ios::trunc);
-        out << "-- Hikari Editor External Script Test\n";
-        out << "print(\"Hikari script editor integration active!\")\n";
+        out << "-- ANTERAY Editor External Script Test\n";
+        out << "print(\"ANTERAY script editor integration active!\")\n";
     }
 
     auto res = openFile(tempPath, prefs, 1);

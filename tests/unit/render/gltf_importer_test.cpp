@@ -595,7 +595,7 @@ void testMeshComponentAssignment() {
     std::cout << "[PASS] testMeshComponentAssignment\n";
 }
 
-void testHikariSerializationRoundTrip() {
+void testAnteraySerializationRoundTrip() {
     eng::world::World world;
     eng::render::registerRenderComponents(world);
     eng::physics::registerPhysicsComponents(world);
@@ -638,7 +638,7 @@ void testHikariSerializationRoundTrip() {
     TEST_CHECK(loadedMc != nullptr);
     TEST_CHECK(loadedMc->assetPath == path);
     TEST_CHECK(loadedMc->meshAsset == id);
-    std::cout << "[PASS] testHikariSerializationRoundTrip\n";
+    std::cout << "[PASS] testAnteraySerializationRoundTrip\n";
 }
 
 void testImportFailureLeavesAssetManagerUnchanged() {
@@ -698,7 +698,7 @@ int main() {
     testRepeatedImportAndCacheReuse();
     testGpuMeshUpload();
     testMeshComponentAssignment();
-    testHikariSerializationRoundTrip();
+    testAnteraySerializationRoundTrip();
     testImportFailureLeavesAssetManagerUnchanged();
 
     // Skeletal & Animation import (12C.2)

@@ -6,7 +6,7 @@
 /// Two-State Conductor execution, profiling frame performance, and viewing structured logs.
 ///
 /// Invariants & Isolation:
-/// - Built ONLY when HIKARI_BUILD_EDITOR=ON (EDITOR=1).
+/// - Built ONLY when ANTERAY_BUILD_EDITOR=ON (EDITOR=1).
 /// - Non-editor builds contain ZERO editor code or ImGui symbols.
 /// - Encapsulates Dear ImGui headers entirely within private implementation.
 ///

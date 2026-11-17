@@ -6,7 +6,7 @@
 /// and automated default layout synthesis using Dear ImGui DockBuilder.
 ///
 /// Invariants & Rules:
-/// - Built ONLY when HIKARI_BUILD_EDITOR=ON.
+/// - Built ONLY when ANTERAY_BUILD_EDITOR=ON.
 /// - Exception-free and RTTI-free.
 /// - Does not write layout files every frame.
 ///

@@ -149,7 +149,7 @@ static void testFolderAndFileManagement() {
     TEST_CHECK(luaContent.find("on_update") != std::string::npos);
 
     // 3. Create Hikari Scene Template and verify SceneSerializer compatibility
-    auto sceneRes = controller.createFile("MainLevel", ContentFileTemplate::HikariScene);
+    auto sceneRes = controller.createFile("MainLevel", ContentFileTemplate::AnterayScene);
     TEST_CHECK(sceneRes.hasValue());
     TEST_CHECK(sceneRes.value().extension() == ".hikari");
     TEST_CHECK(std::filesystem::exists(sceneRes.value()));

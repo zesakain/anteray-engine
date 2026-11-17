@@ -165,7 +165,7 @@ void ContentBrowserPanel::drawToolbar(EditorContext& ctx) {
         if (ImGui::MenuItem("Hikari Scene (.hikari)")) {
             fileNameBuffer_.fill('\0');
             std::snprintf(fileNameBuffer_.data(), fileNameBuffer_.size(), "NewScene.hikari");
-            pendingFileTemplate_ = ContentFileTemplate::HikariScene;
+            pendingFileTemplate_ = ContentFileTemplate::AnterayScene;
             showCreateFileModal_ = true;
         }
         ImGui::EndPopup();
@@ -445,7 +445,7 @@ void ContentBrowserPanel::drawAssetItems(EditorContext& ctx) {
             if (ImGui::MenuItem("Hikari Scene (.hikari)")) {
                 fileNameBuffer_.fill('\0');
                 std::snprintf(fileNameBuffer_.data(), fileNameBuffer_.size(), "NewScene.hikari");
-                pendingFileTemplate_ = ContentFileTemplate::HikariScene;
+                pendingFileTemplate_ = ContentFileTemplate::AnterayScene;
                 showCreateFileModal_ = true;
             }
             ImGui::EndMenu();

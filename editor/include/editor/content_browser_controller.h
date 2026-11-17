@@ -59,7 +59,7 @@ enum class ContentViewMode : uint8_t { List, Grid };
 
 /// @enum ContentFileTemplate
 /// @brief Supported template types for new asset creation.
-enum class ContentFileTemplate : uint8_t { EmptyFile, TextFile, LuaScript, HikariScene };
+enum class ContentFileTemplate : uint8_t { EmptyFile, TextFile, LuaScript, AnterayScene };
 
 /// @struct BreadcrumbSegment
 /// @brief Represents one clickable navigation segment along the active path.

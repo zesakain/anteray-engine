@@ -289,7 +289,7 @@ void HubApp::drawUi() {
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus;
 
-    ImGui::Begin("HikariMachineHubRoot", nullptr, kRootFlags);
+    ImGui::Begin("AnterayHubRoot", nullptr, kRootFlags);
 
     ImGui::BeginChild("HubSidebar", ImVec2(220.0F, 0.0F), true);
     drawSidebar();

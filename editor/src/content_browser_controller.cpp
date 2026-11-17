@@ -548,7 +548,7 @@ ContentBrowserController::createFile(std::string_view fileName, ContentFileTempl
         case ContentFileTemplate::LuaScript:
             finalName = "NewScript.lua";
             break;
-        case ContentFileTemplate::HikariScene:
+        case ContentFileTemplate::AnterayScene:
             finalName = "NewScene.hikari";
             break;
         }
@@ -565,7 +565,7 @@ ContentBrowserController::createFile(std::string_view fileName, ContentFileTempl
                 finalName += ".lua";
             }
             break;
-        case ContentFileTemplate::HikariScene:
+        case ContentFileTemplate::AnterayScene:
             if (finalName.rfind(".hikari") == std::string::npos) {
                 finalName += ".hikari";
             }
@@ -611,7 +611,7 @@ ContentBrowserController::createFile(std::string_view fileName, ContentFileTempl
         out << "end\n";
         break;
     }
-    case ContentFileTemplate::HikariScene: {
+    case ContentFileTemplate::AnterayScene: {
         // Valid minimal scene schema conforming to SceneSerializer requirements
         std::string sceneStem = std::filesystem::path(finalName).stem().string();
         out << "{\n";

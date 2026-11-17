@@ -6,7 +6,7 @@
 /// property labels, cards, and buttons) consuming centralized ThemeColors and ThemeMetrics.
 ///
 /// Invariants & Rules:
-/// - Built ONLY when HIKARI_BUILD_EDITOR=ON.
+/// - Built ONLY when ANTERAY_BUILD_EDITOR=ON.
 /// - Encapsulates ImGui types within private implementation; public API uses POD types.
 /// - Exception-free and RTTI-free.
 ///

@@ -440,13 +440,13 @@ struct WorkspaceManager::Impl {
         }
     }
 
-    void drawHikariLoadingScreen(EditorContext& ctx) {
+    void drawAnterayLoadingScreen(EditorContext& ctx) {
         if (!isAsyncLoading && !shouldCloseLoadingModal) {
             return;
         }
 
         if (showLoadingModal) {
-            ImGui::OpenPopup("Loading Scene##HikariLoadingScreenModal");
+            ImGui::OpenPopup("Loading Scene##AnterayLoadingScreenModal");
             showLoadingModal = false;
         }
 
@@ -460,7 +460,7 @@ struct WorkspaceManager::Impl {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0F);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0F, 20.0F));
 
-        if (ImGui::BeginPopupModal("Loading Scene##HikariLoadingScreenModal", nullptr,
+        if (ImGui::BeginPopupModal("Loading Scene##AnterayLoadingScreenModal", nullptr,
                                    ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
                                        ImGuiWindowFlags_NoTitleBar)) {
             const auto progress = asyncLoader.getProgress();
@@ -1320,7 +1320,7 @@ struct WorkspaceManager::Impl {
             ImGui::EndPopup();
         }
 
-        drawHikariLoadingScreen(ctx);
+        drawAnterayLoadingScreen(ctx);
     }
 
     void drawToolbar(EditorContext& ctx) {
@@ -1355,7 +1355,7 @@ struct WorkspaceManager::Impl {
             const char* layoutNames[] = {"Default Studio", "Wide Viewport", "Inspector Focus"};
             ImGui::SetNextItemWidth(130.0F);
             if (ImGui::Combo("##LayoutCombo", &activeLayoutPreset, layoutNames, 3)) {
-                buildDefaultLayout(ImGui::GetID("HikariRootDockSpace"), activeLayoutPreset);
+                buildDefaultLayout(ImGui::GetID("AnterayRootDockSpace"), activeLayoutPreset);
             }
             ImGui::SameLine();
             if (ImGui::Button("Reset Layout", ImVec2(0.0F, ThemeMetrics::kButtonHeightStandard))) {
@@ -1878,7 +1878,7 @@ void WorkspaceManager::drawWorkspace(EditorContext& ctx) {
     ImGui::Begin("##RootDockSpaceHost", nullptr, hostFlags);
     ImGui::PopStyleVar(3);
 
-    ImGuiID dockspaceId = ImGui::GetID("HikariRootDockSpace");
+    ImGuiID dockspaceId = ImGui::GetID("AnterayRootDockSpace");
 
     // Check if layout needs to be built
     if (impl_->layoutResetPending || ImGui::DockBuilderGetNode(dockspaceId) == nullptr) {

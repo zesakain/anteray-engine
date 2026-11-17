@@ -13,7 +13,7 @@ namespace eng::editor {
 namespace {
 
 ThemeType s_activeThemeType = ThemeType::Dark;
-ThemeColors s_activeColors = ThemeColors::hikariDark();
+ThemeColors s_activeColors = ThemeColors::anterayDark();
 
 inline ImVec4 toImVec4(const Color4f& c) noexcept {
     return ImVec4(c.r, c.g, c.b, c.a);
@@ -25,14 +25,14 @@ void applyEditorTheme(ThemeType type) {
     s_activeThemeType = type;
     switch (type) {
     case ThemeType::Midnight:
-        applyEditorTheme(ThemeColors::hikariMidnight());
+        applyEditorTheme(ThemeColors::anterayMidnight());
         break;
     case ThemeType::Light:
-        applyEditorTheme(ThemeColors::hikariLight());
+        applyEditorTheme(ThemeColors::anterayLight());
         break;
     case ThemeType::Dark:
     default:
-        applyEditorTheme(ThemeColors::hikariDark());
+        applyEditorTheme(ThemeColors::anterayDark());
         break;
     }
 }
