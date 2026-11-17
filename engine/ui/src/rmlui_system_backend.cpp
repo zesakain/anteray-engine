@@ -7,19 +7,19 @@
 
 namespace eng::ui {
 
-HikariSystemInterface::HikariSystemInterface() = default;
+AnteraySystemInterface::AnteraySystemInterface() = default;
 
-double HikariSystemInterface::GetElapsedTime() {
+double AnteraySystemInterface::GetElapsedTime() {
     return elapsedTime_;
 }
 
-void HikariSystemInterface::advanceTime(double deltaSeconds) {
+void AnteraySystemInterface::advanceTime(double deltaSeconds) {
     if (deltaSeconds > 0.0) {
         elapsedTime_ += deltaSeconds;
     }
 }
 
-bool HikariSystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& message) {
+bool AnteraySystemInterface::LogMessage(Rml::Log::Type type, const Rml::String& message) {
     switch (type) {
     case Rml::Log::LT_INFO:
         ENG_LOG_INFO("RmlUi", message);

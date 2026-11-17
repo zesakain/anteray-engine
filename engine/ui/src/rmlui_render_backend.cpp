@@ -9,21 +9,22 @@
 
 namespace eng::ui {
 
-HikariRenderInterface::HikariRenderInterface(rhi::RhiDevice* device) : device_(device) {}
+AnterayRenderInterface::AnterayRenderInterface(rhi::RhiDevice* device) : device_(device) {}
 
-HikariRenderInterface::~HikariRenderInterface() = default;
+AnterayRenderInterface::~AnterayRenderInterface() = default;
 
 Rml::CompiledGeometryHandle
-HikariRenderInterface::CompileGeometry(Rml::Span<const Rml::Vertex> vertices,
-                                       Rml::Span<const int> indices) {
+AnterayRenderInterface::CompileGeometry(Rml::Span<const Rml::Vertex> vertices,
+                                        Rml::Span<const int> indices) {
     auto* buf = new GeometryBuffer();
     buf->vertices.assign(vertices.begin(), vertices.end());
     buf->indices.assign(indices.begin(), indices.end());
     return reinterpret_cast<Rml::CompiledGeometryHandle>(buf);
 }
 
-void HikariRenderInterface::RenderGeometry(Rml::CompiledGeometryHandle geometry,
-                                           Rml::Vector2f translation, Rml::TextureHandle /*texture*/
+void AnterayRenderInterface::RenderGeometry(Rml::CompiledGeometryHandle geometry,
+                                            Rml::Vector2f translation,
+                                            Rml::TextureHandle /*texture*/
 ) {
     auto* buf = reinterpret_cast<GeometryBuffer*>(geometry);
     if (buf == nullptr || buf->vertices.empty()) {
@@ -70,33 +71,33 @@ void HikariRenderInterface::RenderGeometry(Rml::CompiledGeometryHandle geometry,
     }
 }
 
-void HikariRenderInterface::ReleaseGeometry(Rml::CompiledGeometryHandle geometry) {
+void AnterayRenderInterface::ReleaseGeometry(Rml::CompiledGeometryHandle geometry) {
     delete reinterpret_cast<GeometryBuffer*>(geometry);
 }
 
-Rml::TextureHandle HikariRenderInterface::LoadTexture(Rml::Vector2i& texture_dimensions,
-                                                      const Rml::String& /*source*/
+Rml::TextureHandle AnterayRenderInterface::LoadTexture(Rml::Vector2i& texture_dimensions,
+                                                       const Rml::String& /*source*/
 ) {
     texture_dimensions.x = 1;
     texture_dimensions.y = 1;
     return static_cast<Rml::TextureHandle>(1);
 }
 
-Rml::TextureHandle HikariRenderInterface::GenerateTexture(Rml::Span<const Rml::byte> /*source*/,
-                                                          Rml::Vector2i /*source_dimensions*/
+Rml::TextureHandle AnterayRenderInterface::GenerateTexture(Rml::Span<const Rml::byte> /*source*/,
+                                                           Rml::Vector2i /*source_dimensions*/
 ) {
     return static_cast<Rml::TextureHandle>(1);
 }
 
-void HikariRenderInterface::ReleaseTexture(Rml::TextureHandle /*texture*/) {
+void AnterayRenderInterface::ReleaseTexture(Rml::TextureHandle /*texture*/) {
     // No-op for generated textures
 }
 
-void HikariRenderInterface::EnableScissorRegion(bool enable) {
+void AnterayRenderInterface::EnableScissorRegion(bool enable) {
     scissorEnabled_ = enable;
 }
 
-void HikariRenderInterface::SetScissorRegion(Rml::Rectanglei region) {
+void AnterayRenderInterface::SetScissorRegion(Rml::Rectanglei region) {
     scissorRegion_ = region;
 }
 

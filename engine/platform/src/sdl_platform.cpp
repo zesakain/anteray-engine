@@ -11,7 +11,7 @@
 namespace eng::platform {
 
 namespace {
-constexpr const char* kWindowPtrProp = "Hikari_WindowPtr";
+constexpr const char* kWindowPtrProp = "Anteray_WindowPtr";
 } // namespace
 
 SdlPlatform::SdlPlatform(const PlatformConfig& config) noexcept

@@ -16,8 +16,8 @@
 namespace eng::ui {
 
 struct UiSystem::Impl {
-    HikariSystemInterface systemInterface;
-    HikariRenderInterface renderInterface;
+    AnteraySystemInterface systemInterface;
+    AnterayRenderInterface renderInterface;
     Rml::Context* context{nullptr};
     std::unordered_map<uint64_t, Rml::ElementDocument*> documents;
     uint64_t nextDocId{1};
@@ -51,8 +51,8 @@ Result<void, UiError> UiSystem::initialize(const UiConfig& config, rhi::RhiDevic
     }
 
     impl_->context =
-        Rml::CreateContext("hikari_main_context", Rml::Vector2i(static_cast<int>(config.width),
-                                                                static_cast<int>(config.height)));
+        Rml::CreateContext("anteray_main_context", Rml::Vector2i(static_cast<int>(config.width),
+                                                                 static_cast<int>(config.height)));
 
     if (impl_->context == nullptr) {
         ENG_LOG_ERROR("UI", "Failed to create RmlUi context");

@@ -7,10 +7,10 @@
 
 namespace eng::ui {
 
-class HikariSystemInterface final : public Rml::SystemInterface {
+class AnteraySystemInterface final : public Rml::SystemInterface {
 public:
-    HikariSystemInterface();
-    ~HikariSystemInterface() override = default;
+    AnteraySystemInterface();
+    ~AnteraySystemInterface() override = default;
 
     double GetElapsedTime() override;
     bool LogMessage(Rml::Log::Type type, const Rml::String& message) override;

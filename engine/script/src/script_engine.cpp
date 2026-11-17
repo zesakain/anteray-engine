@@ -25,9 +25,9 @@ namespace eng::script {
 
 namespace {
 
-constexpr const char* kVec3Meta = "Hikari.Vec3";
-constexpr const char* kEntityMeta = "Hikari.Entity";
-constexpr const char* kEngineRegistryKey = "Hikari.ScriptEngine";
+constexpr const char* kVec3Meta = "Anteray.Vec3";
+constexpr const char* kEntityMeta = "Anteray.Entity";
+constexpr const char* kEngineRegistryKey = "Anteray.ScriptEngine";
 
 struct ScriptAllocState {
     size_t currentBytes{0};

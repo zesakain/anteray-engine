@@ -16,10 +16,10 @@ class RhiCommandList;
 
 namespace eng::ui {
 
-class HikariRenderInterface final : public Rml::RenderInterface {
+class AnterayRenderInterface final : public Rml::RenderInterface {
 public:
-    explicit HikariRenderInterface(rhi::RhiDevice* device = nullptr);
-    ~HikariRenderInterface() override;
+    explicit AnterayRenderInterface(rhi::RhiDevice* device = nullptr);
+    ~AnterayRenderInterface() override;
 
     void setDevice(rhi::RhiDevice* device) noexcept { device_ = device; }
     void setCommandList(rhi::RhiCommandList* cmdList) noexcept { currentCmdList_ = cmdList; }
