@@ -109,16 +109,14 @@ EngineInstallation EngineLauncher::discover(const std::filesystem::path& hubExec
     if (!overrideExecutable.empty()) {
         candidates.push_back(overrideExecutable);
     }
-    // Prefer optimized Release Editor builds over Debug builds when discovering from repo root,
-    // even if hikari_hub itself was launched from build/editor/bin (Debug).
+    // Prefer Editor-enabled builds (release-editor, editor-release, sibling editor binary,
+    // build/editor/bin) before non-editor runtime builds (profile, release, debug).
     if (!info.repositoryRoot.empty()) {
-        static constexpr std::array<const char*, 4> kOptimizedBins{
+        static constexpr std::array<const char*, 2> kReleaseEditorBins{
             "build/release-editor/bin",
             "build/editor-release/bin",
-            "build/profile/bin",
-            "build/release/bin",
         };
-        for (const char* relBin : kOptimizedBins) {
+        for (const char* relBin : kReleaseEditorBins) {
             candidates.push_back(info.repositoryRoot / relBin / kExeName);
         }
     }
@@ -126,11 +124,13 @@ EngineInstallation EngineLauncher::discover(const std::filesystem::path& hubExec
         candidates.push_back(hubExecutablePath.parent_path() / kExeName);
     }
     if (!info.repositoryRoot.empty()) {
-        static constexpr std::array<const char*, 2> kDebugBins{
+        static constexpr std::array<const char*, 4> kFallbackBins{
             "build/editor/bin",
+            "build/profile/bin",
+            "build/release/bin",
             "build/debug/bin",
         };
-        for (const char* relBin : kDebugBins) {
+        for (const char* relBin : kFallbackBins) {
             candidates.push_back(info.repositoryRoot / relBin / kExeName);
         }
     }

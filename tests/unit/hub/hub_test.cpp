@@ -398,6 +398,16 @@ void testEngineDiscoveryLaunchArgsAndSamples() {
         TEST_CHECK(samples[2].name == "DamagedHelmet");
         TEST_CHECK(samples[3].name == "Bistro");
         TEST_CHECK(samples[4].name == "MaterialLab");
+
+        // Regression check: when build/editor/bin/hikari exists, Hub must prefer it over
+        // non-editor build/release/bin/hikari.
+        const auto editorExe = repoRoot / "build/editor/bin/hikari";
+        if (std::filesystem::exists(editorExe)) {
+            const auto editorDiscovered = EngineLauncher::discover({}, {}, repoRoot);
+            TEST_CHECK(editorDiscovered.available);
+            TEST_CHECK(editorDiscovered.buildFlavor == "editor" ||
+                       editorDiscovered.buildFlavor == "release-editor");
+        }
     }
 
     std::cout << "[PASS] testEngineDiscoveryLaunchArgsAndSamples\n";
