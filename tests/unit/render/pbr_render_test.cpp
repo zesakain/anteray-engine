@@ -38,20 +38,20 @@
 
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
-#define HIKARI_HAS_ASAN 1
+#define ANTERAY_HAS_ASAN 1
 #endif
 #if __has_feature(thread_sanitizer)
-#define HIKARI_HAS_TSAN 1
+#define ANTERAY_HAS_TSAN 1
 #endif
 #endif
 #if defined(__SANITIZE_ADDRESS__)
-#define HIKARI_HAS_ASAN 1
+#define ANTERAY_HAS_ASAN 1
 #endif
 #if defined(__SANITIZE_THREAD__)
-#define HIKARI_HAS_TSAN 1
+#define ANTERAY_HAS_TSAN 1
 #endif
 
-#if defined(HIKARI_HAS_ASAN)
+#if defined(ANTERAY_HAS_ASAN)
 extern "C" const char* __lsan_default_suppressions() {
     return "leak:libdbus-1\nleak:libvulkan\nleak:nvidia\nleak:libwayland\n";
 }
@@ -810,7 +810,7 @@ int main() {
     if (testAnalyticalBrdfModel() != 0) {
         return 10;
     }
-#if defined(HIKARI_HAS_TSAN)
+#if defined(ANTERAY_HAS_TSAN)
     std::cout << "ThreadSanitizer active: skipping live GPU PBR tests\n";
     return 0;
 #endif

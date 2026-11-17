@@ -49,14 +49,14 @@ using namespace eng::world;
 
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
-#define HIKARI_HAS_ASAN 1
+#define ANTERAY_HAS_ASAN 1
 #endif
 #endif
 #if defined(__SANITIZE_ADDRESS__)
-#define HIKARI_HAS_ASAN 1
+#define ANTERAY_HAS_ASAN 1
 #endif
 
-#if defined(HIKARI_HAS_ASAN)
+#if defined(ANTERAY_HAS_ASAN)
 extern "C" const char* __lsan_default_suppressions() {
     return "leak:libdbus-1\nleak:libvulkan\nleak:nvidia\nleak:libwayland\n";
 }
@@ -256,7 +256,7 @@ static int testDamagedHelmetPbrCertification() {
 static int testVulkanSponzaLiveRenderingAndCertification() {
     std::cout << "[Scenario 4] Running Live Vulkan Sponza Benchmark Certification...\n";
 
-#if defined(HIKARI_HAS_TSAN)
+#if defined(ANTERAY_HAS_TSAN)
     std::cout << "  TSan active: skipping live Vulkan GPU rendering test\n";
     return 0;
 #endif

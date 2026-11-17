@@ -29,20 +29,20 @@
 
 #if defined(__has_feature)
 #if __has_feature(address_sanitizer)
-#define HIKARI_HAS_ASAN 1
+#define ANTERAY_HAS_ASAN 1
 #endif
 #if __has_feature(thread_sanitizer)
-#define HIKARI_HAS_TSAN 1
+#define ANTERAY_HAS_TSAN 1
 #endif
 #endif
 #if defined(__SANITIZE_ADDRESS__)
-#define HIKARI_HAS_ASAN 1
+#define ANTERAY_HAS_ASAN 1
 #endif
 #if defined(__SANITIZE_THREAD__)
-#define HIKARI_HAS_TSAN 1
+#define ANTERAY_HAS_TSAN 1
 #endif
 
-#if defined(HIKARI_HAS_ASAN)
+#if defined(ANTERAY_HAS_ASAN)
 // Suppress known one-time process-lifetime allocations within OS graphics driver / dbus / wayland
 // stacks
 extern "C" const char* __lsan_default_suppressions() {
@@ -1447,7 +1447,7 @@ static int testVulkanTextureTransfersAndLayoutTransitions() {
 }
 
 static int testVulkanTextureFormatCapabilities() {
-#if defined(HIKARI_HAS_TSAN)
+#if defined(ANTERAY_HAS_TSAN)
     std::cout << "ThreadSanitizer active: skipping live GPU driver initialization\n";
     return 0;
 #endif
@@ -1524,7 +1524,7 @@ static int testVulkanGpuTimestampQueries() {
 int main() {
     std::cout << "Running Vulkan RHI Tests...\n";
 
-#if defined(HIKARI_HAS_TSAN)
+#if defined(ANTERAY_HAS_TSAN)
     std::cout << "ThreadSanitizer active: skipping live GPU driver initialization due to "
                  "proprietary driver background thread conflict (null_rhi_test covers RHI for "
                  "TSan)\n";
