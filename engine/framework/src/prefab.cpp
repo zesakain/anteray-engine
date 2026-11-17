@@ -236,6 +236,8 @@ Result<PrefabDescriptor> PrefabLoader::parseFromString(std::string_view jsonText
                     }
                 } else if (compName == "CharacterTag") {
                     node.hasCharacterTag = true;
+                } else if (compName == "PlayerControlledTag") {
+                    node.hasPlayerControlledTag = true;
                 } else if (compName == "CharacterConfig") {
                     node.hasCharacterConfig = true;
                     auto& cfg = node.characterConfig;
@@ -436,6 +438,9 @@ Result<world::EntityHandle> PrefabLoader::instantiate(world::World& world,
 
         if (node.hasCharacterTag) {
             world.addTag<CharacterTag>(h);
+        }
+        if (node.hasPlayerControlledTag) {
+            world.addTag<PlayerControlledTag>(h);
         }
 
         if (isRoot && options.characterConfigOverride.has_value()) {

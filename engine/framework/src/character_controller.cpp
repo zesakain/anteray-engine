@@ -420,6 +420,7 @@ void registerCharacterInputSystem(world::World& world, const GameplayInputSystem
     auto charInputSys = ecs.system<CharacterMovementIntentComponent>("CharacterInputSync")
                             .kind(flecs::OnUpdate)
                             .with<CharacterTag>()
+                            .with<PlayerControlledTag>()
                             .each([&inputSystem](CharacterMovementIntentComponent& intent) {
                                 intent.moveAxis = inputSystem.getAxis2D(
                                     "MoveLeft", "MoveRight", "MoveBackward", "MoveForward");

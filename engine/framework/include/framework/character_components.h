@@ -33,6 +33,12 @@ namespace eng::framework {
 /// @brief Zero-sized ECS tag identifying an authoritative character root entity.
 struct CharacterTag {};
 
+/// @struct PlayerControlledTag
+/// @brief Zero-sized ECS tag explicitly designating the locally player-controlled character.
+///
+/// Must be independent of Editor Inspector selection.
+struct PlayerControlledTag {};
+
 /// @struct CharacterConfigComponent
 /// @brief Generic physical and spatial configuration parameters for a character entity.
 struct CharacterConfigComponent {

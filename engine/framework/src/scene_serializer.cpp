@@ -123,6 +123,7 @@ struct StagedEntity {
     StagedPostProcess postProcess{};
     StagedIrradianceProbe irradianceProbe{};
     bool hasCharacterTag{false};
+    bool hasPlayerControlledTag{false};
     StagedCharacterConfig characterConfig{};
     StagedCharacterState characterState{};
     StagedThirdPersonCamera thirdPersonCamera{};
@@ -536,9 +537,12 @@ Result<std::string> SceneSerializer::serializeToString(
             compsObj.set("IrradianceProbe", std::move(ipObj));
         }
 
-        // 12. CharacterTag
+        // 12. CharacterTag & PlayerControlledTag
         if (world.hasComponent<CharacterTag>(h)) {
             compsObj.set("CharacterTag", JsonValue::makeObject());
+        }
+        if (world.hasComponent<PlayerControlledTag>(h)) {
+            compsObj.set("PlayerControlledTag", JsonValue::makeObject());
         }
 
         // 13. CharacterConfigComponent
@@ -973,6 +977,8 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                     }
                 } else if (compName == "CharacterTag") {
                     staged.hasCharacterTag = true;
+                } else if (compName == "PlayerControlledTag") {
+                    staged.hasPlayerControlledTag = true;
                 } else if (compName == "CharacterConfig") {
                     staged.characterConfig.present = true;
                     auto& cfg = staged.characterConfig.config;
@@ -1150,6 +1156,9 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
             if (world.getComponent<CharacterMovementIntentComponent>(h) == nullptr) {
                 world.setComponent(h, CharacterMovementIntentComponent{});
             }
+        }
+        if (staged.hasPlayerControlledTag) {
+            world.addTag<PlayerControlledTag>(h);
         }
 
         if (staged.characterConfig.present) {

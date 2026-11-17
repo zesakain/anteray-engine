@@ -67,6 +67,7 @@ struct PrefabEntityNode {
     render::CameraComponent camera{};
 
     bool hasCharacterTag{false};
+    bool hasPlayerControlledTag{false};
     bool hasCharacterConfig{false};
     CharacterConfigComponent characterConfig{};
     bool hasCharacterState{false};

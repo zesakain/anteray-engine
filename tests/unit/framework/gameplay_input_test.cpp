@@ -215,6 +215,7 @@ void testCharacterInputIntegrationAndNoStaleIntent() {
     // Character + Camera
     auto ch = world.createEntity("Player");
     world.addTag<CharacterTag>(ch);
+    world.addTag<PlayerControlledTag>(ch);
     world.setComponent(ch, CharacterConfigComponent{});
     world.setComponent(ch, CharacterStateComponent{});
     world.setComponent(ch, CharacterMovementIntentComponent{});
@@ -291,6 +292,7 @@ void testConductorAndContextSwitchingInvariants() {
 
     auto ch = world.createEntity("Hero");
     world.addTag<CharacterTag>(ch);
+    world.addTag<PlayerControlledTag>(ch);
     world.setComponent(ch, CharacterConfigComponent{});
     world.setComponent(ch, CharacterStateComponent{});
     world.setComponent(ch, CharacterMovementIntentComponent{});

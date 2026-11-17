@@ -72,6 +72,7 @@ void registerCharacterComponents(world::World& world) {
     auto& ecs = world.getRawWorld();
 
     ecs.component<CharacterTag>("CharacterTag");
+    ecs.component<PlayerControlledTag>("PlayerControlledTag");
     ecs.component<CharacterConfigComponent>("CharacterConfigComponent");
     ecs.component<CharacterStateComponent>("CharacterStateComponent");
     ecs.component<CharacterMovementIntentComponent>("CharacterMovementIntentComponent");
