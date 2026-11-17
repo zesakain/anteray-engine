@@ -3,6 +3,8 @@
 
 #include "render/gpu_mesh.h"
 
+#include "rhi/command_list.h"
+
 #include <utility>
 
 namespace eng::render {
@@ -72,10 +74,15 @@ Result<std::unique_ptr<GpuMesh>> GpuMesh::create(rhi::RhiDevice& device, const M
     }
 
     const size_t vbBytes = meshData.vertices.size() * sizeof(Vertex);
+    const size_t ibBytes = meshData.indices.size() * sizeof(uint32_t);
+    const size_t totalStagingBytes = vbBytes + ibBytes;
+
+    // Allocate device-local vertex and index buffers so geometry reads stay in VRAM rather than
+    // spilling into host system memory when the PCIe BAR is exhausted.
     const rhi::BufferDesc vbDesc{
         .sizeInBytes = vbBytes,
-        .usage = rhi::BufferUsageFlags::Vertex,
-        .memoryUsage = rhi::MemoryUsage::CpuToGpu,
+        .usage = rhi::BufferUsageFlags::Vertex | rhi::BufferUsageFlags::TransferDst,
+        .memoryUsage = rhi::MemoryUsage::GpuOnly,
         .debugName = "GpuMesh_VertexBuffer",
     };
 
@@ -85,19 +92,12 @@ Result<std::unique_ptr<GpuMesh>> GpuMesh::create(rhi::RhiDevice& device, const M
     }
     const rhi::BufferHandle vbHandle = vbRes.value();
 
-    auto writeVbRes = device.writeBuffer(vbHandle, 0, meshData.vertices.data(), vbBytes);
-    if (!writeVbRes.hasValue()) {
-        device.destroyBuffer(vbHandle);
-        return writeVbRes.error();
-    }
-
     rhi::BufferHandle ibHandle{};
-    if (!meshData.indices.empty()) {
-        const size_t ibBytes = meshData.indices.size() * sizeof(uint32_t);
+    if (ibBytes > 0) {
         const rhi::BufferDesc ibDesc{
             .sizeInBytes = ibBytes,
-            .usage = rhi::BufferUsageFlags::Index,
-            .memoryUsage = rhi::MemoryUsage::CpuToGpu,
+            .usage = rhi::BufferUsageFlags::Index | rhi::BufferUsageFlags::TransferDst,
+            .memoryUsage = rhi::MemoryUsage::GpuOnly,
             .debugName = "GpuMesh_IndexBuffer",
         };
 
@@ -107,13 +107,71 @@ Result<std::unique_ptr<GpuMesh>> GpuMesh::create(rhi::RhiDevice& device, const M
             return ibRes.error();
         }
         ibHandle = ibRes.value();
+    }
 
-        auto writeIbRes = device.writeBuffer(ibHandle, 0, meshData.indices.data(), ibBytes);
+    // Use GpuToCpu (host-visible non-BAR) staging memory so uploads never exhaust BAR.
+    const rhi::BufferDesc stagingDesc{
+        .sizeInBytes = totalStagingBytes,
+        .usage = rhi::BufferUsageFlags::TransferSrc,
+        .memoryUsage = rhi::MemoryUsage::GpuToCpu,
+        .debugName = "GpuMesh_StagingBuffer",
+    };
+    auto stagingRes = device.createBuffer(stagingDesc);
+    if (!stagingRes.hasValue()) {
+        if (ibHandle.isValid()) {
+            device.destroyBuffer(ibHandle);
+        }
+        device.destroyBuffer(vbHandle);
+        return stagingRes.error();
+    }
+    const rhi::BufferHandle stagingHandle = stagingRes.value();
+
+    auto writeVbRes = device.writeBuffer(stagingHandle, 0, meshData.vertices.data(), vbBytes);
+    if (!writeVbRes.hasValue()) {
+        device.destroyBuffer(stagingHandle);
+        if (ibHandle.isValid()) {
+            device.destroyBuffer(ibHandle);
+        }
+        device.destroyBuffer(vbHandle);
+        return writeVbRes.error();
+    }
+    if (ibBytes > 0) {
+        auto writeIbRes =
+            device.writeBuffer(stagingHandle, vbBytes, meshData.indices.data(), ibBytes);
         if (!writeIbRes.hasValue()) {
+            device.destroyBuffer(stagingHandle);
             device.destroyBuffer(ibHandle);
             device.destroyBuffer(vbHandle);
             return writeIbRes.error();
         }
+    }
+
+    auto cmdRes = device.createCommandList();
+    if (!cmdRes.hasValue()) {
+        device.destroyBuffer(stagingHandle);
+        if (ibHandle.isValid()) {
+            device.destroyBuffer(ibHandle);
+        }
+        device.destroyBuffer(vbHandle);
+        return cmdRes.error();
+    }
+    auto cmd = std::move(cmdRes.value());
+
+    cmd->begin();
+    cmd->copyBuffer(stagingHandle, vbHandle, 0, 0, vbBytes);
+    if (ibBytes > 0) {
+        cmd->copyBuffer(stagingHandle, ibHandle, vbBytes, 0, ibBytes);
+    }
+    cmd->end();
+
+    auto submitRes = device.submit(cmd.get());
+    device.destroyBuffer(stagingHandle);
+    if (!submitRes.hasValue()) {
+        if (ibHandle.isValid()) {
+            device.destroyBuffer(ibHandle);
+        }
+        device.destroyBuffer(vbHandle);
+        return submitRes.error();
     }
 
     auto gpuMesh = std::unique_ptr<GpuMesh>(new GpuMesh(

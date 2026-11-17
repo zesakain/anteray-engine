@@ -14,7 +14,7 @@
 /// Main thread / render thread only. Not safe for concurrent mutation.
 ///
 /// Performance:
-/// GPU buffers are allocated in host-visible memory (MemoryUsage::CpuToGpu) for easy upload.
+/// GPU buffers are allocated in device-local memory (MemoryUsage::GpuOnly) via staging upload.
 /// Zero per-frame allocations during binding and drawing.
 
 #pragma once
