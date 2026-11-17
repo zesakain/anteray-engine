@@ -1072,6 +1072,10 @@ int testVulkanGpuVsCpuSkinningIsolation() {
     TEST_CHECK(rbRes.hasValue());
     rhi::BufferHandle readbackBuf = rbRes.value();
 
+    const Mat4 view = Mat4::lookAt(Vec3(0.0F, 1.0F, 2.8F), Vec3(0.0F, 0.9F, 0.0F), Vec3::unitY());
+    const Mat4 proj = Mat4::perspective(1.0472F, 1.0F, 0.1F, 100.0F);
+    const Mat4 viewProj = proj * view;
+
     auto renderOne = [&](bool useCpuMesh, bool useGpuPalette,
                          std::vector<uint8_t>& outPixels) -> int {
         world::World world;
