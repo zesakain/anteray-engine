@@ -148,11 +148,11 @@ Result<std::unique_ptr<GpuTexture>> GpuTexture::create(rhi::RhiDevice& device,
     }
     rhi::SamplerHandle sampler = samplerRes.value();
 
-    // Create host-visible staging buffer
+    // Create host-visible non-BAR staging buffer so texture uploads never exhaust BAR
     rhi::BufferDesc stagingDesc{
         .sizeInBytes = imageData.sizeInBytes(),
         .usage = rhi::BufferUsageFlags::TransferSrc,
-        .memoryUsage = rhi::MemoryUsage::CpuToGpu,
+        .memoryUsage = rhi::MemoryUsage::GpuToCpu,
         .debugName = "TextureStagingBuffer",
     };
     auto stagingRes = device.createBuffer(stagingDesc);
@@ -271,7 +271,7 @@ GpuTexture::createCubemap(rhi::RhiDevice& device, const CubemapData& cubemapData
     rhi::BufferDesc stagingDesc{
         .sizeInBytes = totalBytes,
         .usage = rhi::BufferUsageFlags::TransferSrc,
-        .memoryUsage = rhi::MemoryUsage::CpuToGpu,
+        .memoryUsage = rhi::MemoryUsage::GpuToCpu,
         .debugName = "CubemapStagingBuffer",
     };
     auto stagingRes = device.createBuffer(stagingDesc);
@@ -396,7 +396,7 @@ Result<std::unique_ptr<GpuTexture>> GpuTexture::createBrdfLut(rhi::RhiDevice& de
     rhi::BufferDesc stagingDesc{
         .sizeInBytes = totalBytes,
         .usage = rhi::BufferUsageFlags::TransferSrc,
-        .memoryUsage = rhi::MemoryUsage::CpuToGpu,
+        .memoryUsage = rhi::MemoryUsage::GpuToCpu,
         .debugName = "BrdfLutStagingBuffer",
     };
     auto stagingRes = device.createBuffer(stagingDesc);
