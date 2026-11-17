@@ -6,6 +6,7 @@
 
 #include "core/json.h"
 #include "core/log.h"
+#include "framework/character_animation.h"
 #include "framework/character_components.h"
 #include "framework/third_person_camera.h"
 #include "physics/physics_components.h"
@@ -107,6 +108,11 @@ struct StagedThirdPersonCamera {
     bool present{false};
 };
 
+struct StagedCharacterAnimation {
+    CharacterAnimationComponent anim{};
+    bool present{false};
+};
+
 struct StagedEntity {
     uint64_t stableId{0};
     uint64_t parentStableId{0};
@@ -127,6 +133,7 @@ struct StagedEntity {
     StagedCharacterConfig characterConfig{};
     StagedCharacterState characterState{};
     StagedThirdPersonCamera thirdPersonCamera{};
+    StagedCharacterAnimation characterAnimation{};
 };
 
 const char* motionTypeToString(physics::MotionType type) noexcept {
@@ -600,6 +607,24 @@ Result<std::string> SceneSerializer::serializeToString(
             compsObj.set("ThirdPersonCamera", std::move(tpcObj));
         }
 
+        // 16. CharacterAnimationComponent
+        if (const auto* ca = world.getComponent<CharacterAnimationComponent>(h)) {
+            JsonValue caObj = JsonValue::makeObject();
+            caObj.set("skeletonMeshPath", ca->skeletonMeshPath);
+            caObj.set("animationLibraryPath", ca->animationLibraryPath);
+            caObj.set("idleClip", ca->idleClip);
+            caObj.set("walkClip", ca->walkClip);
+            caObj.set("runClip", ca->runClip);
+            caObj.set("jumpClip", ca->jumpClip);
+            caObj.set("inAirClip", ca->inAirClip);
+            caObj.set("landClip", ca->landClip);
+            caObj.set("walkSpeedThreshold", ca->walkSpeedThreshold);
+            caObj.set("runSpeedThreshold", ca->runSpeedThreshold);
+            caObj.set("blendDurationSeconds", ca->blendDurationSeconds);
+            caObj.set("landingDurationSeconds", ca->landingDurationSeconds);
+            compsObj.set("CharacterAnimation", std::move(caObj));
+        }
+
         entObj.set("components", std::move(compsObj));
         entityArray.pushBack(std::move(entObj));
     }
@@ -1057,6 +1082,27 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
                         compData.getFloat("collisionRadiusMeters", tpc.collisionRadiusMeters);
                     tpc.followSmoothSpeed =
                         compData.getFloat("followSmoothSpeed", tpc.followSmoothSpeed);
+                } else if (compName == "CharacterAnimation") {
+                    staged.characterAnimation.present = true;
+                    auto& ca = staged.characterAnimation.anim;
+                    ca.skeletonMeshPath =
+                        compData.getString("skeletonMeshPath", ca.skeletonMeshPath);
+                    ca.animationLibraryPath =
+                        compData.getString("animationLibraryPath", ca.animationLibraryPath);
+                    ca.idleClip = compData.getString("idleClip", ca.idleClip);
+                    ca.walkClip = compData.getString("walkClip", ca.walkClip);
+                    ca.runClip = compData.getString("runClip", ca.runClip);
+                    ca.jumpClip = compData.getString("jumpClip", ca.jumpClip);
+                    ca.inAirClip = compData.getString("inAirClip", ca.inAirClip);
+                    ca.landClip = compData.getString("landClip", ca.landClip);
+                    ca.walkSpeedThreshold =
+                        compData.getFloat("walkSpeedThreshold", ca.walkSpeedThreshold);
+                    ca.runSpeedThreshold =
+                        compData.getFloat("runSpeedThreshold", ca.runSpeedThreshold);
+                    ca.blendDurationSeconds =
+                        compData.getFloat("blendDurationSeconds", ca.blendDurationSeconds);
+                    ca.landingDurationSeconds =
+                        compData.getFloat("landingDurationSeconds", ca.landingDurationSeconds);
                 } else {
                     warnings.push_back("Unknown component '" + compName + "' skipped on entity " +
                                        std::to_string(stableId));
@@ -1179,6 +1225,10 @@ Result<DeserializationResult> SceneSerializer::deserializeFromString(world::Worl
 
         if (staged.thirdPersonCamera.present) {
             world.setComponent(h, staged.thirdPersonCamera.cam);
+        }
+
+        if (staged.characterAnimation.present) {
+            world.setComponent(h, staged.characterAnimation.anim);
         }
     }
 

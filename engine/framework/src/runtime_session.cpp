@@ -5,6 +5,7 @@
 
 #include "anim/animation_components.h"
 #include "core/log.h"
+#include "framework/character_animation.h"
 #include "framework/character_components.h"
 #include "framework/character_controller.h"
 #include "framework/conductor.h"
@@ -140,6 +141,8 @@ struct RuntimeSession::Impl {
 
         // 5. Initialize runtime animation
         anim::registerAnimationComponents(*runtimeWorld);
+        anim::registerAnimationSystems(*runtimeWorld);
+        registerCharacterAnimationSystems(*runtimeWorld);
 
         // 6. Initialize runtime render and character components
         render::registerRenderComponents(*runtimeWorld);
@@ -173,6 +176,7 @@ end
             teardownRuntime();
             return Result<void>::failure(desRes.error());
         }
+        resolveCharacterAnimationAssets(*runtimeWorld);
 
         // 8. Bind Jolt physics bodies for all entities with RigidBodyComponent
         auto entities = runtimeWorld->getAllEntities();
