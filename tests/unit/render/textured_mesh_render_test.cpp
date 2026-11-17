@@ -337,6 +337,17 @@ static int testTexturedMeshHardwareRenderingAndPixelVerification() {
     auto gpuMesh = std::move(meshRes.value());
     TEST_CHECK(gpuMesh->isValid());
 
+    // Regression: static GpuMesh buffers must live in GpuOnly VRAM (not host-visible BAR)
+    {
+        const uint32_t dummy = 0;
+        auto vbWrite = device->writeBuffer(gpuMesh->getVertexBuffer(), 0, &dummy, sizeof(dummy));
+        TEST_CHECK(!vbWrite.hasValue());
+        TEST_CHECK(vbWrite.error().code == ErrorCode::NotSupported);
+        auto ibWrite = device->writeBuffer(gpuMesh->getIndexBuffer(), 0, &dummy, sizeof(dummy));
+        TEST_CHECK(!ibWrite.hasValue());
+        TEST_CHECK(ibWrite.error().code == ErrorCode::NotSupported);
+    }
+
     // 4. Descriptor Set Layout (CombinedImageSampler at binding 0 in Fragment stage)
     DescriptorSetLayoutDesc layoutDesc{
         .bindings = {{
