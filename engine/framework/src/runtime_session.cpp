@@ -72,6 +72,7 @@ struct RuntimeSession::Impl {
     std::unique_ptr<script::ScriptEngine> runtimeScriptEngine;
     std::unique_ptr<world::World> runtimeWorld;
     std::unique_ptr<Conductor> runtimeConductor;
+    ConductorScriptBridge conductorScriptBridge;
     GameplayInputSystem gameplayInput;
     platform::InputSnapshot currentInputSnapshot;
 
@@ -82,6 +83,7 @@ struct RuntimeSession::Impl {
     ~Impl() { teardownRuntime(); }
 
     void teardownRuntime() noexcept {
+        conductorScriptBridge.reset();
         if (runtimeConductor) {
             runtimeConductor->shutdown();
             runtimeConductor.reset();
@@ -242,6 +244,7 @@ end
 
         (void)registerFrameworkScriptBindings(*runtimeScriptEngine, *runtimeWorld,
                                               runtimeConductor.get());
+        conductorScriptBridge.bind(runtimeScriptEngine.get(), runtimeConductor.get());
         for (auto h : entities) {
             const auto* sc = runtimeWorld->getComponent<script::ScriptComponent>(h);
             if (sc != nullptr && sc->enabled && sc->scriptName[0] != '\0') {
@@ -301,6 +304,7 @@ end
 
         if (runtimeConductor) {
             runtimeConductor->update(delta);
+            conductorScriptBridge.update();
         } else if (editConductor) {
             editConductor->update(delta);
         } else if (runtimeWorld) {
