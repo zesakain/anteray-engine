@@ -46,7 +46,7 @@ if(ANTERAY_BUILD_HUB OR ANTERAY_BUILD_EDITOR)
             ${imgui_SOURCE_DIR}/imgui_demo.cpp
         )
         target_include_directories(imgui_static PUBLIC ${imgui_SOURCE_DIR})
-        target_compile_definitions(imgui_static PUBLIC ImDrawIdx="unsigned int")
+        target_compile_definitions(imgui_static PUBLIC ImDrawIdx=unsigned\ int)
     endif()
 
     add_executable(anteray_hub
